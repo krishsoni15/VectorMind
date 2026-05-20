@@ -43,6 +43,7 @@ interface UploadQueueFile {
   file: File
   status: 'idle' | 'uploading' | 'success' | 'error'
   progress: number
+  statusText?: string
   error?: string
   chunks?: number
 }
@@ -267,53 +268,78 @@ export default function Home() {
   const uploadFileWithProgress = (
     file: File,
     base64Data: string,
-    onProgress: (percent: number) => void
+    onProgress: (percent: number, statusText: string) => void
   ): Promise<any> => {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest()
-      xhr.open('POST', '/api/upload', true)
-      xhr.setRequestHeader('Content-Type', 'application/json')
+    return new Promise(async (resolve, reject) => {
+      try {
+        onProgress(0, 'Sending file to server...')
+        
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: file.name,
+            base64: base64Data,
+          }),
+        })
 
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
-          const percent = Math.round((event.loaded / event.total) * 100)
-          onProgress(Math.min(percent, 99)) // Cap at 99% until server responds
-        }
-      }
-
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
+        if (!response.ok && !response.headers.get('content-type')?.includes('text/event-stream')) {
+          let errorMessage = `Upload failed: Status ${response.status}`
           try {
-            const res = JSON.parse(xhr.responseText)
-            onProgress(100)
-            resolve(res)
-          } catch (_) {
-            reject(new Error('Invalid response from server'))
-          }
-        } else {
-          let errorMessage = `Upload failed: Status ${xhr.status}`
-          try {
-            const errorData = JSON.parse(xhr.responseText)
+            const errorData = await response.json()
             errorMessage = errorData.error || errorMessage
           } catch (_) {
-            if (xhr.responseText) {
-              errorMessage = xhr.responseText.slice(0, 150)
+            const text = await response.text()
+            if (text) errorMessage = text.slice(0, 150)
+          }
+          return reject(new Error(errorMessage))
+        }
+
+        // Read SSE stream for real-time progress
+        const reader = response.body?.getReader()
+        if (!reader) return reject(new Error('No response body'))
+
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let finalResult: any = null
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6))
+                if (data.done) {
+                  if (data.success) {
+                    onProgress(100, 'Complete!')
+                    finalResult = data
+                  } else {
+                    return reject(new Error(data.error || 'Upload failed'))
+                  }
+                } else {
+                  onProgress(data.progress || 0, data.detail || data.step || 'Processing...')
+                }
+              } catch (_) {
+                // ignore parse errors on partial chunks
+              }
             }
           }
-          reject(new Error(errorMessage))
         }
-      }
 
-      xhr.onerror = () => {
-        reject(new Error('Network error occurred'))
+        if (finalResult) {
+          resolve(finalResult)
+        } else {
+          reject(new Error('Upload stream ended without result'))
+        }
+      } catch (err) {
+        reject(err)
       }
-
-      xhr.send(
-        JSON.stringify({
-          filename: file.name,
-          base64: base64Data,
-        })
-      )
     })
   }
 
@@ -329,18 +355,21 @@ export default function Home() {
       if (item.status === 'success' || item.status === 'error') continue
 
       // Update state to uploading
-      setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'uploading', progress: 0 } : q))
+      setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'uploading', progress: 0, statusText: 'Reading file...' } : q))
 
       try {
         const base64Data = await readFileAsBase64(item.file)
-        const result = await uploadFileWithProgress(item.file, base64Data, (percent) => {
-          setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, progress: percent } : q))
+        setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, progress: 2, statusText: 'Uploading...' } : q))
+        
+        const result = await uploadFileWithProgress(item.file, base64Data, (percent, statusText) => {
+          setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, progress: percent, statusText } : q))
         })
 
         setUploadQueue(prev => prev.map(q => q.id === item.id ? {
           ...q,
           status: 'success',
           progress: 100,
+          statusText: 'Indexed!',
           chunks: result.chunks
         } : q))
       } catch (err: any) {
@@ -349,6 +378,7 @@ export default function Home() {
           ...q,
           status: 'error',
           progress: 0,
+          statusText: undefined,
           error: err.message || 'Indexing failed'
         } : q))
       }
@@ -880,9 +910,9 @@ export default function Home() {
                               </span>
                             )}
                             {item.status === 'uploading' && (
-                              <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
-                                <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                                {item.progress < 99 ? `Uploading (${item.progress}%)` : 'Embedding...'}
+                              <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded font-semibold flex items-center gap-1 max-w-[180px]">
+                                <Loader2 className="w-2.5 h-2.5 animate-spin shrink-0" />
+                                <span className="truncate">{item.statusText || `Processing (${item.progress}%)`}</span>
                               </span>
                             )}
                             {item.status === 'success' && (

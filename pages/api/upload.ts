@@ -51,6 +51,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: 'Filename and base64 data are required' })
   }
 
+  // Set up SSE headers for real-time progress streaming
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache, no-transform')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no')
+
+  const sendProgress = (step: string, progress: number, detail?: string) => {
+    const data = JSON.stringify({ step, progress, detail })
+    res.write(`data: ${data}\n\n`)
+  }
+
+  const sendResult = (success: boolean, data: any) => {
+    res.write(`data: ${JSON.stringify({ done: true, success, ...data })}\n\n`)
+    res.end()
+  }
+
   const supabaseClient = createClient(supabaseUrl, supabaseServiceKey, {
     auth: {
       persistSession: false,
@@ -62,6 +78,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   })
 
   try {
+    sendProgress('Decoding file', 5)
     const buffer = Buffer.from(base64, 'base64')
 
     // Preserve copy of the uploaded file locally for PDF browser previews
@@ -78,12 +95,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let content = ''
 
     if (filename.toLowerCase().endsWith('.pdf')) {
+      sendProgress('Parsing PDF', 10, `Extracting text from ${filename}`)
       try {
-        // Use pdfjs-dist legacy Node build to extract text from each page
         const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) })
         const pdfDoc = await loadingTask.promise
         const pageTexts: string[] = []
         for (let i = 1; i <= pdfDoc.numPages; i++) {
+          sendProgress('Parsing PDF', 10 + Math.round((i / pdfDoc.numPages) * 15), `Page ${i} of ${pdfDoc.numPages}`)
           const page = await pdfDoc.getPage(i)
           const tokenizedText = await page.getTextContent()
           const pageText = tokenizedText.items
@@ -98,12 +116,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         throw new Error(`Failed to parse PDF file: ${err.message}`)
       }
     } else {
+      sendProgress('Reading file', 15, `Decoding ${filename}`)
       content = buffer.toString('utf-8')
     }
 
     // Sanitize null bytes (\u0000) and escaped null strings to prevent database errors
     const sanitizedContent = content.replace(/\u0000/g, '').replace(/\\u0000/g, '')
 
+    sendProgress('Chunking text', 30, `Splitting into sections...`)
     const checksum = createHash('sha256').update(sanitizedContent).digest('hex')
     const documentPath = `uploaded/${filename}`
 
@@ -112,6 +132,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .from('nods_page')
       .delete()
       .eq('path', documentPath)
+
+    sendProgress('Creating record', 35, 'Saving document metadata')
 
     // 2. Insert parent page row
     const { data: page, error: pageError } = await supabaseClient
@@ -136,11 +158,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // 3. Chunk text content
     const chunks = chunkText(sanitizedContent, 1000, 200)
+    sendProgress('Chunking text', 40, `Created ${chunks.length} chunks`)
 
     // 4. Generate embeddings and insert sections
     for (let index = 0; index < chunks.length; index++) {
       const chunk = chunks[index]
       const sanitizedChunk = chunk.replace(/\n/g, ' ')
+
+      const embeddingProgress = 40 + Math.round(((index + 1) / chunks.length) * 50)
+      sendProgress('Embedding', embeddingProgress, `Vectorizing chunk ${index + 1} of ${chunks.length}`)
 
       // Call Gemini Embedding API
       const response = await fetch(
@@ -192,6 +218,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // 5. Update checksum upon successful completion
+    sendProgress('Finalizing', 95, 'Updating search index')
     const { error: updateError } = await supabaseClient
       .from('nods_page')
       .update({ checksum })
@@ -201,14 +228,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       throw updateError
     }
 
-    return res.status(200).json({
-      success: true,
+    sendResult(true, {
       filename,
       chunks: chunks.length,
     })
   } catch (err: any) {
     console.error('Error during file upload indexing:', err)
-    return res.status(500).json({ error: err.message || 'An error occurred during indexing' })
+    sendResult(false, { error: err.message || 'An error occurred during indexing' })
   }
 }
 
@@ -219,3 +245,4 @@ export const config = {
     },
   },
 }
+

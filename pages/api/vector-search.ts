@@ -1,7 +1,6 @@
 import type { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { codeBlock, oneLine } from 'common-tags'
-import GPT3Tokenizer from 'gpt3-tokenizer'
 import { StreamingTextResponse } from 'ai'
 import { ApplicationError, UserError } from '@/lib/errors'
 
@@ -49,7 +48,7 @@ export default async function handler(req: NextRequest) {
 
     const sanitizedQuery = query.trim()
 
-    // Create embedding from query using Gemini text-embedding-004
+    // Create embedding from query using Gemini embedding model
     const embeddingResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key=${geminiKey}`,
       {
@@ -81,7 +80,7 @@ export default async function handler(req: NextRequest) {
       'match_page_sections',
       {
         embedding,
-        match_threshold: 0.3, // Lower threshold since Gemini uses different cosine similarity scales
+        match_threshold: 0.3,
         match_count: 10,
         min_content_length: 50,
       }
@@ -91,17 +90,17 @@ export default async function handler(req: NextRequest) {
       throw new ApplicationError('Failed to match page sections', matchError)
     }
 
-    const tokenizer = new GPT3Tokenizer({ type: 'gpt3' })
-    let tokenCount = 0
+    // Simple character-based token estimation (avoids GPT3Tokenizer edge runtime issues)
+    let charCount = 0
     let contextText = ''
 
     for (let i = 0; i < pageSections.length; i++) {
       const pageSection = pageSections[i]
       const content = pageSection.content
-      const encoded = tokenizer.encode(content)
-      tokenCount += encoded.text.length
+      charCount += content.length
 
-      if (tokenCount >= 1500) {
+      // ~6000 chars ≈ ~1500 tokens
+      if (charCount >= 6000) {
         break
       }
 
@@ -110,12 +109,12 @@ export default async function handler(req: NextRequest) {
 
     const prompt = codeBlock`
       ${oneLine`
-        You are a very enthusiastic Supabase representative who loves
-        to help people! Given the following sections from the Supabase
-        documentation, answer the question using only that information,
+        You are a knowledgeable document analysis assistant for the VectorMind platform.
+        Given the following sections from the user's indexed documents,
+        answer the question using only that information,
         outputted in markdown format. If you are unsure and the answer
-        is not explicitly written in the documentation, say
-        "Sorry, I don't know how to help with that."
+        is not explicitly written in the documents, say
+        "Sorry, I couldn't find relevant information in your indexed documents."
       `}
 
       Context sections:
@@ -136,8 +135,8 @@ export default async function handler(req: NextRequest) {
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
-            maxOutputTokens: 512,
-            temperature: 0,
+            maxOutputTokens: 2048,
+            temperature: 0.1,
           },
         }),
       }
@@ -201,19 +200,23 @@ export default async function handler(req: NextRequest) {
           headers: { 'Content-Type': 'application/json' },
         }
       )
-    } else if (err instanceof ApplicationError) {
-      // Print out application errors with their additional data
+    }
+
+    // Surface the real error message for debugging
+    let errorMessage = 'There was an error processing your request'
+    if (err instanceof ApplicationError) {
+      errorMessage = err.message
       console.error(`${err.message}: ${JSON.stringify(err.data)}`)
+    } else if (err instanceof Error) {
+      errorMessage = err.message
+      console.error('Unexpected error:', err.message, err.stack)
     } else {
       console.error('Unexpected error:', err)
-      if (err instanceof Error) {
-        console.error(err.stack)
-      }
     }
 
     return new Response(
       JSON.stringify({
-        error: 'There was an error processing your request',
+        error: errorMessage,
       }),
       {
         status: 500,
@@ -222,3 +225,4 @@ export default async function handler(req: NextRequest) {
     )
   }
 }
+
