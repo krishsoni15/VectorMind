@@ -10,8 +10,7 @@ import { mdxFromMarkdown, MdxjsEsm } from 'mdast-util-mdx'
 import { toMarkdown } from 'mdast-util-to-markdown'
 import { toString } from 'mdast-util-to-string'
 import { mdxjs } from 'micromark-extension-mdxjs'
-import 'openai'
-import { Configuration, OpenAIApi } from 'openai'
+// Removed openai imports
 import { basename, dirname, join } from 'path'
 import { u } from 'unist-builder'
 import { filter } from 'unist-util-filter'
@@ -276,10 +275,10 @@ async function generateEmbeddings() {
   if (
     !process.env.NEXT_PUBLIC_SUPABASE_URL ||
     !process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    !process.env.OPENAI_KEY
+    !process.env.GEMINI_API_KEY
   ) {
     return console.log(
-      'Environment variables NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and OPENAI_KEY are required: skipping embeddings generation'
+      'Environment variables NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and GEMINI_API_KEY are required: skipping embeddings generation'
     )
   }
 
@@ -420,35 +419,50 @@ async function generateEmbeddings() {
         const input = content.replace(/\n/g, ' ')
 
         try {
-          const configuration = new Configuration({
-            apiKey: process.env.OPENAI_KEY,
-          })
-          const openai = new OpenAIApi(configuration)
+          const geminiKey = process.env.GEMINI_API_KEY
+          const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key=${geminiKey}`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: 'models/gemini-embedding-2',
+                content: {
+                  parts: [{ text: input }],
+                },
+                taskType: 'RETRIEVAL_DOCUMENT',
+                outputDimensionality: 768,
+              }),
+            }
+          )
 
-          const embeddingResponse = await openai.createEmbedding({
-            model: 'text-embedding-ada-002',
-            input,
-          })
-
-          if (embeddingResponse.status !== 200) {
-            throw new Error(inspect(embeddingResponse.data, false, 2))
+          if (!response.ok) {
+            const errorText = await response.text()
+            throw new Error(`Gemini API error: ${response.status} - ${errorText}`)
           }
 
-          const [responseData] = embeddingResponse.data.data
+          const responseData = await response.json()
+          const embedding = responseData.embedding?.values
 
-          const { error: insertPageSectionError, data: pageSection } = await supabaseClient
+          if (!embedding) {
+            throw new Error(`Failed to extract embedding values from Gemini response`)
+          }
+
+          // Count characters as a proxy for tokens
+          const tokenCount = Math.ceil(input.length / 4)
+
+          const { error: insertPageSectionError } = await supabaseClient
             .from('nods_page_section')
             .insert({
               page_id: page.id,
               slug,
               heading,
               content,
-              token_count: embeddingResponse.data.usage.total_tokens,
-              embedding: responseData.embedding,
+              token_count: tokenCount,
+              embedding,
             })
-            .select()
-            .limit(1)
-            .single()
 
           if (insertPageSectionError) {
             throw insertPageSectionError

@@ -46,6 +46,7 @@
     "next": "13.2.4",
     "openai": "^3.3.0",
     "openai-edge": "^1.1.0",
+    "pdf-parse": "^2.4.5",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "tailwind-merge": "^1.10.0",

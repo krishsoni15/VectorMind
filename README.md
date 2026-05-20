@@ -1,116 +1,197 @@
-# Next.js OpenAI Doc Search Starter
+# Gemini Chatbot Workspace - System Architecture & Documentation
 
-This starter takes all the `.mdx` files in the `pages` directory and processes them to use as custom context within [OpenAI Text Completion](https://platform.openai.com/docs/guides/completion) prompts.
+This repository houses the **Gemini Chatbot Workspace**, a production-grade, Retrieval-Augmented Generation (RAG) platform that enables semantic question-answering over custom user documents. The application is built using **Next.js**, **Google Gemini**, and **Supabase (PostgreSQL + pgvector)**.
 
-## Deploy
+---
 
-Deploy this starter to Vercel. The Supabase integration will automatically set the required environment variables and configure your [Database Schema](./supabase/migrations/20230406025118_init.sql). All you have to do is set your `OPENAI_KEY` and you're ready to go!
+## 🏛️ System Architecture
 
-[![Deploy with Vercel](https://vercel.com/new/clone?demo-title=Next.js%20OpenAI%20Doc%20Search%20Starter&demo-description=Template%20for%20building%20your%20own%20custom%20ChatGPT%20style%20doc%20search%20powered%20by%20Next.js%2C%20OpenAI%2C%20and%20Supabase.&demo-url=https%3A%2F%2Fsupabase.com%2Fdocs&demo-image=%2F%2Fimages.ctfassets.net%2Fe5382hct74si%2F1OntM6THNEUvlUsYy6Bjmf%2F475e39dbc84779538c8ed47c63a37e0e%2Fnextjs_openai_doc_search_og.png&project-name=Next.js%20OpenAI%20Doc%20Search%20Starter&repository-name=nextjs-openai-doc-search-starter&repository-url=https%3A%2F%2Fgithub.com%2Fsupabase-community%2Fnextjs-openai-doc-search%2F&from=github&integration-ids=oac_VqOgBHqhEoFTPzGkPd7L0iH6&env=OPENAI_KEY&envDescription=Get%20your%20OpenAI%20API%20key%3A&envLink=https%3A%2F%2Fplatform.openai.com%2Faccount%2Fapi-keys&teamCreateStatus=hidden&external-id=https%3A%2F%2Fgithub.com%2Fsupabase-community%2Fnextjs-openai-doc-search%2Ftree%2Fmain)
-
-## Technical Details
-
-Building your own custom ChatGPT involves four steps:
-
-1. [👷 Build time] Pre-process the knowledge base (your `.mdx` files in your `pages` folder).
-2. [👷 Build time] Store embeddings in Postgres with [pgvector](https://supabase.com/docs/guides/database/extensions/pgvector).
-3. [🏃 Runtime] Perform vector similarity search to find the content that's relevant to the question.
-4. [🏃 Runtime] Inject content into OpenAI GPT-3 text completion prompt and stream response to the client.
-
-## 👷 Build time
-
-Step 1. and 2. happen at build time, e.g. when Vercel builds your Next.js app. During this time the [`generate-embeddings`](./lib/generate-embeddings.ts) script is being executed which performs the following tasks:
+The following diagram illustrates the ingestion flow (how files are parsed, embedded, and stored) and the query loop (how the chatbot retrieves context and generates answers).
 
 ```mermaid
-sequenceDiagram
-    participant Vercel
-    participant DB (pgvector)
-    participant OpenAI (API)
-    loop 1. Pre-process the knowledge base
-        Vercel->>Vercel: Chunk .mdx pages into sections
-        loop 2. Create & store embeddings
-            Vercel->>OpenAI (API): create embedding for page section
-            OpenAI (API)->>Vercel: embedding vector(1536)
-            Vercel->>DB (pgvector): store embedding for page section
-        end
+flowchart TD
+    subgraph Ingestion Pipeline (Upload)
+        A[User Uploads Files] -->|Up to 100 Files| B[Next.js Client]
+        B -->|Base64 Payload| C[API endpoint: /api/upload]
+        C -->|File Copy| CA[(Local disk: public/uploads)]
+        C -->|Check Format| D{Is PDF?}
+        D -->|Yes| E[pdf-parse Extraction]
+        D -->|No| F[UTF-8 Text Extraction]
+        E --> G[Text Sanitation: Remove Null Bytes]
+        F --> G
+        G --> H[Chunking: 1000 char size, 200 overlap]
+        H --> I[Gemini: text-embedding-004]
+        I -->|768-Dimension Vector| J[(Supabase DB: pgvector)]
+    end
+
+    subgraph RAG Query Loop (Chat)
+        K[User Query] -->|Ask Chatbot| L[API endpoint: /api/vector-search]
+        L --> M[Gemini: text-embedding-004]
+        M -->|Query Vector| N[Supabase Cosine Distance RPC]
+        N -->|Select Sections| O[Relevant Context Chunks]
+        O --> P[Inject Context into Prompt]
+        P --> Q[Gemini: gemini-2.5-flash]
+        Q -->|Streaming response| R[Next.js Client Chatbot UI]
     end
 ```
 
-In addition to storing the embeddings, this script generates a checksum for each of your `.mdx` files and stores this in another database table to make sure the embeddings are only regenerated when the file has changed.
+---
 
-## 🏃 Runtime
+## 🛠️ Deep-Dive Algorithmic Workflow
 
-Step 3. and 4. happen at runtime, anytime the user submits a question. When this happens, the following sequence of tasks is performed:
+### 1. Document Extraction & Sanitation
+When a file is uploaded, the frontend reads the content into a Base64 string to avoid transmission corruption.
+* **PDF Parsing**: Instantiates a stream via the `pdf-parse` constructor, extracting characters from binary pages.
+* **Sanitation**: Before writing to PostgreSQL, the backend strips out null bytes (`\u0000`) and escaped nulls (`\\u0000`) to prevent DB query crashes.
+* **Local Persistence**: A copy of the raw document is stored inside `public/uploads/` to enable in-app browser document previews.
 
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Edge Function
-    participant DB (pgvector)
-    participant OpenAI (API)
-    Client->>Edge Function: { query: lorem ispum }
-    critical 3. Perform vector similarity search
-        Edge Function->>OpenAI (API): create embedding for query
-        OpenAI (API)->>Edge Function: embedding vector(1536)
-        Edge Function->>DB (pgvector): vector similarity search
-        DB (pgvector)->>Edge Function: relevant docs content
-    end
-    critical 4. Inject content into prompt
-        Edge Function->>OpenAI (API): completion request prompt: query + relevant docs content
-        OpenAI (API)-->>Client: text/event-stream: completions response
-    end
+### 2. Semantic Chunking
+Extracted text is split into sequential chunks using a sliding window:
+* **Chunk Size**: `1000` characters.
+* **Overlap**: `200` characters (ensures sentence-level context remains intact across boundaries).
+* **Identifier**: A SHA-256 checksum is computed for the entire document to skip processing duplicate uploads.
+
+### 3. Vector Embeddings
+Each text chunk is mapped to high-dimensional coordinate spaces to represent its semantic meaning:
+* **Model**: `text-embedding-004` (Google Gemini Embedding API).
+* **Dimensionality**: `768` dimensions.
+
+### 4. Similarity Matching (pgvector RPC)
+When a user asks a question, the query is converted into a 768-dimensional vector. The system queries Supabase using the `match_page_sections` stored procedure:
+```sql
+create or replace function match_page_sections(
+  embedding vector(768),
+  match_threshold float,
+  match_count int
+)
+returns table (
+  id bigint,
+  page_id bigint,
+  slug text,
+  heading text,
+  content text,
+  similarity float
+)
+language plpgsql as $$
+begin
+  return query
+  select
+    nods_page_section.id,
+    nods_page_section.page_id,
+    nods_page.slug,
+    nods_page_section.heading,
+    nods_page_section.content,
+    1 - (nods_page_section.embedding <=> match_page_sections.embedding) as similarity
+  from nods_page_section
+  join nods_page on nods_page.id = nods_page_section.page_id
+  where 1 - (nods_page_section.embedding <=> match_page_sections.embedding) > match_threshold
+  order climb by nods_page_section.embedding <=> match_page_sections.embedding
+  limit match_count;
+end;
+$$;
+```
+* **Search Metric**: Cosine Distance (`<=>` operator).
+* **Threshold**: `0.3` similarity boundary.
+* **Match Count**: Top `10` matching sections are selected.
+
+### 5. Context Injection & Streaming Response
+The matching text sections are formatted and appended to a system template:
+```text
+You are a very helpful assistant. Given the following sections from the documentation, 
+answer the question using only that information. If the answer is not contained, state so.
+
+Context:
+---
+[Document Chunk 1]
+---
+[Document Chunk 2]
+
+Question: [User's Question]
+Answer:
+```
+This is sent to `gemini-2.5-flash` using the Vercel AI SDK Edge runtime, streaming responses instantly to the user interface.
+
+---
+
+## 🗄️ Database Schema & Storage
+
+The database stores metadata and vectors in two relational tables inside Supabase:
+
+### `nods_page` (Documents)
+Tracks the files uploaded to the workspace.
+* `id` (bigint, PK)
+* `path` (text): Local file path or descriptor.
+* `checksum` (text): SHA-256 file contents hash.
+* `type` (text): Type of document (`uploaded`, `markdown`, etc.).
+* `source` (text): Upload origin (e.g. `web_upload`).
+* `meta` (jsonb): Stores file size, original filename, and upload timestamp.
+
+### `nods_page_section` (Document Chunks)
+Stores chunks and their computed vector coordinates.
+* `id` (bigint, PK)
+* `page_id` (bigint, FK referencing `nods_page.id` ON DELETE CASCADE)
+* `slug` (text): Anchor name.
+* `heading` (text): Subheading structure.
+* `content` (text): The raw text chunk (~1000 characters).
+* `embedding` (vector(768)): Dimensional representation.
+
+---
+
+## 🔑 Required API Keys & Env Variables
+
+Create a `.env` file at the root of the project with the following configuration:
+
+```ini
+# Google AI Studio API Key (For embeddings & chat completion)
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# Supabase API Settings
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key_here
+SUPABASE_SERVICE_ROLE_KEY=your_private_service_role_key_here
 ```
 
-The relevant files for this are the [`SearchDialog` (Client)](./components/SearchDialog.tsx) component and the [`vector-search` (Edge Function)](./pages/api/vector-search.ts).
+---
 
-The initialization of the database, including the setup of the `pgvector` extension is stored in the [`supabase/migrations` folder](./supabase/migrations/) which is automatically applied to your local Postgres instance when running `supabase start`.
+## 📊 Scale Limits & Capabilities
 
-## Local Development
+* **Simultaneous Batch Capacity**: Upload and index up to `100` files concurrently.
+* **File Types Supported**: Text (`.txt`), Markdown (`.md`, `.mdx`), Configuration (`.json`, `.csv`, `.xml`), Source Code (`.js`, `.ts`, `.html`, `.css`), and Portable Documents (`.pdf`).
+* **Chunk Bounds**: ~`1,000` characters per block.
+* **Embedding Limit**: Handles embedding blocks of up to `3,072` tokens per vector request.
 
-### Configuration
+---
 
-- `cp .env.example .env`
-- Set your `OPENAI_KEY` in the newly created `.env` file.
-- Set `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` run:
-  > Note: You have to run supabase to retrieve the keys.
+## 🚀 Deployment Guide (Vercel + Supabase)
 
-### Start Supabase
+Deploying this platform is fully automated and takes less than 3 minutes using **Vercel**:
 
-Make sure you have Docker installed and running locally. Then run
-
+### Step 1: Push Code to GitHub
+Initialize your Git repository, commit the files, and push to GitHub:
 ```bash
-supabase start
+git init
+git add .
+git commit -m "feat: init gemini chatbot workspace"
+git remote add origin your-github-repo-url
+git branch -M main
+git push -u origin main
 ```
 
-To retrieve `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` run:
+### Step 2: Import Project to Vercel
+1. Log in to the [Vercel Dashboard](https://vercel.com).
+2. Click **Add New** > **Project**.
+3. Import your GitHub repository from the listed repositories.
 
-```bash
-supabase status
-```
+### Step 3: Configure Environment Variables
+In the Vercel **Environment Variables** settings panel, copy and paste the keys from your local `.env` file:
+* `GEMINI_API_KEY` (Your Google AI Studio Key)
+* `NEXT_PUBLIC_SUPABASE_URL` (Your Supabase endpoint URL)
+* `NEXT_PUBLIC_SUPABASE_ANON_KEY` (Your Supabase Client Anon Key)
+* `SUPABASE_SERVICE_ROLE_KEY` (Your Supabase Private Service Key)
 
-### Start the Next.js App
+### Step 4: Click Deploy
+Click the **Deploy** button. Vercel automatically:
+1. Installs all packages (including `pdf-parse`, `@supabase/supabase-js`, and Next.js).
+2. Compiles Next.js edge and serverless routes.
+3. Provisions a global edge CDN with a secure HTTPS domain.
 
-In a new terminal window, run
-
-```bash
-pnpm dev
-```
-
-### Using your custom .mdx docs
-
-1. By default your documentation will need to be in `.mdx` format. This can be done by renaming existing (or compatible) markdown `.md` file.
-2. Run `pnpm run embeddings` to regenerate embeddings.
-   > Note: Make sure supabase is running. To check, run `supabase status`. If is not running run `supabase start`.
-3. Run `pnpm dev` again to refresh NextJS localhost:3000 rendered page.
-
-## Learn More
-
-- Read the blogpost on how we built [ChatGPT for the Supabase Docs](https://supabase.com/blog/chatgpt-supabase-docs).
-- [[Docs] pgvector: Embeddings and vector similarity](https://supabase.com/docs/guides/database/extensions/pgvector)
-- Watch [Greg's](https://twitter.com/ggrdson) "How I built this" [video](https://youtu.be/Yhtjd7yGGGA) on the [Rabbit Hole Syndrome YouTube Channel](https://www.youtube.com/@RabbitHoleSyndrome):
-
-[![Video: How I Built Supabase’s OpenAI Doc Search](https://img.youtube.com/vi/Yhtjd7yGGGA/0.jpg)](https://www.youtube.com/watch?v=Yhtjd7yGGGA)
-
-## Licence
-
-Apache 2.0
