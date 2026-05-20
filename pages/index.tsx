@@ -42,6 +42,7 @@ interface UploadQueueFile {
   id: string
   file: File
   status: 'idle' | 'uploading' | 'success' | 'error'
+  progress: number
   error?: string
   chunks?: number
 }
@@ -122,7 +123,7 @@ export default function Home() {
           const updated = [...prev];
           updated[updated.length - 1] = {
             ...last,
-            text: 'Error generating response. Please check your connection and try again.',
+            text: `Error generating response: ${searchError.message || 'Please check your connection and try again.'}`,
             isLoading: false
           };
           return updated;
@@ -211,12 +212,42 @@ export default function Home() {
     }
   }
 
+  const MAX_FILE_SIZE = 15 * 1024 * 1024 // 15MB
+  const ALLOWED_EXTENSIONS = ['.pdf', '.md', '.txt', '.json', '.js', '.jsx', '.ts', '.tsx', '.css', '.yaml', '.yml']
+  const MAX_FILE_COUNT = 100
+
   const addFilesToQueue = (files: File[]) => {
-    const newQueueItems = files.map(file => ({
-      id: Math.random().toString(36).substring(7),
-      file,
-      status: 'idle' as const
-    }))
+    const currentCount = uploadQueue.length
+    const allowedNewFiles = files.slice(0, MAX_FILE_COUNT - currentCount)
+
+    if (files.length > allowedNewFiles.length) {
+      alert(`Queue limit: You can only upload up to ${MAX_FILE_COUNT} files simultaneously in the queue. Extra files were ignored.`)
+    }
+
+    const newQueueItems = allowedNewFiles.map(file => {
+      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
+      const isAllowedType = ALLOWED_EXTENSIONS.includes(ext)
+      const isAllowedSize = file.size <= MAX_FILE_SIZE
+
+      let status: 'idle' | 'error' = 'idle'
+      let error: string | undefined = undefined
+
+      if (!isAllowedType) {
+        status = 'error'
+        error = `Unsupported format (${ext || 'no extension'}). Supported: PDF, MD, TXT, JSON, Code.`
+      } else if (!isAllowedSize) {
+        status = 'error'
+        error = `Size exceeds 15MB limit.`
+      }
+
+      return {
+        id: Math.random().toString(36).substring(7),
+        file,
+        status,
+        progress: 0,
+        error
+      }
+    })
     setUploadQueue(prev => [...prev, ...newQueueItems])
   }
 
@@ -228,49 +259,84 @@ export default function Home() {
     setUploadQueue([])
   }
 
+  // Upload progress helper wrapping XMLHttpRequest
+  const uploadFileWithProgress = (
+    file: File,
+    base64Data: string,
+    onProgress: (percent: number) => void
+  ): Promise<any> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', '/api/upload', true)
+      xhr.setRequestHeader('Content-Type', 'application/json')
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100)
+          onProgress(Math.min(percent, 99)) // Cap at 99% until server responds
+        }
+      }
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const res = JSON.parse(xhr.responseText)
+            onProgress(100)
+            resolve(res)
+          } catch (_) {
+            reject(new Error('Invalid response from server'))
+          }
+        } else {
+          let errorMessage = `Upload failed: Status ${xhr.status}`
+          try {
+            const errorData = JSON.parse(xhr.responseText)
+            errorMessage = errorData.error || errorMessage
+          } catch (_) {
+            if (xhr.responseText) {
+              errorMessage = xhr.responseText.slice(0, 150)
+            }
+          }
+          reject(new Error(errorMessage))
+        }
+      }
+
+      xhr.onerror = () => {
+        reject(new Error('Network error occurred'))
+      }
+
+      xhr.send(
+        JSON.stringify({
+          filename: file.name,
+          base64: base64Data,
+        })
+      )
+    })
+  }
+
   // Process uploads sequentially to prevent API rate limits
   const startUpload = async () => {
-    if (uploadQueue.length === 0 || isUploading) return
+    // Only fetch items that are actually 'idle' (not error/success/uploading)
+    const pendingItems = uploadQueue.filter(q => q.status === 'idle')
+    if (pendingItems.length === 0 || isUploading) return
     setIsUploading(true)
 
     for (let index = 0; index < uploadQueue.length; index++) {
       const item = uploadQueue[index]
-      if (item.status === 'success') continue
+      if (item.status === 'success' || item.status === 'error') continue
 
       // Update state to uploading
-      setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'uploading' } : q))
+      setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'uploading', progress: 0 } : q))
 
       try {
         const base64Data = await readFileAsBase64(item.file)
-        const response = await fetch('/api/upload', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            filename: item.file.name,
-            base64: base64Data,
-          }),
+        const result = await uploadFileWithProgress(item.file, base64Data, (percent) => {
+          setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, progress: percent } : q))
         })
 
-        if (!response.ok) {
-          let errorMessage = `Upload failed: Status ${response.status}`
-          try {
-            const errorData = await response.json()
-            errorMessage = errorData.error || errorMessage
-          } catch (_) {
-            try {
-              const errorText = await response.text()
-              if (errorText) errorMessage = errorText.slice(0, 150)
-            } catch (_) {}
-          }
-          throw new Error(errorMessage)
-        }
-
-        const result = await response.json()
         setUploadQueue(prev => prev.map(q => q.id === item.id ? {
           ...q,
           status: 'success',
+          progress: 100,
           chunks: result.chunks
         } : q))
       } catch (err: any) {
@@ -278,6 +344,7 @@ export default function Home() {
         setUploadQueue(prev => prev.map(q => q.id === item.id ? {
           ...q,
           status: 'error',
+          progress: 0,
           error: err.message || 'Indexing failed'
         } : q))
       }
@@ -790,54 +857,66 @@ export default function Home() {
 
                   <div className="max-h-80 overflow-y-auto divide-y divide-slate-900 text-xs">
                     {uploadQueue.map(item => (
-                      <div key={item.id} className="p-3.5 flex items-center justify-between hover:bg-slate-900/30 transition">
-                        <div className="flex items-center space-x-3 min-w-0">
-                          <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="font-medium text-slate-300 truncate max-w-md">{item.file.name}</p>
-                            <p className="text-[10px] text-slate-500 mt-px">
-                              {(item.file.size / 1024).toFixed(1)} KB
-                            </p>
+                      <div key={item.id} className="p-3.5 flex flex-col hover:bg-slate-900/30 transition">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3 min-w-0">
+                            <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                            <div className="min-w-0">
+                              <p className="font-medium text-slate-300 truncate max-w-[200px] sm:max-w-md">{item.file.name}</p>
+                              <p className="text-[10px] text-slate-500 mt-px">
+                                {(item.file.size / 1024).toFixed(1)} KB
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center space-x-3 shrink-0">
+                            {item.status === 'idle' && (
+                              <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-semibold">
+                                Ready
+                              </span>
+                            )}
+                            {item.status === 'uploading' && (
+                              <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
+                                <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                {item.progress < 99 ? `Uploading (${item.progress}%)` : 'Embedding...'}
+                              </span>
+                            )}
+                            {item.status === 'success' && (
+                              <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
+                                <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                                Indexed ({item.chunks} chunks)
+                              </span>
+                            )}
+                            {item.status === 'error' && (
+                              <span
+                                title={item.error}
+                                className="text-[10px] bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded font-semibold flex items-center gap-1 max-w-[120px] sm:max-w-[200px] truncate cursor-help"
+                              >
+                                <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                                <span className="truncate">{item.error || 'Error'}</span>
+                              </span>
+                            )}
+
+                            {!isUploading && item.status !== 'success' && (
+                              <button
+                                onClick={() => removeFromQueue(item.id)}
+                                className="text-slate-500 hover:text-slate-300 transition"
+                              >
+                                <XCircle className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
                         </div>
 
-                        <div className="flex items-center space-x-3 shrink-0">
-                          {item.status === 'idle' && (
-                            <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-semibold">
-                              Ready
-                            </span>
-                          )}
-                          {item.status === 'uploading' && (
-                            <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
-                              <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                              Indexing Chunks
-                            </span>
-                          )}
-                          {item.status === 'success' && (
-                            <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
-                              <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
-                              Indexed ({item.chunks} chunks)
-                            </span>
-                          )}
-                          {item.status === 'error' && (
-                            <span
-                              title={item.error}
-                              className="text-[10px] bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded font-semibold flex items-center gap-1"
-                            >
-                              <XCircle className="w-3.5 h-3.5 text-red-400" />
-                              Error
-                            </span>
-                          )}
-
-                          {!isUploading && item.status !== 'success' && (
-                            <button
-                              onClick={() => removeFromQueue(item.id)}
-                              className="text-slate-500 hover:text-slate-300 transition"
-                            >
-                              <XCircle className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
+                        {/* Upload Progress Bar */}
+                        {item.status === 'uploading' && (
+                          <div className="w-full mt-2 bg-slate-950 rounded-full h-1 overflow-hidden relative border border-slate-900">
+                            <div
+                              className="bg-gradient-to-r from-emerald-500 to-teal-400 h-1 rounded-full transition-all duration-300 ease-out"
+                              style={{ width: `${item.progress}%` }}
+                            />
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
