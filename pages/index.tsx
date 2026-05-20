@@ -19,6 +19,7 @@ import {
   MessageSquare,
   Eye
 } from 'lucide-react'
+// @ts-ignore
 import { useCompletion } from 'ai/react'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -995,7 +996,7 @@ export default function Home() {
                   <ul className="space-y-3 text-xs text-slate-400">
                     <li className="flex items-start gap-2">
                       <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-1.5 shrink-0" />
-                      <span><strong>Query Embedding:</strong> Converts the user's natural query into a 768-dimension vector using the Gemini embedding API.</span>
+                      <span><strong>Query Embedding:</strong> Converts the user&apos;s natural query into a 768-dimension vector using the Gemini embedding API.</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-1.5 shrink-0" />

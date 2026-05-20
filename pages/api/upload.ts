@@ -54,7 +54,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       autoRefreshToken: false,
     },
     realtime: {
-      transport: class {},
+      transport: class {} as any,
     },
   })
 
@@ -91,19 +91,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const sanitizedContent = content.replace(/\u0000/g, '').replace(/\\u0000/g, '')
 
     const checksum = createHash('sha256').update(sanitizedContent).digest('hex')
-    const path = `uploaded/${filename}`
+    const documentPath = `uploaded/${filename}`
 
     // 1. Delete existing page record if it already exists (cascades to page sections)
     await supabaseClient
       .from('nods_page')
       .delete()
-      .eq('path', path)
+      .eq('path', documentPath)
 
     // 2. Insert parent page row
     const { data: page, error: pageError } = await supabaseClient
       .from('nods_page')
       .insert({
-        path,
+        path: documentPath,
         type: 'uploaded',
         source: 'web_upload',
         meta: {

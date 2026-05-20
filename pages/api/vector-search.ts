@@ -43,7 +43,7 @@ export default async function handler(req: NextRequest) {
         autoRefreshToken: false,
       },
       realtime: {
-        transport: class {},
+        transport: class {} as any,
       },
     })
 
@@ -67,7 +67,7 @@ export default async function handler(req: NextRequest) {
     )
 
     if (!embeddingResponse.ok) {
-      throw new ApplicationError('Failed to create embedding for question', await embeddingResponse.text())
+      throw new ApplicationError('Failed to create embedding for question', { errorText: await embeddingResponse.text() })
     }
 
     const embeddingData = await embeddingResponse.json()
@@ -145,7 +145,7 @@ export default async function handler(req: NextRequest) {
 
     if (!response.ok) {
       const errorText = await response.text()
-      throw new ApplicationError('Failed to generate completion', errorText)
+      throw new ApplicationError('Failed to generate completion', { errorText })
     }
 
     // Transform the Gemini SSE response stream into a readable text stream

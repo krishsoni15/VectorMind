@@ -15,7 +15,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       autoRefreshToken: false,
     },
     realtime: {
-      transport: class {},
+      transport: class {} as any,
     },
   })
 
