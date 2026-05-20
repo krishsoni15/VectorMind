@@ -160,61 +160,100 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const chunks = chunkText(sanitizedContent, 1000, 200)
     sendProgress('Chunking text', 40, `Created ${chunks.length} chunks`)
 
-    // 4. Generate embeddings and insert sections
-    for (let index = 0; index < chunks.length; index++) {
-      const chunk = chunks[index]
-      const sanitizedChunk = chunk.replace(/\n/g, ' ')
+    // Helper: embed a single chunk with retry + exponential backoff for 429 rate limits
+    const embedWithRetry = async (text: string, chunkIndex: number, maxRetries = 3): Promise<number[]> => {
+      const sanitizedChunk = text.replace(/\n/g, ' ')
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key=${geminiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: 'models/gemini-embedding-2',
+              content: { parts: [{ text: sanitizedChunk }] },
+              taskType: 'RETRIEVAL_DOCUMENT',
+              outputDimensionality: 768,
+            }),
+          }
+        )
 
-      const embeddingProgress = 40 + Math.round(((index + 1) / chunks.length) * 50)
-      sendProgress('Embedding', embeddingProgress, `Vectorizing chunk ${index + 1} of ${chunks.length}`)
-
-      // Call Gemini Embedding API
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key=${geminiKey}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'models/gemini-embedding-2',
-            content: {
-              parts: [{ text: sanitizedChunk }],
-            },
-            taskType: 'RETRIEVAL_DOCUMENT',
-            outputDimensionality: 768,
-          }),
+        if (response.status === 429 && attempt < maxRetries) {
+          // Parse retry delay from response, default to exponential backoff
+          let waitMs = (attempt + 1) * 15000 // 15s, 30s, 45s
+          try {
+            const errBody = await response.json()
+            const retryDelay = errBody?.error?.details?.find((d: any) => d.retryDelay)?.retryDelay
+            if (retryDelay) {
+              const seconds = parseInt(retryDelay, 10)
+              if (!isNaN(seconds)) waitMs = (seconds + 2) * 1000
+            }
+          } catch {}
+          sendProgress('Rate limited', 40 + Math.round((chunkIndex / chunks.length) * 50),
+            `API rate limit hit — waiting ${Math.ceil(waitMs / 1000)}s before retrying chunk ${chunkIndex + 1}`)
+          await new Promise(r => setTimeout(r, waitMs))
+          continue
         }
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(`Embedding API error for chunk ${chunkIndex + 1}: ${response.status} - ${errorText}`)
+        }
+
+        const data = await response.json()
+        const embedding = data.embedding?.values
+        if (!embedding) {
+          throw new Error(`No embedding returned for chunk ${chunkIndex + 1}`)
+        }
+        return embedding
+      }
+      throw new Error(`Embedding failed for chunk ${chunkIndex + 1} after ${maxRetries} retries`)
+    }
+
+    // Process embeddings in small batches of 5 with a delay between batches
+    // to stay under the Gemini free-tier limit of 100 requests/minute
+    const batchSize = 5
+    const interBatchDelayMs = 1500
+    const sectionsToInsert: any[] = []
+
+    for (let i = 0; i < chunks.length; i += batchSize) {
+      const currentBatch = chunks.slice(i, i + batchSize)
+      const batchEnd = Math.min(i + batchSize, chunks.length)
+      const embeddingProgress = 40 + Math.round((i / chunks.length) * 50)
+      sendProgress('Embedding', embeddingProgress, `Vectorizing chunks ${i + 1}–${batchEnd} of ${chunks.length}`)
+
+      const batchResults = await Promise.all(
+        currentBatch.map(async (chunk, batchIndex) => {
+          const globalIndex = i + batchIndex
+          const embedding = await embedWithRetry(chunk, globalIndex)
+          const tokenCount = Math.ceil(chunk.length / 4)
+          return {
+            page_id: page.id,
+            slug: `section-${globalIndex + 1}`,
+            heading: `Section ${globalIndex + 1}`,
+            content: chunk,
+            token_count: tokenCount,
+            embedding,
+          }
+        })
       )
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`Gemini API error during embedding generation: ${response.status} - ${errorText}`)
+      sectionsToInsert.push(...batchResults)
+
+      // Pause between batches to stay under 100 req/min
+      if (i + batchSize < chunks.length) {
+        await new Promise(r => setTimeout(r, interBatchDelayMs))
       }
+    }
 
-      const responseData = await response.json()
-      const embedding = responseData.embedding?.values
+    // Bulk-insert all sections in one call
+    sendProgress('Finalizing', 90, 'Saving embeddings to database')
+    const { error: sectionError } = await supabaseClient
+      .from('nods_page_section')
+      .insert(sectionsToInsert)
 
-      if (!embedding) {
-        throw new Error('Failed to retrieve embedding values from Gemini API response')
-      }
-
-      const tokenCount = Math.ceil(chunk.length / 4)
-
-      const { error: sectionError } = await supabaseClient
-        .from('nods_page_section')
-        .insert({
-          page_id: page.id,
-          slug: `section-${index + 1}`,
-          heading: `Section ${index + 1}`,
-          content: chunk,
-          token_count: tokenCount,
-          embedding,
-        })
-
-      if (sectionError) {
-        throw new Error(`Failed to insert section ${index + 1}: ${sectionError.message}`)
-      }
+    if (sectionError) {
+      throw new Error(`Failed to insert sections to database: ${sectionError.message}`)
     }
 
     // 5. Update checksum upon successful completion

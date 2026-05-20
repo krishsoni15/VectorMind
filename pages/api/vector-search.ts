@@ -90,9 +90,26 @@ export default async function handler(req: NextRequest) {
       throw new ApplicationError('Failed to match page sections', matchError)
     }
 
+    // Fetch page paths for the matched sections to display as source documents
+    const pageIds = Array.from(new Set((pageSections || []).map((s: any) => s.page_id)))
+    const pageMap = new Map<number, string>()
+    if (pageIds.length > 0) {
+      const { data: pages } = await supabaseClient
+        .from('nods_page')
+        .select('id, path')
+        .in('id', pageIds)
+      
+      if (pages) {
+        pages.forEach((p: any) => {
+          pageMap.set(p.id, p.path)
+        })
+      }
+    }
+
     // Simple character-based token estimation (avoids GPT3Tokenizer edge runtime issues)
     let charCount = 0
     let contextText = ''
+    const sourceFiles = new Set<string>()
 
     for (let i = 0; i < pageSections.length; i++) {
       const pageSection = pageSections[i]
@@ -105,6 +122,25 @@ export default async function handler(req: NextRequest) {
       }
 
       contextText += `${content.trim()}\n---\n`
+      
+      // Track which source files contributed to the answer
+      const pagePath = pageMap.get(pageSection.page_id)
+      if (pagePath) {
+        sourceFiles.add(pagePath)
+      }
+    }
+
+    // If no relevant sections found, return a helpful message
+    if (!contextText.trim()) {
+      const noResultsMsg = "I couldn't find any relevant information in your indexed documents for this query. Please make sure you have uploaded documents related to this topic, or try rephrasing your question."
+      const encoder = new TextEncoder()
+      const noResultStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(noResultsMsg))
+          controller.close()
+        },
+      })
+      return new StreamingTextResponse(noResultStream)
     }
 
     const prompt = codeBlock`
@@ -112,9 +148,10 @@ export default async function handler(req: NextRequest) {
         You are a knowledgeable document analysis assistant for the VectorMind platform.
         Given the following sections from the user's indexed documents,
         answer the question using only that information,
-        outputted in markdown format. If you are unsure and the answer
+        outputted in markdown format. Be thorough, detailed, and cite specific facts.
+        If you are unsure and the answer
         is not explicitly written in the documents, say
-        "Sorry, I couldn't find relevant information in your indexed documents."
+        "Sorry, I couldn't find relevant information in your indexed documents for this specific question."
       `}
 
       Context sections:
@@ -128,7 +165,7 @@ export default async function handler(req: NextRequest) {
     `
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${geminiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:streamGenerateContent?alt=sse&key=${geminiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -147,11 +184,21 @@ export default async function handler(req: NextRequest) {
       throw new ApplicationError('Failed to generate completion', { errorText })
     }
 
+    // Build source files metadata prefix
+    const sourcesPrefix = sourceFiles.size > 0
+      ? `[SOURCES:${Array.from(sourceFiles).join('|')}]\n`
+      : ''
+
     // Transform the Gemini SSE response stream into a readable text stream
     const encoder = new TextEncoder()
     const decoder = new TextDecoder()
     const stream = new ReadableStream({
       async start(controller) {
+        // Prepend source file metadata so the client can parse it
+        if (sourcesPrefix) {
+          controller.enqueue(encoder.encode(sourcesPrefix))
+        }
+
         if (!response.body) {
           controller.close()
           return

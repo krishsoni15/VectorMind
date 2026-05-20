@@ -54,6 +54,7 @@ interface Message {
   text: string
   timestamp: Date
   isLoading?: boolean
+  sources?: string[]
 }
 
 const SUGGESTIONS = [
@@ -71,6 +72,19 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([])
   const chatEndRef = useRef<HTMLDivElement>(null)
 
+  const parseSourcesAndText = (rawText: string): { text: string; sources?: string[] } => {
+    if (rawText.startsWith('[SOURCES:')) {
+      const endIdx = rawText.indexOf(']\n')
+      if (endIdx !== -1) {
+        const sourcesStr = rawText.slice(9, endIdx)
+        const text = rawText.slice(endIdx + 2)
+        const sources = sourcesStr ? sourcesStr.split('|') : []
+        return { text, sources }
+      }
+    }
+    return { text: rawText }
+  }
+
   const { complete, completion, isLoading: isSearchLoading, error: searchError } = useCompletion({
     api: '/api/vector-search',
     onFinish: (prompt, finishedCompletion) => {
@@ -78,10 +92,12 @@ export default function Home() {
         const last = prev[prev.length - 1];
         if (last && last.id === 'completion-active') {
           const updated = [...prev];
+          const parsed = parseSourcesAndText(finishedCompletion);
           updated[updated.length - 1] = {
             ...last,
             id: Math.random().toString(),
-            text: finishedCompletion,
+            text: parsed.text,
+            sources: parsed.sources,
             isLoading: false
           };
           return updated;
@@ -103,9 +119,11 @@ export default function Home() {
         const last = prev[prev.length - 1];
         if (last && last.id === 'completion-active') {
           const updated = [...prev];
+          const parsed = parseSourcesAndText(completion);
           updated[updated.length - 1] = {
             ...last,
-            text: completion,
+            text: parsed.text,
+            sources: parsed.sources,
             isLoading: false
           };
           return updated;
@@ -141,6 +159,38 @@ export default function Home() {
   const [libraryFilter, setLibraryFilter] = useState('')
   const [previewDocUrl, setPreviewDocUrl] = useState<string | null>(null)
   const [previewDocName, setPreviewDocName] = useState<string | null>(null)
+  const [previewDocContent, setPreviewDocContent] = useState<string | null>(null)
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false)
+
+  const triggerPreview = async (path: string, displayName: string) => {
+    setIsPreviewLoading(true)
+    setPreviewDocName(displayName)
+    setPreviewDocContent(null)
+    setPreviewDocUrl(null)
+
+    const isPDF = displayName.toLowerCase().endsWith('.pdf')
+    const isUploaded = path.startsWith('uploaded/')
+
+    if (isPDF && isUploaded) {
+      setPreviewDocUrl(`/uploads/${displayName}`)
+      setIsPreviewLoading(false)
+    } else {
+      try {
+        const res = await fetch(`/api/documents?path=${encodeURIComponent(path)}`)
+        if (res.ok) {
+          const data = await res.json()
+          setPreviewDocContent(data.content)
+        } else {
+          setPreviewDocContent("Failed to load document content.")
+        }
+      } catch (err: any) {
+        console.error('Error fetching preview:', err)
+        setPreviewDocContent("An error occurred while loading preview.")
+      } finally {
+        setIsPreviewLoading(false)
+      }
+    }
+  }
   
   // Upload State
   const [uploadQueue, setUploadQueue] = useState<UploadQueueFile[]>([])
@@ -223,9 +273,30 @@ export default function Home() {
 
   const addFilesToQueue = (files: File[]) => {
     const currentCount = uploadQueue.length
-    const allowedNewFiles = files.slice(0, MAX_FILE_COUNT - currentCount)
+    const finalFilesToAdd: File[] = []
 
-    if (files.length > allowedNewFiles.length) {
+    for (const file of files) {
+      const isAlreadyIndexed = documents.some(doc => 
+        doc.meta?.filename === file.name || 
+        doc.path === 'uploaded/' + file.name || 
+        doc.path === file.name
+      )
+      const isAlreadyInQueue = uploadQueue.some(item => item.file.name === file.name)
+
+      if (isAlreadyIndexed || isAlreadyInQueue) {
+        const proceed = confirm(`"${file.name}" has already been uploaded/indexed or is in the queue. Do you want to re-upload and overwrite it?`)
+        if (!proceed) {
+          continue
+        }
+      }
+      finalFilesToAdd.push(file)
+    }
+
+    if (finalFilesToAdd.length === 0) return
+
+    const allowedNewFiles = finalFilesToAdd.slice(0, MAX_FILE_COUNT - currentCount)
+
+    if (finalFilesToAdd.length > allowedNewFiles.length) {
       alert(`Queue limit: You can only upload up to ${MAX_FILE_COUNT} files simultaneously in the queue. Extra files were ignored.`)
     }
 
@@ -565,7 +636,7 @@ export default function Home() {
             </div>
             <div className="flex items-center space-x-2 text-xs font-semibold text-slate-400">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>Gemini 2.5 Flash Connected</span>
+              <span>Gemini 2.5 Flash Lite Connected</span>
             </div>
           </div>
         </header>
@@ -760,9 +831,29 @@ export default function Home() {
                                 <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                               </div>
                             ) : (
-                              <div className="whitespace-pre-wrap">
-                                {isUser ? msg.text : renderMarkdown(msg.text)}
-                              </div>
+                              <>
+                                <div className="whitespace-pre-wrap">
+                                  {isUser ? msg.text : renderMarkdown(msg.text)}
+                                </div>
+                                {!isUser && msg.sources && msg.sources.length > 0 && (
+                                  <div className="mt-3 pt-2.5 border-t border-slate-900/60 flex flex-wrap gap-2 items-center">
+                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Source Documents:</span>
+                                    {msg.sources.map((src, srcIdx) => {
+                                      const filename = src.split('/').pop() || src
+                                      return (
+                                        <button
+                                          key={srcIdx}
+                                          onClick={() => triggerPreview(src, filename)}
+                                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-950 hover:bg-slate-900 border border-slate-850 hover:border-slate-800 text-[10px] font-semibold text-emerald-400 hover:text-emerald-300 transition"
+                                        >
+                                          <FileText className="w-3 h-3 text-emerald-500" />
+                                          <span>{filename}</span>
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                )}
+                              </>
                             )}
                           </div>
 
@@ -1036,18 +1127,15 @@ export default function Home() {
                                 : 'Pre-indexed'}
                             </td>
                             <td className="p-4 text-right space-x-2 whitespace-nowrap">
-                              {doc.meta?.filename && (
-                                <button
-                                  onClick={() => {
-                                    setPreviewDocUrl(`/uploads/${doc.meta?.filename}`)
-                                    setPreviewDocName(doc.meta?.filename || 'Document')
-                                  }}
-                                  className="text-emerald-400 hover:text-emerald-300 p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 rounded border border-emerald-500/10 transition inline-flex items-center justify-center"
-                                  title="Preview Document"
-                                >
-                                  <Eye className="w-4 h-4" />
-                                </button>
-                              )}
+                              <button
+                                onClick={() => {
+                                  triggerPreview(doc.path, doc.meta?.filename || doc.path)
+                                }}
+                                className="text-emerald-400 hover:text-emerald-300 p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 rounded border border-emerald-500/10 transition inline-flex items-center justify-center"
+                                title="Preview Document"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
                               <button
                                 onClick={() => handleDeleteDocument(doc.id)}
                                 disabled={deletingIds.includes(doc.id)}
@@ -1258,33 +1346,45 @@ export default function Home() {
         </footer>
 
         {/* PDF / Document Preview Modal */}
-        {previewDocUrl && (
+        {(previewDocUrl || previewDocContent || isPreviewLoading) && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col h-[85vh]">
               {/* Modal Header */}
               <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/40 flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <FileText className="w-5 h-5 text-emerald-400" />
-                  <span className="text-xs font-bold text-slate-200 truncate max-w-lg">{previewDocName}</span>
+                  <span className="text-xs font-bold text-slate-200 truncate max-w-lg">{previewDocName || 'Loading Document...'}</span>
                 </div>
                 <button
                   onClick={() => {
                     setPreviewDocUrl(null)
                     setPreviewDocName(null)
+                    setPreviewDocContent(null)
                   }}
-                  className="text-xs font-bold text-slate-400 hover:text-slate-250 px-3 py-1.5 rounded-lg border border-slate-800 hover:border-slate-700 bg-slate-950/40 transition animate-pulse"
+                  className="text-xs font-bold text-slate-400 hover:text-slate-200 px-3 py-1.5 rounded-lg border border-slate-800 hover:border-slate-700 bg-slate-950/40 transition"
                 >
                   Close Preview
                 </button>
               </div>
 
               {/* Modal Body */}
-              <div className="flex-1 bg-slate-950 p-4">
-                <iframe
-                  src={previewDocUrl}
-                  className="w-full h-full rounded-xl border border-slate-900 bg-slate-900"
-                  title="Document Preview"
-                />
+              <div className="flex-1 bg-slate-950 p-6 overflow-y-auto">
+                {isPreviewLoading ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center space-y-3 text-slate-400">
+                    <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
+                    <span className="text-xs font-semibold">Retrieving document content...</span>
+                  </div>
+                ) : previewDocUrl ? (
+                  <iframe
+                    src={previewDocUrl}
+                    className="w-full h-full rounded-xl border border-slate-900 bg-slate-900"
+                    title="Document Preview"
+                  />
+                ) : (
+                  <div className="text-xs text-slate-300 font-mono whitespace-pre-wrap leading-relaxed max-w-4xl mx-auto selection:bg-emerald-500/20">
+                    {previewDocContent}
+                  </div>
+                )}
               </div>
             </div>
           </div>
