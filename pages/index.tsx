@@ -136,6 +136,7 @@ export default function Home() {
   // Library State
   const [documents, setDocuments] = useState<IndexedDocument[]>([])
   const [isLibraryLoading, setIsLibraryLoading] = useState(false)
+  const [deletingIds, setDeletingIds] = useState<string[]>([])
   const [libraryFilter, setLibraryFilter] = useState('')
   const [previewDocUrl, setPreviewDocUrl] = useState<string | null>(null)
   const [previewDocName, setPreviewDocName] = useState<string | null>(null)
@@ -171,6 +172,7 @@ export default function Home() {
     if (!confirm('Are you sure you want to delete this document? This will remove all its text sections and vector embeddings from the search index.')) {
       return
     }
+    setDeletingIds(prev => [...prev, id])
     try {
       const res = await fetch(`/api/documents?id=${id}`, {
         method: 'DELETE',
@@ -183,6 +185,8 @@ export default function Home() {
     } catch (err) {
       console.error('Delete error:', err)
       alert('An error occurred during deletion')
+    } finally {
+      setDeletingIds(prev => prev.filter(x => x !== id))
     }
   }
 
@@ -1016,10 +1020,15 @@ export default function Home() {
                               )}
                               <button
                                 onClick={() => handleDeleteDocument(doc.id)}
-                                className="text-red-400 hover:text-red-300 p-1.5 bg-red-500/10 hover:bg-red-500/20 rounded border border-red-500/10 transition inline-flex items-center justify-center"
+                                disabled={deletingIds.includes(doc.id)}
+                                className="text-red-400 hover:text-red-300 disabled:opacity-50 p-1.5 bg-red-500/10 hover:bg-red-500/20 rounded border border-red-500/10 transition inline-flex items-center justify-center"
                                 title="Delete Document"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                {deletingIds.includes(doc.id) ? (
+                                  <Loader2 className="w-4 h-4 animate-spin text-red-400" />
+                                ) : (
+                                  <Trash2 className="w-4 h-4" />
+                                )}
                               </button>
                             </td>
                           </tr>

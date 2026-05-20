@@ -1,5 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { createClient } from '@supabase/supabase-js'
+import fs from 'fs'
+import path from 'path'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -55,6 +57,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ error: 'Document ID is required' })
       }
 
+      // Fetch the page details to get the file path/type
+      const { data: page, error: fetchError } = await supabaseClient
+        .from('nods_page')
+        .select('path, type')
+        .eq('id', id)
+        .maybeSingle()
+
+      if (fetchError) {
+        throw fetchError
+      }
+
+      // Delete the record from Supabase (cascades to nods_page_section)
       const { error } = await supabaseClient
         .from('nods_page')
         .delete()
@@ -62,6 +76,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       if (error) {
         throw error
+      }
+
+      // If it is an uploaded file, delete its local preview copy from public/uploads
+      if (page && page.type === 'uploaded' && page.path) {
+        const filename = page.path.replace('uploaded/', '')
+        const filePath = path.join(process.cwd(), 'public', 'uploads', filename)
+        try {
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath)
+          }
+        } catch (fsErr) {
+          console.error('Failed to delete local copy of uploaded file:', fsErr)
+        }
       }
 
       return res.status(200).json({ success: true })
