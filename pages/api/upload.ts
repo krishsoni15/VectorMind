@@ -3,8 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 import { createHash } from 'crypto'
 import fs from 'fs'
 import path from 'path'
+
+// Use the legacy pdfjs build which does NOT require browser DOM APIs (DOMMatrix etc.)
+// The standard pdfjs-dist build crashes on Vercel/Node because it needs DOMMatrix
 // @ts-ignore
-import { PDFParse } from 'pdf-parse'
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 
 const geminiKey = process.env.GEMINI_API_KEY
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -76,10 +79,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (filename.toLowerCase().endsWith('.pdf')) {
       try {
-        const parser = new PDFParse({ data: new Uint8Array(buffer) })
-        const result = await parser.getText()
-        content = result.text || ''
-        await parser.destroy()
+        // Use pdfjs-dist legacy Node build to extract text from each page
+        const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) })
+        const pdfDoc = await loadingTask.promise
+        const pageTexts: string[] = []
+        for (let i = 1; i <= pdfDoc.numPages; i++) {
+          const page = await pdfDoc.getPage(i)
+          const tokenizedText = await page.getTextContent()
+          const pageText = tokenizedText.items
+            // @ts-ignore
+            .map((item: any) => item.str)
+            .join(' ')
+          pageTexts.push(pageText)
+        }
+        content = pageTexts.join('\n\n')
+        await pdfDoc.destroy()
       } catch (err: any) {
         throw new Error(`Failed to parse PDF file: ${err.message}`)
       }
