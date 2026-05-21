@@ -10,7 +10,7 @@ import { mdxFromMarkdown, MdxjsEsm } from 'mdast-util-mdx'
 import { toMarkdown } from 'mdast-util-to-markdown'
 import { toString } from 'mdast-util-to-string'
 import { mdxjs } from 'micromark-extension-mdxjs'
-// Removed openai imports
+// Using Gemini embedding API
 import { basename, dirname, join } from 'path'
 import { u } from 'unist-builder'
 import { filter } from 'unist-util-filter'
@@ -413,7 +413,7 @@ async function generateEmbeddings() {
 
       console.log(`[${path}] Adding ${sections.length} page sections (with embeddings)`)
       for (const { slug, heading, content } of sections) {
-        // OpenAI recommends replacing newlines with spaces for best results (specific to embeddings)
+        // Replace newlines with spaces for cleaner embedding input
         const input = content.replace(/\n/g, ' ')
 
         try {

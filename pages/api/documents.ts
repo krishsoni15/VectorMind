@@ -22,41 +22,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   })
 
   if (req.method === 'GET') {
-    const { id, path: pagePath } = req.query
-    if (id || pagePath) {
-      try {
-        let query = supabaseClient.from('nods_page').select('id, path, type, meta')
-        if (id) {
-          query = query.eq('id', id)
-        } else {
-          query = query.eq('path', pagePath)
-        }
-        const { data: page, error: pageError } = await query.maybeSingle()
-        if (pageError) throw pageError
-        if (!page) return res.status(404).json({ error: 'Document not found' })
-
-        const { data: sections, error: sectionsError } = await supabaseClient
-          .from('nods_page_section')
-          .select('content, heading, slug')
-          .eq('page_id', page.id)
-          .order('id', { ascending: true })
-
-        if (sectionsError) throw sectionsError
-
-        const combinedContent = (sections || []).map(s => s.content).join('\n\n')
-        return res.status(200).json({
-          id: page.id,
-          path: page.path,
-          type: page.type,
-          meta: page.meta,
-          content: combinedContent
-        })
-      } catch (err: any) {
-        console.error('Error fetching document content:', err)
-        return res.status(500).json({ error: err.message || 'Failed to fetch document content' })
-      }
-    }
-
     try {
       const { data: pages, error } = await supabaseClient
         .from('nods_page')

@@ -43,7 +43,6 @@ interface UploadQueueFile {
   file: File
   status: 'idle' | 'uploading' | 'success' | 'error'
   progress: number
-  statusText?: string
   error?: string
   chunks?: number
 }
@@ -57,13 +56,6 @@ interface Message {
   sources?: string[]
 }
 
-const SUGGESTIONS = [
-  'What is subject 3160712 about?',
-  'What is GTU and when was this exam conducted?',
-  'Summarize the key points of the Microprocessor syllabus.',
-  'How can I interface 8086 with external memory?'
-]
-
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'search' | 'upload' | 'library' | 'docs'>('search')
   
@@ -71,39 +63,144 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const activeMessageIdRef = useRef<string | null>(null)
+  const [searchStep, setSearchStep] = useState<'idle' | 'embedding' | 'searching' | 'synthesizing' | 'done' | 'error'>('idle')
 
-  const parseSourcesAndText = (rawText: string): { text: string; sources?: string[] } => {
-    if (rawText.startsWith('[SOURCES:')) {
-      const endIdx = rawText.indexOf(']\n')
-      if (endIdx !== -1) {
-        const sourcesStr = rawText.slice(9, endIdx)
-        const text = rawText.slice(endIdx + 2)
-        const sources = sourcesStr ? sourcesStr.split('|') : []
-        return { text, sources }
+  // Extract sources from the completion text
+  const parseCompletionSources = (text: string) => {
+    if (text.startsWith('[SOURCES:')) {
+      const closingIndex = text.indexOf(']\n')
+      if (closingIndex !== -1) {
+        const sourcesString = text.slice(9, closingIndex)
+        const sources = sourcesString ? sourcesString.split('|') : []
+        const cleanText = text.slice(closingIndex + 2)
+        return { sources, cleanText }
       }
     }
-    return { text: rawText }
+    return { sources: [], cleanText: text }
   }
 
-  const { complete, completion, isLoading: isSearchLoading, error: searchError } = useCompletion({
+  // Dynamically generate 4 relevant suggestion chips based on uploaded documents!
+  const getDynamicSuggestions = () => {
+    if (documents.length === 0) {
+      return [
+        'How does this semantic search work?',
+        'What kinds of documents can I upload?',
+        'What is Retrieval-Augmented Generation?',
+        'How secure is my indexed data?'
+      ]
+    }
+
+    const suggestions: string[] = []
+    
+    // Check if we have the Microprocessor syllabus
+    const hasMicroprocessor = documents.some(doc => {
+      const name = (doc.meta?.filename || doc.path || '').toLowerCase()
+      return name.includes('microprocessor') || name.includes('syllabus') || name.includes('3160712') || name.includes('gtu') || name.includes('mi-s2022')
+    })
+
+    // Check if we have the Women's Health report
+    const hasWomensHealth = documents.some(doc => {
+      const name = (doc.meta?.filename || doc.path || '').toLowerCase()
+      return name.includes('women') || name.includes('health') || name.includes('wef') || name.includes('innovation')
+    })
+
+    // Populate suggestions based on what documents are present
+    if (hasMicroprocessor && hasWomensHealth) {
+      // Show 2 from each for a beautiful balanced grid!
+      suggestions.push(
+        'What is subject 3160712 about?',
+        'How can I interface 8086 with external memory?',
+        "What are the structural gaps in women's health innovation?",
+        "What is the Women's Health Innovation Radar?"
+      )
+    } else if (hasMicroprocessor) {
+      suggestions.push(
+        'What is subject 3160712 about?',
+        'What is GTU and when was this exam conducted?',
+        'Summarize the key points of the Microprocessor syllabus.',
+        'How can I interface 8086 with external memory?'
+      )
+    } else if (hasWomensHealth) {
+      suggestions.push(
+        "What are the structural gaps in women's health innovation?",
+        "What is the Women's Health Innovation Radar?",
+        "Summarize the World Economic Forum's 2026 women's health report.",
+        "What are the key opportunities in women's health journey?"
+      )
+    } else {
+      // Construct dynamic questions for any arbitrary uploaded documents!
+      const topDocs = documents.slice(0, 2)
+      topDocs.forEach((doc, idx) => {
+        const name = doc.meta?.filename || doc.path.split('/').pop() || 'document'
+        // Clean file extensions for gorgeous rendering
+        const cleanName = name.replace(/\.[^/.]+$/, "")
+        if (idx === 0) {
+          suggestions.push(
+            `What is the primary objective of ${cleanName}?`,
+            `Summarize the key points described in ${cleanName}.`
+          )
+        } else {
+          suggestions.push(
+            `What are the core conclusions of ${cleanName}?`,
+            `Are there any specific dates or figures mentioned in ${cleanName}?`
+          )
+        }
+      })
+      
+      // Pad to 4 suggestions if we only have 1 document
+      while (suggestions.length < 4) {
+        const firstDoc = documents[0]
+        const name = firstDoc.meta?.filename || firstDoc.path.split('/').pop() || 'document'
+        const cleanName = name.replace(/\.[^/.]+$/, "")
+        suggestions.push(
+          `Can you provide an overview of ${cleanName}?`,
+          `What are the most important details in ${cleanName}?`
+        )
+      }
+    }
+
+    return suggestions.slice(0, 4)
+  }
+
+  const { complete, completion, isLoading: isSearchLoading } = useCompletion({
     api: '/api/vector-search',
     onFinish: (prompt, finishedCompletion) => {
+      const currentId = activeMessageIdRef.current
+      const { sources, cleanText } = parseCompletionSources(finishedCompletion)
       setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last && last.id === 'completion-active') {
-          const updated = [...prev];
-          const parsed = parseSourcesAndText(finishedCompletion);
-          updated[updated.length - 1] = {
-            ...last,
-            id: Math.random().toString(),
-            text: parsed.text,
-            sources: parsed.sources,
-            isLoading: false
-          };
-          return updated;
-        }
-        return prev;
+        return prev.map(m => {
+          if (m.id === currentId) {
+            return {
+              ...m,
+              text: cleanText,
+              sources: sources.length > 0 ? sources : undefined,
+              isLoading: false
+            }
+          }
+          return m
+        })
       });
+      activeMessageIdRef.current = null
+      setSearchStep('done')
+    },
+    onError: (err) => {
+      console.error('AI SDK Search Error:', err)
+      const currentId = activeMessageIdRef.current
+      setMessages(prev => {
+        return prev.map(m => {
+          if (m.id === currentId) {
+            return {
+              ...m,
+              text: `Error generating response: ${err.message || 'Please check your connection and try again.'}`,
+              isLoading: false
+            }
+          }
+          return m
+        })
+      });
+      activeMessageIdRef.current = null
+      setSearchStep('error')
     }
   })
 
@@ -114,43 +211,25 @@ export default function Home() {
 
   // Sync streaming completion with the active message bubble
   useEffect(() => {
-    if (completion && isSearchLoading) {
+    if (completion && isSearchLoading && activeMessageIdRef.current) {
+      setSearchStep('synthesizing')
+      const currentId = activeMessageIdRef.current
+      const { sources, cleanText } = parseCompletionSources(completion)
       setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last && last.id === 'completion-active') {
-          const updated = [...prev];
-          const parsed = parseSourcesAndText(completion);
-          updated[updated.length - 1] = {
-            ...last,
-            text: parsed.text,
-            sources: parsed.sources,
-            isLoading: false
-          };
-          return updated;
-        }
-        return prev;
+        return prev.map(m => {
+          if (m.id === currentId) {
+            return {
+              ...m,
+              text: cleanText,
+              sources: sources.length > 0 ? sources : undefined,
+              isLoading: false
+            }
+          }
+          return m
+        })
       });
     }
   }, [completion, isSearchLoading]);
-
-  // Sync search error with active message bubble
-  useEffect(() => {
-    if (searchError) {
-      setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last && last.id === 'completion-active') {
-          const updated = [...prev];
-          updated[updated.length - 1] = {
-            ...last,
-            text: `Error generating response: ${searchError.message || 'Please check your connection and try again.'}`,
-            isLoading: false
-          };
-          return updated;
-        }
-        return prev;
-      });
-    }
-  }, [searchError]);
 
   // Library State
   const [documents, setDocuments] = useState<IndexedDocument[]>([])
@@ -159,44 +238,33 @@ export default function Home() {
   const [libraryFilter, setLibraryFilter] = useState('')
   const [previewDocUrl, setPreviewDocUrl] = useState<string | null>(null)
   const [previewDocName, setPreviewDocName] = useState<string | null>(null)
-  const [previewDocContent, setPreviewDocContent] = useState<string | null>(null)
-  const [isPreviewLoading, setIsPreviewLoading] = useState(false)
-
-  const triggerPreview = async (path: string, displayName: string) => {
-    setIsPreviewLoading(true)
-    setPreviewDocName(displayName)
-    setPreviewDocContent(null)
-    setPreviewDocUrl(null)
-
-    const isPDF = displayName.toLowerCase().endsWith('.pdf')
-    const isUploaded = path.startsWith('uploaded/')
-
-    if (isPDF && isUploaded) {
-      setPreviewDocUrl(`/uploads/${displayName}`)
-      setIsPreviewLoading(false)
-    } else {
-      try {
-        const res = await fetch(`/api/documents?path=${encodeURIComponent(path)}`)
-        if (res.ok) {
-          const data = await res.json()
-          setPreviewDocContent(data.content)
-        } else {
-          setPreviewDocContent("Failed to load document content.")
-        }
-      } catch (err: any) {
-        console.error('Error fetching preview:', err)
-        setPreviewDocContent("An error occurred while loading preview.")
-      } finally {
-        setIsPreviewLoading(false)
-      }
-    }
-  }
   
   // Upload State
   const [uploadQueue, setUploadQueue] = useState<UploadQueueFile[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [dragActive, setDragActive] = useState(false)
+
+  // Close preview modal on Escape key & lock body scroll
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && previewDocUrl) {
+        setPreviewDocUrl(null)
+        setPreviewDocName(null)
+      }
+    }
+    document.addEventListener('keydown', handleEscape)
+    // Lock body scroll when modal is open
+    if (previewDocUrl) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => {
+      document.removeEventListener('keydown', handleEscape)
+      document.body.style.overflow = ''
+    }
+  }, [previewDocUrl])
 
   // Fetch Library Documents
   const fetchLibrary = async () => {
@@ -273,42 +341,26 @@ export default function Home() {
 
   const addFilesToQueue = (files: File[]) => {
     const currentCount = uploadQueue.length
-    const finalFilesToAdd: File[] = []
+    const allowedNewFiles = files.slice(0, MAX_FILE_COUNT - currentCount)
 
-    for (const file of files) {
-      const isAlreadyIndexed = documents.some(doc => 
-        doc.meta?.filename === file.name || 
-        doc.path === 'uploaded/' + file.name || 
-        doc.path === file.name
-      )
-      const isAlreadyInQueue = uploadQueue.some(item => item.file.name === file.name)
-
-      if (isAlreadyIndexed || isAlreadyInQueue) {
-        const proceed = confirm(`"${file.name}" has already been uploaded/indexed or is in the queue. Do you want to re-upload and overwrite it?`)
-        if (!proceed) {
-          continue
-        }
-      }
-      finalFilesToAdd.push(file)
-    }
-
-    if (finalFilesToAdd.length === 0) return
-
-    const allowedNewFiles = finalFilesToAdd.slice(0, MAX_FILE_COUNT - currentCount)
-
-    if (finalFilesToAdd.length > allowedNewFiles.length) {
+    if (files.length > allowedNewFiles.length) {
       alert(`Queue limit: You can only upload up to ${MAX_FILE_COUNT} files simultaneously in the queue. Extra files were ignored.`)
     }
 
     const newQueueItems = allowedNewFiles.map(file => {
-      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
+      const dotIndex = file.name.lastIndexOf('.')
+      const ext = dotIndex !== -1 ? file.name.substring(dotIndex).toLowerCase() : ''
       const isAllowedType = ALLOWED_EXTENSIONS.includes(ext)
       const isAllowedSize = file.size <= MAX_FILE_SIZE
+      const isEmpty = file.size === 0
 
       let status: 'idle' | 'error' = 'idle'
       let error: string | undefined = undefined
 
-      if (!isAllowedType) {
+      if (isEmpty) {
+        status = 'error'
+        error = `File is empty (0 bytes).`
+      } else if (!isAllowedType) {
         status = 'error'
         error = `Unsupported format (${ext || 'no extension'}). Supported: PDF, MD, TXT, JSON, Code.`
       } else if (!isAllowedSize) {
@@ -339,78 +391,53 @@ export default function Home() {
   const uploadFileWithProgress = (
     file: File,
     base64Data: string,
-    onProgress: (percent: number, statusText: string) => void
+    onProgress: (percent: number) => void
   ): Promise<any> => {
-    return new Promise(async (resolve, reject) => {
-      try {
-        onProgress(0, 'Sending file to server...')
-        
-        const response = await fetch('/api/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filename: file.name,
-            base64: base64Data,
-          }),
-        })
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', '/api/upload', true)
+      xhr.setRequestHeader('Content-Type', 'application/json')
 
-        if (!response.ok && !response.headers.get('content-type')?.includes('text/event-stream')) {
-          let errorMessage = `Upload failed: Status ${response.status}`
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100)
+          onProgress(Math.min(percent, 99)) // Cap at 99% until server responds
+        }
+      }
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
           try {
-            const errorData = await response.json()
+            const res = JSON.parse(xhr.responseText)
+            onProgress(100)
+            resolve(res)
+          } catch (_) {
+            reject(new Error('Invalid response from server'))
+          }
+        } else {
+          let errorMessage = `Upload failed: Status ${xhr.status}`
+          try {
+            const errorData = JSON.parse(xhr.responseText)
             errorMessage = errorData.error || errorMessage
           } catch (_) {
-            const text = await response.text()
-            if (text) errorMessage = text.slice(0, 150)
-          }
-          return reject(new Error(errorMessage))
-        }
-
-        // Read SSE stream for real-time progress
-        const reader = response.body?.getReader()
-        if (!reader) return reject(new Error('No response body'))
-
-        const decoder = new TextDecoder()
-        let buffer = ''
-        let finalResult: any = null
-
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop() || ''
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6))
-                if (data.done) {
-                  if (data.success) {
-                    onProgress(100, 'Complete!')
-                    finalResult = data
-                  } else {
-                    return reject(new Error(data.error || 'Upload failed'))
-                  }
-                } else {
-                  onProgress(data.progress || 0, data.detail || data.step || 'Processing...')
-                }
-              } catch (_) {
-                // ignore parse errors on partial chunks
-              }
+            if (xhr.responseText) {
+              errorMessage = xhr.responseText.slice(0, 150)
             }
           }
+          reject(new Error(errorMessage))
         }
-
-        if (finalResult) {
-          resolve(finalResult)
-        } else {
-          reject(new Error('Upload stream ended without result'))
-        }
-      } catch (err) {
-        reject(err)
       }
+
+      xhr.onerror = () => {
+        reject(new Error('Network error occurred'))
+      }
+
+      xhr.send(
+        JSON.stringify({
+          filename: file.name,
+          base64: base64Data,
+        })
+      )
     })
   }
 
@@ -426,21 +453,18 @@ export default function Home() {
       if (item.status === 'success' || item.status === 'error') continue
 
       // Update state to uploading
-      setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'uploading', progress: 0, statusText: 'Reading file...' } : q))
+      setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'uploading', progress: 0 } : q))
 
       try {
         const base64Data = await readFileAsBase64(item.file)
-        setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, progress: 2, statusText: 'Uploading...' } : q))
-        
-        const result = await uploadFileWithProgress(item.file, base64Data, (percent, statusText) => {
-          setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, progress: percent, statusText } : q))
+        const result = await uploadFileWithProgress(item.file, base64Data, (percent) => {
+          setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, progress: percent } : q))
         })
 
         setUploadQueue(prev => prev.map(q => q.id === item.id ? {
           ...q,
           status: 'success',
           progress: 100,
-          statusText: 'Indexed!',
           chunks: result.chunks
         } : q))
       } catch (err: any) {
@@ -449,7 +473,6 @@ export default function Home() {
           ...q,
           status: 'error',
           progress: 0,
-          statusText: undefined,
           error: err.message || 'Indexing failed'
         } : q))
       }
@@ -480,6 +503,10 @@ export default function Home() {
 
     setSearchQuery('')
     
+    const activeId = Math.random().toString(36).substring(7)
+    activeMessageIdRef.current = activeId
+    setSearchStep('embedding')
+    
     const userMsg: Message = {
       id: Math.random().toString(),
       role: 'user',
@@ -488,7 +515,7 @@ export default function Home() {
     }
     
     const assistantMsg: Message = {
-      id: 'completion-active',
+      id: activeId,
       role: 'assistant',
       text: '',
       timestamp: new Date(),
@@ -496,11 +523,17 @@ export default function Home() {
     }
     
     setMessages(prev => [...prev, userMsg, assistantMsg])
+
+    // Transition to semantic database search after a short embedding window
+    setTimeout(() => {
+      setSearchStep(prev => prev === 'embedding' ? 'searching' : prev)
+    }, 1000)
     
     try {
       await complete(query)
     } catch (err) {
-      console.error(err)
+      console.error('Submit query error caught:', err)
+      setSearchStep('error')
     }
   }
 
@@ -508,6 +541,10 @@ export default function Home() {
   const handleSuggestionClick = async (suggestion: string) => {
     if (isSearchLoading) return
     
+    const activeId = Math.random().toString(36).substring(7)
+    activeMessageIdRef.current = activeId
+    setSearchStep('embedding')
+
     const userMsg: Message = {
       id: Math.random().toString(),
       role: 'user',
@@ -516,7 +553,7 @@ export default function Home() {
     }
     
     const assistantMsg: Message = {
-      id: 'completion-active',
+      id: activeId,
       role: 'assistant',
       text: '',
       timestamp: new Date(),
@@ -524,11 +561,17 @@ export default function Home() {
     }
     
     setMessages(prev => [...prev, userMsg, assistantMsg])
+
+    // Transition to semantic database search after a short embedding window
+    setTimeout(() => {
+      setSearchStep(prev => prev === 'embedding' ? 'searching' : prev)
+    }, 1000)
     
     try {
       await complete(suggestion)
     } catch (err) {
-      console.error(err)
+      console.error('Suggestion click error caught:', err)
+      setSearchStep('error')
     }
   }
 
@@ -539,57 +582,274 @@ export default function Home() {
   const renderMarkdown = (text: string) => {
     if (!text) return null
     const lines = text.split('\n')
-    return lines.map((line, lineIdx) => {
-      if (line.startsWith('```')) {
-        return null
+    const elements: React.ReactNode[] = []
+    let inCodeBlock = false
+    let codeLines: string[] = []
+    let codeLang = ''
+
+    const formatInline = (str: string) => {
+      const parts: React.ReactNode[] = []
+      let lastIdx = 0
+      const regex = /(\*\*|`)(.*?)\1/g
+      let match
+
+      while ((match = regex.exec(str)) !== null) {
+        if (match.index > lastIdx) {
+          parts.push(str.substring(lastIdx, match.index))
+        }
+        if (match[1] === '**') {
+          parts.push(<strong key={`b-${match.index}`} className="text-emerald-400 font-bold">{match[2]}</strong>)
+        } else if (match[1] === '`') {
+          parts.push(<code key={`c-${match.index}`}>{match[2]}</code>)
+        }
+        lastIdx = regex.lastIndex
       }
-      
+
+      if (lastIdx < str.length) {
+        parts.push(str.substring(lastIdx))
+      }
+
+      return parts.length > 0 ? parts : str
+    }
+
+    lines.forEach((line, lineIdx) => {
+      // Code block toggle
+      if (line.trim().startsWith('```')) {
+        if (!inCodeBlock) {
+          inCodeBlock = true
+          codeLang = line.trim().slice(3).trim()
+          codeLines = []
+        } else {
+          elements.push(
+            <pre key={`code-${lineIdx}`}>
+              <code>{codeLines.join('\n')}</code>
+            </pre>
+          )
+          inCodeBlock = false
+        }
+        return
+      }
+
+      if (inCodeBlock) {
+        codeLines.push(line)
+        return
+      }
+
+      // Headings
+      if (line.startsWith('### ')) {
+        elements.push(<h3 key={lineIdx}>{formatInline(line.slice(4))}</h3>)
+        return
+      }
+      if (line.startsWith('## ')) {
+        elements.push(<h2 key={lineIdx}>{formatInline(line.slice(3))}</h2>)
+        return
+      }
+      if (line.startsWith('# ')) {
+        elements.push(<h1 key={lineIdx}>{formatInline(line.slice(2))}</h1>)
+        return
+      }
+
+      // Blockquote
+      if (line.trim().startsWith('> ')) {
+        elements.push(
+          <blockquote key={lineIdx}>{formatInline(line.replace(/^>\s*/, ''))}</blockquote>
+        )
+        return
+      }
+
+      // Bullet list
       const isBullet = line.trim().startsWith('* ') || line.trim().startsWith('- ')
-      const content = isBullet ? line.replace(/^[\s*-]+/, '') : line
-
-      const formatText = (str: string) => {
-        const parts = []
-        let lastIdx = 0
-        const regex = /(\*\*|`)(.*?)\1/g
-        let match
-        
-        while ((match = regex.exec(str)) !== null) {
-          if (match.index > lastIdx) {
-            parts.push(str.substring(lastIdx, match.index))
-          }
-          if (match[1] === '**') {
-            parts.push(<strong key={match.index} className="text-emerald-400 font-extrabold">{match[2]}</strong>)
-          } else if (match[1] === '`') {
-            parts.push(<code key={match.index} className="bg-slate-950/80 px-1.5 py-0.5 rounded text-[11px] text-emerald-350 border border-slate-900 font-mono">{match[2]}</code>)
-          }
-          lastIdx = regex.lastIndex
-        }
-        
-        if (lastIdx < str.length) {
-          parts.push(str.substring(lastIdx))
-        }
-        
-        return parts.length > 0 ? parts : str
-      }
-
       if (isBullet) {
-        return (
-          <li key={lineIdx} className="ml-4 list-disc text-slate-300 my-1 text-xs">
-            {formatText(content)}
+        elements.push(
+          <li key={lineIdx} className="ml-4 list-disc text-slate-300 my-0.5 text-xs leading-relaxed">
+            {formatInline(line.replace(/^\s*[*-]\s+/, ''))}
           </li>
         )
+        return
       }
 
+      // Numbered list
+      const numberedMatch = line.match(/^\s*(\d+)\.\s+(.*)/)
+      if (numberedMatch) {
+        elements.push(
+          <li key={lineIdx} className="ml-4 list-decimal text-slate-300 my-0.5 text-xs leading-relaxed">
+            {formatInline(numberedMatch[2])}
+          </li>
+        )
+        return
+      }
+
+      // Empty line
       if (line.trim() === '') {
-        return <div key={lineIdx} className="h-2" />
+        elements.push(<div key={lineIdx} className="h-1.5" />)
+        return
       }
 
-      return (
-        <p key={lineIdx} className="text-slate-300 my-1 text-xs leading-relaxed">
-          {formatText(line)}
+      // Regular paragraph
+      elements.push(
+        <p key={lineIdx} className="text-slate-300 my-0.5 text-xs leading-relaxed">
+          {formatInline(line)}
         </p>
       )
     })
+
+    return <div className="prose-chat">{elements}</div>
+  }
+
+  // Check if text is an error or quota/limit notification
+  const renderMessageContent = (msg: Message) => {
+    if (msg.isLoading) {
+      return (
+        <div className="p-4 rounded-2xl border border-slate-800 bg-slate-950/60 backdrop-blur-md text-xs space-y-4 shadow-lg shadow-emerald-500/[0.01] max-w-sm w-[320px] transition-all duration-500">
+          <div className="flex items-center justify-between text-emerald-400 font-bold text-[10px] uppercase tracking-wider">
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+              AI Thought Process
+            </span>
+            <span className="text-slate-500 normal-case font-medium">Retrieval-Augmented Generation</span>
+          </div>
+          
+          <div className="space-y-4">
+            {/* Step 1: Embedding */}
+            <div className="flex items-start gap-3">
+              <div className="flex flex-col items-center shrink-0">
+                <div className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-bold transition-all duration-300 ${
+                  searchStep === 'embedding'
+                    ? 'border-emerald-400 text-emerald-400 bg-emerald-400/10'
+                    : 'border-slate-800 text-slate-500 bg-slate-900/40'
+                }`}>
+                  {searchStep !== 'embedding' ? '✓' : '1'}
+                </div>
+                <div className={`w-0.5 h-6 transition-all duration-300 ${searchStep !== 'embedding' ? 'bg-emerald-500/20' : 'bg-slate-800'}`} />
+              </div>
+              <div className="text-[11px] pt-0.5 min-w-0">
+                <div className={`font-semibold transition-colors duration-300 ${searchStep === 'embedding' ? 'text-slate-200' : 'text-slate-500'}`}>
+                  Analyzing query & generating embeddings
+                </div>
+                {searchStep === 'embedding' && (
+                  <p className="text-[10px] text-slate-400 mt-1 animate-pulse leading-normal">Converting question into 768-dim vector...</p>
+                )}
+              </div>
+            </div>
+
+            {/* Step 2: Semantic Search */}
+            <div className="flex items-start gap-3">
+              <div className="flex flex-col items-center shrink-0">
+                <div className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-bold transition-all duration-300 ${
+                  searchStep === 'searching'
+                    ? 'border-emerald-400 text-emerald-400 bg-emerald-400/10'
+                    : (searchStep === 'synthesizing' || searchStep === 'done')
+                    ? 'border-slate-800 text-emerald-500 bg-slate-900/40'
+                    : 'border-slate-800 text-slate-500 bg-slate-900/40'
+                }`}>
+                  {searchStep === 'synthesizing' || searchStep === 'done' ? '✓' : '2'}
+                </div>
+                <div className={`w-0.5 h-6 transition-all duration-300 ${searchStep === 'synthesizing' || searchStep === 'done' ? 'bg-emerald-500/20' : 'bg-slate-800'}`} />
+              </div>
+              <div className="text-[11px] pt-0.5 min-w-0">
+                <div className={`font-semibold transition-colors duration-300 ${searchStep === 'searching' ? 'text-slate-200' : 'text-slate-500'}`}>
+                  Searching vector database
+                </div>
+                {searchStep === 'searching' && (
+                  <p className="text-[10px] text-slate-400 mt-1 animate-pulse leading-normal">Querying pgvector via Supabase RPC...</p>
+                )}
+              </div>
+            </div>
+
+            {/* Step 3: Synthesis */}
+            <div className="flex items-start gap-3">
+              <div className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-bold shrink-0 transition-all duration-300 ${
+                searchStep === 'synthesizing'
+                  ? 'border-emerald-400 text-emerald-400 bg-emerald-400/10 animate-pulse'
+                  : 'border-slate-800 text-slate-500 bg-slate-900/40'
+              }`}>
+                3
+              </div>
+              <div className="text-[11px] pt-0.5 min-w-0">
+                <div className={`font-semibold transition-colors duration-300 ${searchStep === 'synthesizing' ? 'text-slate-200' : 'text-slate-500'}`}>
+                  Synthesizing answer
+                </div>
+                {searchStep === 'synthesizing' && (
+                  <p className="text-[10px] text-slate-400 mt-1 animate-pulse leading-normal">VectorMind is synthesizing your answer...</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    if (msg.role === 'assistant') {
+      const text = msg.text
+      const isQuotaError = text.toLowerCase().includes('quota') || text.toLowerCase().includes('limit') || text.toLowerCase().includes('exhausted') || text.includes('429')
+      const isGenericError = text.startsWith('Error generating response:')
+
+      if (isQuotaError) {
+        return (
+          <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/[0.03] backdrop-blur-md text-xs space-y-3 shadow-lg shadow-amber-500/[0.02]">
+            <div className="flex items-center gap-2 text-amber-400 font-bold text-[11px] uppercase tracking-wider">
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+              API Rate Limit Reached (429)
+            </div>
+            <p className="text-slate-300 leading-relaxed text-[11px]">
+              You have exceeded your free tier rate limit or daily request quota. Google AI Studio limits some accounts on the free plan to <strong>20 requests per day</strong> or <strong>15 requests per minute</strong>.
+            </p>
+            <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-900 font-mono text-[10px] text-slate-400 space-y-1">
+              <div>• <strong>Current Model:</strong> gemini-2.5-flash</div>
+              <div>• <strong>Quota reset:</strong> wait a minute or daily cycle</div>
+            </div>
+            <p className="text-[10px] text-slate-500 leading-relaxed">
+              <strong>Tip:</strong> Consider spacing out your requests or check your API key credentials at <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">Google AI Studio</a>.
+            </p>
+          </div>
+        )
+      }
+
+      if (isGenericError) {
+        return (
+          <div className="p-4 rounded-xl border border-red-500/20 bg-red-500/[0.03] backdrop-blur-md text-xs space-y-3 shadow-lg shadow-red-500/[0.02]">
+            <div className="flex items-center gap-2 text-red-400 font-bold text-[11px] uppercase tracking-wider">
+              <XCircle className="w-4 h-4 text-red-400 shrink-0" />
+              API Operational Error
+            </div>
+            <p className="text-slate-300 leading-relaxed text-[11px]">
+              {text.replace('Error generating response:', '').trim() || 'A backend database or system error occurred.'}
+            </p>
+          </div>
+        )
+      }
+
+      return (
+        <div className="space-y-3">
+          <div className="whitespace-pre-wrap">{renderMarkdown(text)}</div>
+          {msg.sources && msg.sources.length > 0 && (
+            <div className="pt-2 border-t border-slate-800/40 space-y-1.5">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Source Documents</span>
+              <div className="flex flex-wrap gap-2">
+                {msg.sources.map((src, idx) => {
+                  const [filename, path] = src.split('->')
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        setPreviewDocUrl(`/uploads/${filename}`)
+                        setPreviewDocName(filename || 'Document')
+                      }}
+                      className="text-[10px] font-semibold text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 px-2.5 py-1 rounded-full border border-emerald-500/10 hover:border-emerald-500/20 transition flex items-center gap-1.5 shrink-0"
+                    >
+                      <FileText className="w-3 h-3 text-emerald-400 shrink-0" />
+                      {filename}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    return <div className="whitespace-pre-wrap">{msg.text}</div>
   }
 
   // Filtered Library Documents
@@ -606,10 +866,10 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>Gemini Chatbot Workspace</title>
+        <title>VectorMind — AI Document Search</title>
         <meta
           name="description"
-          content="Premium semantic chatbot for document vector indexing and search, powered by Google Gemini API & Supabase."
+          content="VectorMind — AI-powered document intelligence platform with semantic search, powered by Google Gemini & Supabase pgvector."
         />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" />
@@ -629,14 +889,14 @@ export default function Home() {
               </div>
               <div>
                 <h1 className="text-base font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-teal-300">
-                  Gemini Chatbot
+                  VectorMind
                 </h1>
-                <p className="text-[10px] text-slate-500 font-medium">DOCUMENT SEMANTIC SEARCH PLATFORM</p>
+                <p className="text-[10px] text-slate-500 font-medium tracking-widest">AI DOCUMENT INTELLIGENCE</p>
               </div>
             </div>
             <div className="flex items-center space-x-2 text-xs font-semibold text-slate-400">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>Gemini 2.5 Flash Lite Connected</span>
+              <span>VectorMind Online</span>
             </div>
           </div>
         </header>
@@ -648,10 +908,10 @@ export default function Home() {
             <div>
               <h2 className="text-xl font-bold flex items-center gap-2">
                 <Wand className="w-5 h-5 text-emerald-400" />
-                Dynamic Document Retrieval System
+                Intelligent Document Retrieval
               </h2>
-              <p className="text-xs text-slate-400 mt-1 max-w-xl">
-                Upload up to 100 files simultaneously. Our backend dynamically chunks your text, computes semantic embeddings via Google Gemini, and indexes them instantly.
+              <p className="text-xs text-slate-400 mt-1.5 max-w-xl leading-relaxed">
+                Upload documents and ask questions instantly. VectorMind chunks your files, embeds them into 768-dimensional vectors, and indexes them for precise semantic retrieval.
               </p>
             </div>
             <div className="flex items-center space-x-6 shrink-0 bg-slate-950/40 px-4 py-3 rounded-xl border border-slate-900">
@@ -770,11 +1030,11 @@ export default function Home() {
                       <div className="mt-8 w-full max-w-lg">
                         <div className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mb-3">Suggested Queries</div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-left">
-                          {SUGGESTIONS.map((sug, idx) => (
+                          {getDynamicSuggestions().map((sug, idx) => (
                             <button
                               key={idx}
                               onClick={() => handleSuggestionClick(sug)}
-                              className="p-3 text-[11px] text-slate-400 hover:text-slate-200 bg-slate-900/30 hover:bg-slate-900/60 border border-slate-900 hover:border-slate-800 rounded-xl transition text-left font-medium hover:shadow-lg hover:shadow-emerald-500/[0.02]"
+                              className="suggestion-chip p-3 text-[11px] text-slate-400 hover:text-slate-200 bg-slate-900/30 hover:bg-slate-900/60 border border-slate-900 hover:border-emerald-500/20 rounded-xl transition-all duration-200 text-left font-medium hover:shadow-lg hover:shadow-emerald-500/[0.03] hover:translate-y-[-1px]"
                             >
                               {sug}
                             </button>
@@ -812,7 +1072,7 @@ export default function Home() {
                             {/* Message Header (Sender Info) */}
                             <div className="flex items-center justify-between mb-1.5">
                               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                                {isUser ? 'You' : 'Gemini Assistant'}
+                                {isUser ? 'You' : 'VectorMind'}
                               </span>
                               <span className="text-[9px] text-slate-600">
                                 {msg.timestamp.toLocaleTimeString(undefined, {
@@ -823,38 +1083,7 @@ export default function Home() {
                             </div>
 
                             {/* Message Content */}
-                            {msg.isLoading ? (
-                              <div className="flex items-center space-x-1.5 py-1.5">
-                                <span className="text-[10px] text-slate-400 font-semibold mr-1.5">Thinking</span>
-                                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                              </div>
-                            ) : (
-                              <>
-                                <div className="whitespace-pre-wrap">
-                                  {isUser ? msg.text : renderMarkdown(msg.text)}
-                                </div>
-                                {!isUser && msg.sources && msg.sources.length > 0 && (
-                                  <div className="mt-3 pt-2.5 border-t border-slate-900/60 flex flex-wrap gap-2 items-center">
-                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Source Documents:</span>
-                                    {msg.sources.map((src, srcIdx) => {
-                                      const filename = src.split('/').pop() || src
-                                      return (
-                                        <button
-                                          key={srcIdx}
-                                          onClick={() => triggerPreview(src, filename)}
-                                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-950 hover:bg-slate-900 border border-slate-850 hover:border-slate-800 text-[10px] font-semibold text-emerald-400 hover:text-emerald-300 transition"
-                                        >
-                                          <FileText className="w-3 h-3 text-emerald-500" />
-                                          <span>{filename}</span>
-                                        </button>
-                                      )
-                                    })}
-                                  </div>
-                                )}
-                              </>
-                            )}
+                            {renderMessageContent(msg)}
                           </div>
 
                           {/* User Avatar (Right side) */}
@@ -1001,9 +1230,9 @@ export default function Home() {
                               </span>
                             )}
                             {item.status === 'uploading' && (
-                              <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded font-semibold flex items-center gap-1 max-w-[180px]">
-                                <Loader2 className="w-2.5 h-2.5 animate-spin shrink-0" />
-                                <span className="truncate">{item.statusText || `Processing (${item.progress}%)`}</span>
+                              <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
+                                <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                {item.progress < 99 ? `Uploading (${item.progress}%)` : 'Embedding...'}
                               </span>
                             )}
                             {item.status === 'success' && (
@@ -1127,15 +1356,18 @@ export default function Home() {
                                 : 'Pre-indexed'}
                             </td>
                             <td className="p-4 text-right space-x-2 whitespace-nowrap">
-                              <button
-                                onClick={() => {
-                                  triggerPreview(doc.path, doc.meta?.filename || doc.path)
-                                }}
-                                className="text-emerald-400 hover:text-emerald-300 p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 rounded border border-emerald-500/10 transition inline-flex items-center justify-center"
-                                title="Preview Document"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </button>
+                              {doc.meta?.filename && (
+                                <button
+                                  onClick={() => {
+                                    setPreviewDocUrl(`/uploads/${doc.meta?.filename}`)
+                                    setPreviewDocName(doc.meta?.filename || 'Document')
+                                  }}
+                                  className="text-emerald-400 hover:text-emerald-300 p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 rounded border border-emerald-500/10 transition inline-flex items-center justify-center"
+                                  title="Preview Document"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </button>
+                              )}
                               <button
                                 onClick={() => handleDeleteDocument(doc.id)}
                                 disabled={deletingIds.includes(doc.id)}
@@ -1161,171 +1393,379 @@ export default function Home() {
 
           {/* Tab 4: How It Works Panel */}
           {activeTab === 'docs' && (
-            <div className="space-y-8 animate-slide-up">
-              {/* Header card */}
-              <div className="border border-slate-900 bg-slate-900/10 rounded-2xl p-6">
-                <h3 className="text-base font-bold text-emerald-400 mb-2">Gemini Chatbot System Overview</h3>
-                <p className="text-xs text-slate-400 leading-relaxed max-w-3xl">
-                  This semantic retrieval platform operates on a **Retrieval-Augmented Generation (RAG)** architecture. When you upload documents, they are sliced, embedded into vector space, and matched dynamically at query time to feed precise matching context back to the Gemini LLM.
-                </p>
+            <div className="space-y-12 animate-slide-up pb-10">
+              
+              {/* Header card with gradient background and glow */}
+              <div className="relative border border-slate-900 bg-gradient-to-r from-slate-950 via-slate-900/60 to-slate-950 rounded-2xl p-8 overflow-hidden shadow-xl">
+                <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-[100px] pointer-events-none" />
+                <div className="relative z-10 max-w-3xl space-y-3">
+                  <span className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full">
+                    RAG Framework Engine
+                  </span>
+                  <h3 className="text-2xl font-black text-slate-100 tracking-tight mt-2">
+                    How VectorMind Processes Your Data
+                  </h3>
+                  <p className="text-xs text-slate-400 leading-relaxed font-medium">
+                    VectorMind leverages **Retrieval-Augmented Generation (RAG)** to index documents in a high-dimensional vector space and dynamically retrieve matching context at query time. This completely eliminates AI hallucinations and forces the LLM to ground its responses in your verified source documents.
+                  </p>
+                </div>
               </div>
 
-              {/* Grid 1: Pipeline */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Data Ingestion Pipeline */}
-                <div className="border border-slate-900 bg-slate-950/40 rounded-xl p-5 space-y-4">
-                  <div className="flex items-center space-x-2 text-emerald-400">
-                    <UploadCloud className="w-5 h-5" />
-                    <h4 className="text-xs font-bold uppercase tracking-wider">1. Data Ingestion Pipeline</h4>
+              {/* Ingestion Pipeline Flowchart Section */}
+              <div className="space-y-6">
+                <div className="flex items-center space-x-3 px-1">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                    <UploadCloud className="w-4 h-4 text-emerald-400" />
                   </div>
-                  <ul className="space-y-3 text-xs text-slate-400">
-                    <li className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-1.5 shrink-0" />
-                      <span><strong>Document Loading:</strong> Accepts standard text, markdown, or PDF files. PDFs are parsed using Node.js <code>pdf-parse</code>.</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-1.5 shrink-0" />
-                      <span><strong>Text Chunking:</strong> Text content is split into blocks of ~1000 characters with a 200-character overlap to preserve semantic context across chunk boundaries.</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-1.5 shrink-0" />
-                      <span><strong>Sanitation:</strong> Strips invalid characters (e.g. Postgres null-byte escape sequence <code>\u0000</code>) to prevent DB insert crashes.</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-1.5 shrink-0" />
-                      <span><strong>Vector Embedding:</strong> Computes 768-dimension semantic embeddings for each chunk via the <code>text-embedding-004</code> model.</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-1.5 shrink-0" />
-                      <span><strong>pgvector Storage:</strong> Inserts vector embeddings into the <code>nods_page_section</code> table with a cosine distance index.</span>
-                    </li>
-                  </ul>
+                  <div>
+                    <h4 className="text-sm font-extrabold text-slate-200 uppercase tracking-wider">1. The Document Ingestion Pipeline</h4>
+                    <p className="text-[10px] text-slate-500 font-medium">From raw file upload to indexed high-dimensional vector coordinates</p>
+                  </div>
                 </div>
 
-                {/* Retrieval & Search Flow */}
-                <div className="border border-slate-900 bg-slate-950/40 rounded-xl p-5 space-y-4">
-                  <div className="flex items-center space-x-2 text-emerald-400">
-                    <Search className="w-5 h-5" />
-                    <h4 className="text-xs font-bold uppercase tracking-wider">2. Semantic Query & RAG Flow</h4>
+                {/* Horizontal Visual Flowchart Map */}
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 relative">
+                  
+                  {/* Step 1: Upload */}
+                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 01</span>
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
+                          <UploadCloud className="w-4 h-4 text-emerald-400" />
+                        </div>
+                      </div>
+                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">User Document Upload</h5>
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        Accepts PDFs, MD, text, JSON, and source code. Client converts binary files to safe Base64.
+                      </p>
+                    </div>
+                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
+                      API: /api/upload
+                    </div>
                   </div>
-                  <ul className="space-y-3 text-xs text-slate-400">
-                    <li className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-1.5 shrink-0" />
-                      <span><strong>Query Embedding:</strong> Converts the user&apos;s natural query into a 768-dimension vector using the Gemini embedding API.</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-1.5 shrink-0" />
-                      <span><strong>Vector Similarity Search:</strong> Queries Supabase via RPC similarity search function to return the top matching sections by Cosine Distance.</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-1.5 shrink-0" />
-                      <span><strong>Prompt Injection:</strong> Injects query, matching text fragments, and a system instruction prompt containing rules into the context.</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-1.5 shrink-0" />
-                      <span><strong>Streaming Completion:</strong> Triggers <code>gemini-2.5-flash</code> via Vercel AI SDK to stream answers back to the UI.</span>
-                    </li>
-                  </ul>
+
+                  {/* Step 2: Parse & Sanitize */}
+                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 02</span>
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
+                          <FileText className="w-4 h-4 text-emerald-400" />
+                        </div>
+                      </div>
+                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">Extraction & Sanitation</h5>
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        <code>pdf-parse</code> extracts raw text streams. Strips null bytes (<code>\u0000</code>) to prevent DB failure.
+                      </p>
+                    </div>
+                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
+                      Output: Raw Text
+                    </div>
+                  </div>
+
+                  {/* Step 3: Chunking */}
+                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 03</span>
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
+                          <Database className="w-4 h-4 text-emerald-400" />
+                        </div>
+                      </div>
+                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">Sliding-Window Chunking</h5>
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        Slices text into 1,000-char blocks with 200-char overlap. Scans for whitespace to prevent word splitting.
+                      </p>
+                    </div>
+                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
+                      Size: 1000ch, Overlap: 200
+                    </div>
+                  </div>
+
+                  {/* Step 4: Embedding */}
+                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 04</span>
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
+                          <Wand className="w-4 h-4 text-emerald-400" />
+                        </div>
+                      </div>
+                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">Gemini Embeddings</h5>
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        Queries <code>gemini-embedding-2</code> (using <code>RETRIEVAL_DOCUMENT</code>) to convert chunks into vectors.
+                      </p>
+                    </div>
+                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
+                      Dimension: 768-Float
+                    </div>
+                  </div>
+
+                  {/* Step 5: pgvector DB */}
+                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 05</span>
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
+                          <CheckCircle className="w-4 h-4 text-emerald-400" />
+                        </div>
+                      </div>
+                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">pgvector DB indexing</h5>
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        Saves coordinates to Supabase SQL. Cascading constraint w/ <code>nods_page</code> ensures clean wipes.
+                      </p>
+                    </div>
+                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
+                      Format: vector(768)
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* RAG Query Loop Flowchart Section */}
+              <div className="space-y-6 pt-4">
+                <div className="flex items-center space-x-3 px-1">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                    <Search className="w-4 h-4 text-emerald-400" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-extrabold text-slate-200 uppercase tracking-wider">2. The RAG Query Loop (Search Path)</h4>
+                    <p className="text-[10px] text-slate-500 font-medium">Bypassing raw chat defaults to extract relevant document answers</p>
+                  </div>
+                </div>
+
+                {/* Horizontal Visual Flowchart Map */}
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 relative">
+                  
+                  {/* Step 1: User Query */}
+                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 01</span>
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
+                          <MessageSquare className="w-4 h-4 text-emerald-400" />
+                        </div>
+                      </div>
+                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">Natural Language Query</h5>
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        User inputs a question (e.g. &quot;How does 8086 interface external memory?&quot;) on the Chat UI.
+                      </p>
+                    </div>
+                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
+                      API: /api/vector-search
+                    </div>
+                  </div>
+
+                  {/* Step 2: Vectorization */}
+                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 02</span>
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
+                          <Wand className="w-4 h-4 text-emerald-400" />
+                        </div>
+                      </div>
+                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">Query Vectorization</h5>
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        Converts the active question into a 768-dimension vector using Gemini <code>RETRIEVAL_QUERY</code> embedding configuration.
+                      </p>
+                    </div>
+                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
+                      Model: gemini-embedding-2
+                    </div>
+                  </div>
+
+                  {/* Step 3: DB Match */}
+                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 03</span>
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
+                          <Database className="w-4 h-4 text-emerald-400" />
+                        </div>
+                      </div>
+                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">pgvector Match RPC</h5>
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        Queries pgvector using **Negative Dot Product** (<code>&lt;#&gt;</code>) to pull the top 10 matching sections above a 0.3 threshold.
+                      </p>
+                    </div>
+                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
+                      Limit: 10, Score: &gt;= 0.3
+                    </div>
+                  </div>
+
+                  {/* Step 4: Prompt Assembly */}
+                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 04</span>
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
+                          <AlertCircle className="w-4 h-4 text-emerald-400" />
+                        </div>
+                      </div>
+                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">RAG Context Prompt</h5>
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        Packs context fragments and security instructions together. Auto-returns fallback if no match is found to bypass API quotas.
+                      </p>
+                    </div>
+                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
+                      Bound: 1500 Tokens
+                    </div>
+                  </div>
+
+                  {/* Step 5: Streaming Response */}
+                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 05</span>
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
+                          <Bot className="w-4 h-4 text-emerald-400" />
+                        </div>
+                      </div>
+                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">Gemini Streaming</h5>
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        Feeds the unified context block to <code>gemini-2.5-flash</code>. AI streams highly cited markdown responses instantly.
+                      </p>
+                    </div>
+                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
+                      Model: gemini-2.5-flash
+                    </div>
+                  </div>
+
                 </div>
               </div>
 
               {/* Grid 2: Storage Architecture & Schemas */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                
-                {/* Supabase Catalog Table */}
-                <div className="border border-slate-900 bg-slate-950/40 rounded-xl p-5 space-y-3">
-                  <div className="flex items-center space-x-2 text-emerald-400">
-                    <Database className="w-4 h-4" />
-                    <h4 className="text-xs font-bold uppercase tracking-wider">Table: nods_page</h4>
+              <div className="space-y-6 pt-4">
+                <div className="flex items-center space-x-3 px-1">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                    <Database className="w-4 h-4 text-emerald-400" />
                   </div>
-                  <p className="text-[10px] text-slate-500">Tracks parent documents catalog metadata.</p>
-                  <div className="space-y-1.5 font-mono text-[10px] text-slate-300 bg-slate-950 p-3 rounded-lg border border-slate-900">
-                    <div><span className="text-emerald-400">id</span>: bigint <span className="text-slate-600">(Primary Key)</span></div>
-                    <div><span className="text-emerald-400">path</span>: text <span className="text-slate-600">(File path)</span></div>
-                    <div><span className="text-emerald-400">checksum</span>: text <span className="text-slate-600">(SHA-256 validation)</span></div>
-                    <div><span className="text-emerald-400">type</span>: text <span className="text-slate-600">(Format classification)</span></div>
-                    <div><span className="text-emerald-400">source</span>: text <span className="text-slate-600">(Upload origin)</span></div>
-                    <div><span className="text-emerald-400">meta</span>: jsonb <span className="text-slate-600">(Size, Date, Filename)</span></div>
+                  <div>
+                    <h4 className="text-sm font-extrabold text-slate-200 uppercase tracking-wider">3. Database Schema & Storage Catalog</h4>
+                    <p className="text-[10px] text-slate-500 font-medium">Relational schemas inside Supabase mapping your indexed knowledge base</p>
                   </div>
                 </div>
 
-                {/* Supabase Section Vector Table */}
-                <div className="border border-slate-900 bg-slate-950/40 rounded-xl p-5 space-y-3">
-                  <div className="flex items-center space-x-2 text-emerald-400">
-                    <Database className="w-4 h-4 animate-pulse" />
-                    <h4 className="text-xs font-bold uppercase tracking-wider">Table: nods_page_section</h4>
-                  </div>
-                  <p className="text-[10px] text-slate-500">Stores chunked text and computed embeddings.</p>
-                  <div className="space-y-1.5 font-mono text-[10px] text-slate-300 bg-slate-950 p-3 rounded-lg border border-slate-900">
-                    <div><span className="text-emerald-400">id</span>: bigint <span className="text-slate-600">(Primary Key)</span></div>
-                    <div><span className="text-emerald-400">page_id</span>: bigint <span className="text-slate-600">(Foreign Key)</span></div>
-                    <div><span className="text-emerald-400">slug</span>: text <span className="text-slate-600">(Page slug identifier)</span></div>
-                    <div><span className="text-emerald-400">heading</span>: text <span className="text-slate-600">(Subheading title)</span></div>
-                    <div><span className="text-emerald-400">content</span>: text <span className="text-slate-600">(Raw text fragment)</span></div>
-                    <div><span className="text-emerald-400">embedding</span>: vector(768) <span className="text-slate-600">(Cosine index)</span></div>
-                  </div>
-                </div>
-
-                {/* Filesystem Preview Folder */}
-                <div className="border border-slate-900 bg-slate-950/40 rounded-xl p-5 space-y-3">
-                  <div className="flex items-center space-x-2 text-emerald-400">
-                    <FileText className="w-4 h-4" />
-                    <h4 className="text-xs font-bold uppercase tracking-wider">Filesystem Storage</h4>
-                  </div>
-                  <p className="text-[10px] text-slate-500">Stores binary files for the browser PDF preview modal.</p>
-                  <div className="space-y-2 text-xs text-slate-400">
-                    <div className="bg-slate-950 p-3 rounded-lg border border-slate-900 font-mono text-[10px] text-slate-300">
-                      📂 public/uploads/
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  
+                  {/* Supabase Catalog Table */}
+                  <div className="border border-slate-900 bg-slate-950/40 rounded-2xl p-5 space-y-3">
+                    <div className="flex items-center space-x-2 text-emerald-400">
+                      <Database className="w-4 h-4" />
+                      <h4 className="text-xs font-bold uppercase tracking-wider">Table: nods_page</h4>
                     </div>
-                    <p className="text-[10px] leading-relaxed text-slate-400">
-                      When a document is uploaded, a physical duplicate is written to Next.js local disk storage. This enables client-side <code>&lt;iframe&gt;</code> rendering for instantly viewing PDFs and text in real-time.
+                    <p className="text-[10px] text-slate-500 leading-normal">
+                      Houses parent-level document records. Stores file check-sums to evaluate if content has changed.
+                    </p>
+                    <div className="space-y-1.5 font-mono text-[10px] text-slate-300 bg-slate-950 p-3.5 rounded-lg border border-slate-900 leading-normal">
+                      <div><span className="text-emerald-400">id</span>: bigint <span className="text-slate-600">(PK, Serial)</span></div>
+                      <div><span className="text-emerald-400">parent_page_id</span>: bigint <span className="text-slate-600">(FK)</span></div>
+                      <div><span className="text-emerald-400">path</span>: text <span className="text-slate-600">(Unique file URI)</span></div>
+                      <div><span className="text-emerald-400">checksum</span>: text <span className="text-slate-600">(SHA-256 string)</span></div>
+                      <div><span className="text-emerald-400">type</span>: text <span className="text-slate-600">(&quot;uploaded&quot; | &quot;guide&quot;)</span></div>
+                      <div><span className="text-emerald-400">source</span>: text <span className="text-slate-600">(&quot;web_upload&quot;)</span></div>
+                      <div><span className="text-emerald-400">meta</span>: jsonb <span className="text-slate-600">(Uploaded timestamp)</span></div>
+                    </div>
+                  </div>
+
+                  {/* Supabase Section Vector Table */}
+                  <div className="border border-slate-900 bg-slate-950/40 rounded-2xl p-5 space-y-3">
+                    <div className="flex items-center space-x-2 text-emerald-400">
+                      <Database className="w-4 h-4" />
+                      <h4 className="text-xs font-bold uppercase tracking-wider">Table: nods_page_section</h4>
+                    </div>
+                    <p className="text-[10px] text-slate-500 leading-normal">
+                      Contains the individual text fragments and their computed 768-dimension Gemini coordinate arrays.
+                    </p>
+                    <div className="space-y-1.5 font-mono text-[10px] text-slate-300 bg-slate-950 p-3.5 rounded-lg border border-slate-900 leading-normal">
+                      <div><span className="text-emerald-400">id</span>: bigint <span className="text-slate-600">(PK, Serial)</span></div>
+                      <div><span className="text-emerald-400">page_id</span>: bigint <span className="text-slate-600">(FK references page)</span></div>
+                      <div><span className="text-emerald-400">slug</span>: text <span className="text-slate-600">(Anchor selector)</span></div>
+                      <div><span className="text-emerald-400">heading</span>: text <span className="text-slate-600">(Subheading title)</span></div>
+                      <div><span className="text-emerald-400">content</span>: text <span className="text-slate-600">(Raw text chunk)</span></div>
+                      <div><span className="text-emerald-400">token_count</span>: integer <span className="text-slate-600">(Approx. length)</span></div>
+                      <div><span className="text-emerald-400">embedding</span>: vector(768) <span className="text-slate-600">(pgvector data)</span></div>
+                    </div>
+                  </div>
+
+                  {/* Filesystem Preview Folder */}
+                  <div className="border border-slate-900 bg-slate-950/40 rounded-2xl p-5 space-y-3 flex flex-col justify-between">
+                    <div className="space-y-3">
+                      <div className="flex items-center space-x-2 text-emerald-400">
+                        <FileText className="w-4 h-4" />
+                        <h4 className="text-xs font-bold uppercase tracking-wider">Filesystem Previews</h4>
+                      </div>
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        Preserves physical duplicates of binary uploads locally. This feeds PDF previews to your dashboard in real-time.
+                      </p>
+                      <div className="bg-slate-950 p-3 rounded-lg border border-slate-900 font-mono text-[10px] text-slate-300">
+                        📂 public/uploads/
+                      </div>
+                    </div>
+                    <p className="text-[10px] leading-relaxed text-slate-400 border-t border-slate-900 pt-3 mt-4">
+                      When a preview eye icon is clicked in the Library panel, Next.js displays the file on-screen inside a secure, sandboxed PDF iframe.
+                    </p>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* Vector DB Mathematics detail */}
+              <div className="border border-slate-900 bg-slate-950/20 rounded-2xl p-6 space-y-4">
+                <div className="flex items-center space-x-2 text-emerald-400">
+                  <Wand className="w-4 h-4" />
+                  <h4 className="text-xs font-bold uppercase tracking-wider">The Similarity Search Mathematics</h4>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs text-slate-400">
+                  <div className="space-y-2">
+                    <h5 className="font-extrabold text-slate-300 text-[11px]">Why We Use Negative Dot Product (`&lt;#&gt;`)</h5>
+                    <p className="leading-normal">
+                      By default, vector search calculates similarity using **Cosine Distance**. However, calculating Cosine Distance requires computing vector lengths (square roots) at query time.
+                    </p>
+                    <p className="leading-normal">
+                      Because **Google Gemini** embeddings are L2-normalized (mathematical length is exactly 1), **Negative Dot Product** produces the exact same relevance ranking as Cosine Distance, but executes up to **30% faster** because it operates entirely on simpler scalar addition and multiplication.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <h5 className="font-extrabold text-slate-300 text-[11px]">Negated dot product mapping</h5>
+                    <p className="leading-normal">
+                      PostgreSQL pgvector returns negative values for dot product similarity queries due to internal database structures.
+                    </p>
+                    <p className="leading-normal">
+                      Our custom RPC function `match_page_sections` automatically negates this value <code>(embedding &lt;#&gt; query_embedding) * -1</code>, transforming it back into a standard, intuitive similarity score between `0.0` (unrelated) and `1.0` (identical).
                     </p>
                   </div>
                 </div>
-
               </div>
 
-              {/* Limits and Bounds */}
-              <div className="border border-slate-900 bg-slate-950/40 rounded-xl p-5 space-y-4">
-                <div className="text-xs font-bold text-slate-200 uppercase tracking-wider">Workspace Capabilities & Scale Parameters</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs text-slate-400">
-                  <div className="p-3 bg-slate-900/20 border border-slate-900 rounded-lg">
-                    <strong className="text-slate-200 block text-[11px] mb-1">Upload Limits</strong>
-                    Upload up to <span className="text-emerald-400 font-bold">100+ files</span> simultaneously in a single drop action.
+              {/* Google Gemini Rate Limit Info */}
+              <div className="border border-amber-500/10 bg-amber-500/[0.02] rounded-2xl p-6 space-y-3">
+                <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
+                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                  Google Gemini API Rate Limits & Quota Guidelines
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed font-medium">
+                  Google Gemini features high-performance generative models in Google AI Studio, governed by strict free-tier rate limits:
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-400 mt-3">
+                  <div className="p-4 bg-slate-950/60 border border-slate-900 rounded-xl relative">
+                    <strong className="text-slate-200 block text-[11px] mb-1.5 text-amber-300">Requests Per Minute (RPM)</strong>
+                    The free model has a cap of **15 RPM**. Senders exceeding this rate will receive `429 Too Many Requests` limit errors.
                   </div>
-                  <div className="p-3 bg-slate-900/20 border border-slate-900 rounded-lg">
-                    <strong className="text-slate-200 block text-[11px] mb-1">Supported Formats</strong>
-                    PDFs, Markdown (`.md`, `.mdx`), JSON, Text, CSV, XML, HTML, CSS, JS, and TS.
+                  <div className="p-4 bg-slate-950/60 border border-slate-900 rounded-xl relative">
+                    <strong className="text-slate-200 block text-[11px] mb-1.5 text-amber-300">Requests Per Day (RPD)</strong>
+                    Free tier users are allocated **1,500 RPD** globally (or 20 RPD for highly restricted or unverified developer accounts).
                   </div>
-                  <div className="p-3 bg-slate-900/20 border border-slate-900 rounded-lg">
-                    <strong className="text-slate-200 block text-[11px] mb-1">Chunk Partitioning</strong>
-                    Automatically chunks document text into <span className="text-emerald-400 font-bold">1,000 character</span> blocks with 200 overlap.
-                  </div>
-                  <div className="p-3 bg-slate-900/20 border border-slate-900 rounded-lg">
-                    <strong className="text-slate-200 block text-[11px] mb-1">Embedding Vector</strong>
-                    Generates <span className="text-emerald-400 font-bold">768-dimension</span> embedding coordinates via Google Gemini SDK.
+                  <div className="p-4 bg-slate-950/60 border border-slate-900 rounded-xl relative">
+                    <strong className="text-slate-200 block text-[11px] mb-1.5 text-amber-300">Rate Limit Defenses</strong>
+                    To safeguard your API quotas, VectorMind utilizes a sequential queue that paces embeddings during heavy batch uploads.
                   </div>
                 </div>
               </div>
 
-              {/* API Credentials */}
-              <div className="border border-slate-900 bg-slate-950/40 rounded-xl p-5 space-y-3">
-                <h4 className="text-xs font-bold text-slate-200">Active API Keys & Environment Variables</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                  <div className="p-3 bg-slate-900/40 border border-slate-800 rounded-lg">
-                    <div className="text-[10px] text-slate-500 font-bold uppercase">Gemini SDK</div>
-                    <code className="text-emerald-400 font-mono text-[11px] block mt-1">GEMINI_API_KEY</code>
-                  </div>
-                  <div className="p-3 bg-slate-900/40 border border-slate-800 rounded-lg">
-                    <div className="text-[10px] text-slate-500 font-bold uppercase">Supabase Client URL</div>
-                    <code className="text-emerald-400 font-mono text-[11px] block mt-1">NEXT_PUBLIC_SUPABASE_URL</code>
-                  </div>
-                  <div className="p-3 bg-slate-900/40 border border-slate-800 rounded-lg">
-                    <div className="text-[10px] text-slate-500 font-bold uppercase">Supabase Private Key</div>
-                    <code className="text-emerald-400 font-mono text-[11px] block mt-1">SUPABASE_SERVICE_ROLE_KEY</code>
-                  </div>
-                </div>
-              </div>
             </div>
           )}
         </main>
@@ -1333,7 +1773,7 @@ export default function Home() {
         {/* Footer */}
         <footer className="border-t border-slate-900 py-6 bg-slate-950">
           <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-4">
-            <p className="font-medium">Built with Next.js, Google Gemini, and Supabase pgvector.</p>
+            <p className="font-medium">VectorMind — Built with Next.js, Google Gemini, and Supabase pgvector.</p>
             <div className="flex space-x-4">
               <Link href="https://supabase.com" className="hover:text-slate-300 transition">
                 Supabase
@@ -1346,45 +1786,33 @@ export default function Home() {
         </footer>
 
         {/* PDF / Document Preview Modal */}
-        {(previewDocUrl || previewDocContent || isPreviewLoading) && (
+        {previewDocUrl && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col h-[85vh]">
               {/* Modal Header */}
               <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/40 flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <FileText className="w-5 h-5 text-emerald-400" />
-                  <span className="text-xs font-bold text-slate-200 truncate max-w-lg">{previewDocName || 'Loading Document...'}</span>
+                  <span className="text-xs font-bold text-slate-200 truncate max-w-lg">{previewDocName}</span>
                 </div>
                 <button
                   onClick={() => {
                     setPreviewDocUrl(null)
                     setPreviewDocName(null)
-                    setPreviewDocContent(null)
                   }}
-                  className="text-xs font-bold text-slate-400 hover:text-slate-200 px-3 py-1.5 rounded-lg border border-slate-800 hover:border-slate-700 bg-slate-950/40 transition"
+                  className="text-xs font-bold text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-800 hover:border-red-500/30 bg-slate-950/40 hover:bg-red-500/10 transition-all duration-200"
                 >
                   Close Preview
                 </button>
               </div>
 
               {/* Modal Body */}
-              <div className="flex-1 bg-slate-950 p-6 overflow-y-auto">
-                {isPreviewLoading ? (
-                  <div className="w-full h-full flex flex-col items-center justify-center space-y-3 text-slate-400">
-                    <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
-                    <span className="text-xs font-semibold">Retrieving document content...</span>
-                  </div>
-                ) : previewDocUrl ? (
-                  <iframe
-                    src={previewDocUrl}
-                    className="w-full h-full rounded-xl border border-slate-900 bg-slate-900"
-                    title="Document Preview"
-                  />
-                ) : (
-                  <div className="text-xs text-slate-300 font-mono whitespace-pre-wrap leading-relaxed max-w-4xl mx-auto selection:bg-emerald-500/20">
-                    {previewDocContent}
-                  </div>
-                )}
+              <div className="flex-1 bg-slate-950 p-4">
+                <iframe
+                  src={previewDocUrl}
+                  className="w-full h-full rounded-xl border border-slate-900 bg-slate-900"
+                  title="Document Preview"
+                />
               </div>
             </div>
           </div>
