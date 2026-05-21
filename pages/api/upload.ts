@@ -4,7 +4,9 @@ import { createHash } from 'crypto'
 import fs from 'fs'
 import path from 'path'
 // @ts-ignore
-import { PDFParse } from 'pdf-parse'
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
+
+
 
 const geminiKey = process.env.GEMINI_API_KEY
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -76,10 +78,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (filename.toLowerCase().endsWith('.pdf')) {
       try {
-        const parser = new PDFParse({ data: new Uint8Array(buffer) })
-        const result = await parser.getText()
-        content = result.text || ''
-        await parser.destroy()
+        const loadingTask = pdfjs.getDocument({
+          data: new Uint8Array(buffer),
+          useSystemFonts: false,
+          disableFontFace: true,
+          verbosity: 0,
+        })
+        const doc = await loadingTask.promise
+        let fullText = ''
+
+        for (let i = 1; i <= doc.numPages; i++) {
+          const page = await doc.getPage(i)
+          const textContent = await page.getTextContent()
+          const pageText = textContent.items
+            .map((item: any) => {
+              if ('str' in item) {
+                return item.str + (item.hasEOL ? '\n' : '')
+              }
+              return ''
+            })
+            .join('')
+          fullText += pageText + '\n\n'
+          page.cleanup()
+        }
+
+        await doc.destroy()
+        content = fullText
       } catch (err: any) {
         throw new Error(`Failed to parse PDF file: ${err.message}`)
       }
