@@ -3,16 +3,16 @@ import { createClient } from '@supabase/supabase-js'
 import { createHash } from 'crypto'
 import fs from 'fs'
 import path from 'path'
-// @ts-ignore
-import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
-// @ts-ignore
-import * as pdfjsWorker from 'pdfjs-dist/legacy/build/pdf.worker.mjs'
 
-if (pdfjs.GlobalWorkerOptions) {
-  // @ts-ignore
-  pdfjs.GlobalWorkerOptions.workerPort = pdfjsWorker
+async function extractTextFromPdf(buffer: Buffer): Promise<string> {
+  // unpdf is a serverless-optimized PDF text extractor that ships its own
+  // inlined PDF.js worker — no native canvas, no process.getBuiltinModule,
+  // no @napi-rs/canvas. Works perfectly on Vercel, Cloudflare, and Node.js.
+  const { extractText, getDocumentProxy } = await import('unpdf')
+  const pdf = await getDocumentProxy(new Uint8Array(buffer))
+  const { text } = await extractText(pdf, { mergePages: true })
+  return text
 }
-
 
 
 const geminiKey = process.env.GEMINI_API_KEY
@@ -85,32 +85,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (filename.toLowerCase().endsWith('.pdf')) {
       try {
-        const loadingTask = pdfjs.getDocument({
-          data: new Uint8Array(buffer),
-          useSystemFonts: false,
-          disableFontFace: true,
-          verbosity: 0,
-        })
-        const doc = await loadingTask.promise
-        let fullText = ''
-
-        for (let i = 1; i <= doc.numPages; i++) {
-          const page = await doc.getPage(i)
-          const textContent = await page.getTextContent()
-          const pageText = textContent.items
-            .map((item: any) => {
-              if ('str' in item) {
-                return item.str + (item.hasEOL ? '\n' : '')
-              }
-              return ''
-            })
-            .join('')
-          fullText += pageText + '\n\n'
-          page.cleanup()
-        }
-
-        await doc.destroy()
-        content = fullText
+        content = await extractTextFromPdf(buffer)
       } catch (err: any) {
         throw new Error(`Failed to parse PDF file: ${err.message}`)
       }
