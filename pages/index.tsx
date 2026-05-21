@@ -1733,7 +1733,7 @@ export default function Home() {
                   <div className="space-y-2">
                     <h5 className="font-extrabold text-slate-300 text-[11px] text-emerald-400">Understanding tsvector & GIN Indexing</h5>
                     <p className="leading-normal">
-                      Full-text search parses text into lexical tokens (words stripped of prefixes/suffixes, e.g. "microprocessors" -> "microprocessor").
+                      Full-text search parses text into lexical tokens (words stripped of prefixes/suffixes, e.g. &quot;microprocessors&quot; {"->"} &quot;microprocessor&quot;).
                     </p>
                     <p className="leading-normal">
                       A **Generalized Inverted Index (GIN)** maps every unique word token to its occurrences in the database. When you search, Postgres performs direct keyword intersection matching, making queries execute in milliseconds.
