@@ -5,6 +5,13 @@ import fs from 'fs'
 import path from 'path'
 // @ts-ignore
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
+// @ts-ignore
+import * as pdfjsWorker from 'pdfjs-dist/legacy/build/pdf.worker.mjs'
+
+if (pdfjs.GlobalWorkerOptions) {
+  // @ts-ignore
+  pdfjs.GlobalWorkerOptions.workerPort = pdfjsWorker
+}
 
 
 
