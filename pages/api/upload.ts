@@ -123,61 +123,64 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 3. Chunk text content
     const chunks = chunkText(sanitizedContent, 1000, 200)
 
-    // 4. Generate embeddings and insert sections
-    for (let index = 0; index < chunks.length; index++) {
-      const chunk = chunks[index]
-      const sanitizedChunk = chunk.replace(/\n/g, ' ')
+    // 4. Generate embeddings in a single batch request
+    const batchRequests = chunks.map((chunk) => ({
+      model: 'models/gemini-embedding-2',
+      content: {
+        parts: [{ text: chunk.replace(/\n/g, ' ') }],
+      },
+      taskType: 'RETRIEVAL_DOCUMENT',
+      outputDimensionality: 768,
+    }))
 
-      // Call Gemini Embedding API
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key=${geminiKey}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'models/gemini-embedding-2',
-            content: {
-              parts: [{ text: sanitizedChunk }],
-            },
-            taskType: 'RETRIEVAL_DOCUMENT',
-            outputDimensionality: 768,
-          }),
-        }
-      )
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`Gemini API error during embedding generation: ${response.status} - ${errorText}`)
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:batchEmbedContents?key=${geminiKey}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ requests: batchRequests }),
       }
+    )
 
-      const responseData = await response.json()
-      const embedding = responseData.embedding?.values
-
-      if (!embedding) {
-        throw new Error('Failed to retrieve embedding values from Gemini API response')
-      }
-
-      const tokenCount = Math.ceil(chunk.length / 4)
-
-      const { error: sectionError } = await supabaseClient
-        .from('nods_page_section')
-        .insert({
-          page_id: page.id,
-          slug: `section-${index + 1}`,
-          heading: `Section ${index + 1}`,
-          content: chunk,
-          token_count: tokenCount,
-          embedding,
-        })
-
-      if (sectionError) {
-        throw new Error(`Failed to insert section ${index + 1}: ${sectionError.message}`)
-      }
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Gemini API error during embedding generation: ${response.status} - ${errorText}`)
     }
 
-    // 5. Update checksum upon successful completion
+    const responseData = await response.json()
+    const embeddingsList = responseData.embeddings
+
+    if (!embeddingsList || embeddingsList.length !== chunks.length) {
+      throw new Error('Failed to retrieve correct batch embedding values from Gemini API response')
+    }
+
+    // 5. Prepare and execute single bulk insert for all sections
+    const sectionsToInsert = chunks.map((chunk, index) => {
+      const embedding = embeddingsList[index]?.values
+      if (!embedding) {
+        throw new Error(`Failed to retrieve embedding values for chunk ${index + 1}`)
+      }
+      return {
+        page_id: page.id,
+        slug: `section-${index + 1}`,
+        heading: `Section ${index + 1}`,
+        content: chunk,
+        token_count: Math.ceil(chunk.length / 4),
+        embedding,
+      }
+    })
+
+    const { error: bulkInsertError } = await supabaseClient
+      .from('nods_page_section')
+      .insert(sectionsToInsert)
+
+    if (bulkInsertError) {
+      throw new Error(`Failed to insert document sections: ${bulkInsertError.message}`)
+    }
+
+    // 6. Update checksum upon successful completion
     const { error: updateError } = await supabaseClient
       .from('nods_page')
       .update({ checksum })

@@ -17,7 +17,8 @@ import {
   Bot,
   User,
   MessageSquare,
-  Eye
+  Eye,
+  Zap
 } from 'lucide-react'
 // @ts-ignore
 import { useCompletion } from 'ai/react'
@@ -1400,13 +1401,13 @@ export default function Home() {
                 <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-[100px] pointer-events-none" />
                 <div className="relative z-10 max-w-3xl space-y-3">
                   <span className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full">
-                    RAG Framework Engine
+                    Hybrid RAG Engine (RRF)
                   </span>
                   <h3 className="text-2xl font-black text-slate-100 tracking-tight mt-2">
                     How VectorMind Processes Your Data
                   </h3>
                   <p className="text-xs text-slate-400 leading-relaxed font-medium">
-                    VectorMind leverages **Retrieval-Augmented Generation (RAG)** to index documents in a high-dimensional vector space and dynamically retrieve matching context at query time. This completely eliminates AI hallucinations and forces the LLM to ground its responses in your verified source documents.
+                    VectorMind leverages an advanced **Hybrid Retrieval-Augmented Generation (RAG)** framework. By combining high-dimensional **semantic vectors** (concept matching) with PostgreSQL **full-text search GIN indexing** (literal keyword matching), and fusing them via **Reciprocal Rank Fusion (RRF)**, we guarantee maximum retrieval accuracy and eliminate AI hallucinations.
                   </p>
                 </div>
               </div>
@@ -1419,7 +1420,7 @@ export default function Home() {
                   </div>
                   <div>
                     <h4 className="text-sm font-extrabold text-slate-200 uppercase tracking-wider">1. The Document Ingestion Pipeline</h4>
-                    <p className="text-[10px] text-slate-500 font-medium">From raw file upload to indexed high-dimensional vector coordinates</p>
+                    <p className="text-[10px] text-slate-500 font-medium">From raw file upload to automated vector embedding and lexical GIN indexation</p>
                   </div>
                 </div>
 
@@ -1511,13 +1512,13 @@ export default function Home() {
                           <CheckCircle className="w-4 h-4 text-emerald-400" />
                         </div>
                       </div>
-                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">pgvector DB indexing</h5>
+                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">Database GIN Indexing</h5>
                       <p className="text-[10px] text-slate-500 leading-normal">
-                        Saves coordinates to Supabase SQL. Cascading constraint w/ <code>nods_page</code> ensures clean wipes.
+                        Inserts 768-dim vector. Trigger automatically compiles <code>tsvector</code> lexical words into dynamic GIN search index.
                       </p>
                     </div>
                     <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
-                      Format: vector(768)
+                      Auto Trigger Enabled
                     </div>
                   </div>
 
@@ -1531,8 +1532,8 @@ export default function Home() {
                     <Search className="w-4 h-4 text-emerald-400" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-extrabold text-slate-200 uppercase tracking-wider">2. The RAG Query Loop (Search Path)</h4>
-                    <p className="text-[10px] text-slate-500 font-medium">Bypassing raw chat defaults to extract relevant document answers</p>
+                    <h4 className="text-sm font-extrabold text-slate-200 uppercase tracking-wider">2. The Hybrid RAG Retrieval Loop</h4>
+                    <p className="text-[10px] text-slate-500 font-medium">Bypassing raw chat defaults to extract highly targeted and relevant document answers</p>
                   </div>
                 </div>
 
@@ -1550,7 +1551,7 @@ export default function Home() {
                       </div>
                       <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">Natural Language Query</h5>
                       <p className="text-[10px] text-slate-500 leading-normal">
-                        User inputs a question (e.g. &quot;How does 8086 interface external memory?&quot;) on the Chat UI.
+                        User inputs a question (e.g. &quot;How does 8086 interface memory?&quot;) on the Chat UI.
                       </p>
                     </div>
                     <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
@@ -1583,16 +1584,16 @@ export default function Home() {
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 03</span>
                         <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
-                          <Database className="w-4 h-4 text-emerald-400" />
+                          <Zap className="w-4 h-4 text-emerald-400" />
                         </div>
                       </div>
-                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">pgvector Match RPC</h5>
+                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">RRF Hybrid Search RPC</h5>
                       <p className="text-[10px] text-slate-500 leading-normal">
-                        Queries pgvector using **Negative Dot Product** (<code>&lt;#&gt;</code>) to pull the top 10 matching sections above a 0.3 threshold.
+                        Queries both **pgvector** and **full-text tsvector** indexes, then fuses matches using the **Reciprocal Rank Fusion** algorithm.
                       </p>
                     </div>
                     <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
-                      Limit: 10, Score: &gt;= 0.3
+                      Method: 1 / (60 + Rank)
                     </div>
                   </div>
 
@@ -1607,7 +1608,7 @@ export default function Home() {
                       </div>
                       <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">RAG Context Prompt</h5>
                       <p className="text-[10px] text-slate-500 leading-normal">
-                        Packs context fragments and security instructions together. Auto-returns fallback if no match is found to bypass API quotas.
+                        Packs context fragments and instructions. Auto-returns fallback if no match is found, saving your API limits!
                       </p>
                     </div>
                     <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
@@ -1626,7 +1627,7 @@ export default function Home() {
                       </div>
                       <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">Gemini Streaming</h5>
                       <p className="text-[10px] text-slate-500 leading-normal">
-                        Feeds the unified context block to <code>gemini-2.5-flash</code>. AI streams highly cited markdown responses instantly.
+                        Feeds the unified context to <code>gemini-2.5-flash</code>. AI streams highly cited markdown responses instantly.
                       </p>
                     </div>
                     <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
@@ -1678,7 +1679,7 @@ export default function Home() {
                       <h4 className="text-xs font-bold uppercase tracking-wider">Table: nods_page_section</h4>
                     </div>
                     <p className="text-[10px] text-slate-500 leading-normal">
-                      Contains the individual text fragments and their computed 768-dimension Gemini coordinate arrays.
+                      Contains the individual text fragments, their computed vectors, and the auto-updating keyword search indexes.
                     </p>
                     <div className="space-y-1.5 font-mono text-[10px] text-slate-300 bg-slate-950 p-3.5 rounded-lg border border-slate-900 leading-normal">
                       <div><span className="text-emerald-400">id</span>: bigint <span className="text-slate-600">(PK, Serial)</span></div>
@@ -1686,8 +1687,8 @@ export default function Home() {
                       <div><span className="text-emerald-400">slug</span>: text <span className="text-slate-600">(Anchor selector)</span></div>
                       <div><span className="text-emerald-400">heading</span>: text <span className="text-slate-600">(Subheading title)</span></div>
                       <div><span className="text-emerald-400">content</span>: text <span className="text-slate-600">(Raw text chunk)</span></div>
-                      <div><span className="text-emerald-400">token_count</span>: integer <span className="text-slate-600">(Approx. length)</span></div>
-                      <div><span className="text-emerald-400">embedding</span>: vector(768) <span className="text-slate-600">(pgvector data)</span></div>
+                      <div><span className="text-emerald-400">embedding</span>: vector(768) <span className="text-slate-600">(pgvector array)</span></div>
+                      <div><span className="text-emerald-400">fts</span>: tsvector <span className="text-slate-600">(Trigger lexical index)</span></div>
                     </div>
                   </div>
 
@@ -1701,7 +1702,7 @@ export default function Home() {
                       <p className="text-[10px] text-slate-500 leading-normal">
                         Preserves physical duplicates of binary uploads locally. This feeds PDF previews to your dashboard in real-time.
                       </p>
-                      <div className="bg-slate-950 p-3 rounded-lg border border-slate-900 font-mono text-[10px] text-slate-300">
+                      <div className="bg-slate-950 p-3  rounded-lg border border-slate-900 font-mono text-[10px] text-slate-300">
                         📂 public/uploads/
                       </div>
                     </div>
@@ -1713,29 +1714,41 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Vector DB Mathematics detail */}
+              {/* Vector DB & RRF Mathematics detail */}
               <div className="border border-slate-900 bg-slate-950/20 rounded-2xl p-6 space-y-4">
                 <div className="flex items-center space-x-2 text-emerald-400">
                   <Wand className="w-4 h-4" />
-                  <h4 className="text-xs font-bold uppercase tracking-wider">The Similarity Search Mathematics</h4>
+                  <h4 className="text-xs font-bold uppercase tracking-wider">The Hybrid RRF Search Mathematics</h4>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs text-slate-400">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs text-slate-400">
                   <div className="space-y-2">
-                    <h5 className="font-extrabold text-slate-300 text-[11px]">Why We Use Negative Dot Product (`&lt;#&gt;`)</h5>
+                    <h5 className="font-extrabold text-slate-300 text-[11px] text-emerald-400">Why We Use Negative Dot Product (`&lt;#&gt;`)</h5>
                     <p className="leading-normal">
-                      By default, vector search calculates similarity using **Cosine Distance**. However, calculating Cosine Distance requires computing vector lengths (square roots) at query time.
+                      By default, vector search calculates similarity using Cosine Distance. However, calculating Cosine Distance requires computing vector square roots at query time.
                     </p>
                     <p className="leading-normal">
                       Because **Google Gemini** embeddings are L2-normalized (mathematical length is exactly 1), **Negative Dot Product** produces the exact same relevance ranking as Cosine Distance, but executes up to **30% faster** because it operates entirely on simpler scalar addition and multiplication.
                     </p>
                   </div>
                   <div className="space-y-2">
-                    <h5 className="font-extrabold text-slate-300 text-[11px]">Negated dot product mapping</h5>
+                    <h5 className="font-extrabold text-slate-300 text-[11px] text-emerald-400">Understanding tsvector & GIN Indexing</h5>
                     <p className="leading-normal">
-                      PostgreSQL pgvector returns negative values for dot product similarity queries due to internal database structures.
+                      Full-text search parses text into lexical tokens (words stripped of prefixes/suffixes, e.g. "microprocessors" -> "microprocessor").
                     </p>
                     <p className="leading-normal">
-                      Our custom RPC function `match_page_sections` automatically negates this value <code>(embedding &lt;#&gt; query_embedding) * -1</code>, transforming it back into a standard, intuitive similarity score between `0.0` (unrelated) and `1.0` (identical).
+                      A **Generalized Inverted Index (GIN)** maps every unique word token to its occurrences in the database. When you search, Postgres performs direct keyword intersection matching, making queries execute in milliseconds.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <h5 className="font-extrabold text-slate-300 text-[11px] text-emerald-400">Reciprocal Rank Fusion (RRF) Formula</h5>
+                    <p className="leading-normal">
+                      RRF merges ranked results from multiple search systems (Semantic + Full-text) using the following formula:
+                    </p>
+                    <div className="bg-slate-950/80 p-3 rounded-lg border border-slate-900 font-mono text-[10px] text-slate-200 mt-2 text-center">
+                      Score = 1 / (60 + Semantic_Rank) + 1 / (60 + Keyword_Rank)
+                    </div>
+                    <p className="leading-normal mt-2">
+                      Documents ranking high in **both** indices get heavily promoted, ensuring that precise keywords AND broad concept synonyms both drive the final answer!
                     </p>
                   </div>
                 </div>
