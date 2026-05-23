@@ -2498,7 +2498,7 @@ export default function Home() {
                               
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
-                                  {msg.confidence && (
+                                  {msg.confidence && msg.confidence.level !== 'LOW' && (
                                     <div className={`text-[10px] font-bold px-2.5 py-1 rounded-md border flex items-center gap-1.5 shadow-sm ${
                                       msg.confidence.level === 'HIGH' ? 'bg-zinc-900 text-zinc-200 border-zinc-800' : 
                                       msg.confidence.level === 'MEDIUM' ? 'bg-zinc-900 text-zinc-350 border-zinc-800' : 
