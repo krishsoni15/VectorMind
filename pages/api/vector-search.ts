@@ -1,304 +1,216 @@
-import type { NextRequest } from 'next/server'
+// VECTORMIND — vector-search.ts
+// Pipeline: HyDE → Embed → Hybrid Search → RRF → MMR → Confidence → Pack → Stream
+import type { NextApiRequest, NextApiResponse } from 'next'
 import { createClient } from '@supabase/supabase-js'
-import { codeBlock, oneLine } from 'common-tags'
 import GPT3Tokenizer from 'gpt3-tokenizer'
-import { StreamingTextResponse } from 'ai'
-import { ApplicationError, UserError } from '@/lib/errors'
+import {
+  generateEmbedding, generateEmbeddingsBatch, expandQueryHyDE, streamChatResponse,
+  EMBEDDING_PROVIDERS, CHAT_PROVIDERS, isProviderAvailable,
+  type EmbeddingProviderId, type ChatProviderId
+} from '../../lib/providers'
 
-// Retrieve API keys and configurations from your environment variables
-const geminiKey = process.env.GEMINI_API_KEY
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-// Set the nextjs edge runtime for optimal real-time streaming performance
-export const runtime = 'edge'
+// ─── RRF Fusion ─────────────────────────────────────────────────────────────────
 
-export default async function handler(req: NextRequest) {
-  try {
-    // 1. Verify that all required environment credentials are fully configured
-    if (!geminiKey) {
-      throw new ApplicationError('Missing environment variable GEMINI_API_KEY')
-    }
-
-    if (!supabaseUrl) {
-      throw new ApplicationError('Missing environment variable NEXT_PUBLIC_SUPABASE_URL')
-    }
-
-    if (!supabaseServiceKey) {
-      throw new ApplicationError('Missing environment variable SUPABASE_SERVICE_ROLE_KEY')
-    }
-
-    // 2. Parse request payload to retrieve the user's question
-    const requestData = await req.json()
-    if (!requestData) {
-      throw new UserError('Missing request data')
-    }
-
-    const { prompt: query } = requestData
-    if (!query) {
-      throw new UserError('Missing query in request data')
-    }
-
-    // 3. Initialize a secure Supabase service client to interact with pgvector and full-text indexes
-    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-      realtime: {
-        transport: class {} as any,
-      },
+function rrfFusion(resultLists: any[][]): any[] {
+  const scores = new Map<string, { score: number; item: any }>()
+  for (const list of resultLists) {
+    list.forEach((item: any, rank: number) => {
+      const key = String(item.id)
+      const existing = scores.get(key) || { score: 0, item }
+      existing.score += 1 / (60 + rank)
+      scores.set(key, existing)
     })
+  }
+  return Array.from(scores.values()).sort((a, b) => b.score - a.score).map(v => v.item)
+}
+
+// ─── MMR ─────────────────────────────────────────────────────────────────────────
+
+function mmrFilter(items: any[], lambda = 0.7, k = 20): any[] {
+  if (items.length === 0) return []
+  const selected: any[] = [items[0]]
+  const remaining = items.slice(1)
+  while (selected.length < k && remaining.length > 0) {
+    let bestIdx = 0, bestScore = -Infinity
+    remaining.forEach((item: any, i: number) => {
+      const relevance = item.similarity || 0
+      const maxSim = Math.max(...selected.map((s: any) => s.page_id === item.page_id ? 0.8 : 0.1))
+      const score = lambda * relevance - (1 - lambda) * maxSim
+      if (score > bestScore) { bestScore = score; bestIdx = i }
+    })
+    selected.push(remaining[bestIdx])
+    remaining.splice(bestIdx, 1)
+  }
+  return selected
+}
+
+function computeConfidence(items: any[]): 'HIGH' | 'MEDIUM' | 'LOW' {
+  if (!items.length) return 'LOW'
+  const top = items[0].similarity || 0
+  return top >= 0.75 ? 'HIGH' : top >= 0.35 ? 'MEDIUM' : 'LOW'
+}
+
+function packContext(items: any[], maxTokens = 15000): string {
+  const tokenizer = new GPT3Tokenizer({ type: 'gpt3' })
+  let context = '', total = 0
+  for (const item of items) {
+    const chunk = `[Source: ${item.page_id} | Score: ${((item.similarity || 0) * 100).toFixed(1)}%]\n${item.content}\n\n`
+    const tokenCount = tokenizer.encode(chunk).bpe.length
+    if (total + tokenCount > maxTokens) break
+    context += chunk
+    total += tokenCount
+  }
+  return context
+}
+
+// ─── Main Handler ────────────────────────────────────────────────────────────────
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  try {
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return res.status(500).json({ error: 'Supabase not configured' })
+    }
+
+    const { prompt: query, chatHistory, projectId, chatProvider: bodyChatProvider, embeddingProvider: bodyEmbeddingProvider, selectedFileIds } = req.body as {
+      prompt: string; projectId: string
+      chatHistory?: Array<{ role: string; text: string }>
+      chatProvider?: string
+      embeddingProvider?: string
+      selectedFileIds?: string[]
+    }
+
+    if (!projectId) return res.status(400).json({ error: 'Project ID required' })
+    if (!query?.trim()) return res.status(400).json({ error: 'Query required' })
 
     const sanitizedQuery = query.trim()
 
-    // 4. Generate query vector embeddings using models/gemini-embedding-2 via native fetch.
-    // This is 100% compatible with the Edge Runtime and bypasses Node.js sandbox constraints.
-    // We specify taskType as 'RETRIEVAL_QUERY' and outputDimensionality as 768.
-    const embeddingResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key=${geminiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'models/gemini-embedding-2',
-          content: {
-            parts: [{ text: sanitizedQuery.replace(/\n/g, ' ') }],
-          },
-          taskType: 'RETRIEVAL_QUERY',
-          outputDimensionality: 768,
-        }),
-      }
-    )
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+    res.setHeader('Transfer-Encoding', 'chunked')
+    res.setHeader('Cache-Control', 'no-cache, no-transform')
 
-    if (!embeddingResponse.ok) {
-      const errorText = await embeddingResponse.text()
-      let parsedError = 'Failed to generate embedding'
-      try {
-        const errorJson = JSON.parse(errorText)
-        if (errorJson.error?.message) {
-          parsedError = errorJson.error.message
-        }
-      } catch (e) {}
-      throw new ApplicationError(parsedError, { errorText })
-    }
-
-    const embeddingData = await embeddingResponse.json()
-    const embedding = embeddingData.embedding?.values
-
-    if (!embedding) {
-      throw new ApplicationError('Failed to extract embedding values from Gemini response')
-    }
-
-    // 5. Invoke our custom hybrid_search database RPC function
-    // This executes BOTH pgvector semantic similarity search and full-text keyword tsquery search,
-    // then merges and ranks the results using the Reciprocal Rank Fusion (RRF) algorithm.
-    const { error: matchError, data: pageSections } = await supabaseClient.rpc(
-      'hybrid_search',
-      {
-        query_embedding: embedding, // The 768-dimension semantic query vector
-        query_text: sanitizedQuery, // Raw search text for full-text search token matching
-        match_threshold: 0.3, // Matches that score lower than this semantic threshold are filtered out
-        match_count: 10, // Returns the top 10 overall ranked chunks
-      }
-    )
-
-    if (matchError) {
-      throw new ApplicationError('Failed to execute hybrid_search RPC', matchError)
-    }
-
-    // 6. Resolve the parent documents details (such as filenames and paths) for the matched sections
-    const pageIds = Array.from(new Set((pageSections || []).map((s: any) => s.page_id)))
-    const pageMap = new Map<number, { path: string; filename: string }>()
-    
-    if (pageIds.length > 0) {
-      const { data: pages } = await supabaseClient
-        .from('nods_page')
-        .select('id, path, meta')
-        .in('id', pageIds)
-      
-      if (pages) {
-        pages.forEach((p: any) => {
-          pageMap.set(p.id, {
-            path: p.path,
-            filename: p.meta?.filename || p.path.split('/').pop() || 'document',
-          })
-        })
-      }
-    }
-
-    // 7. Collate retrieved text sections into a single context block
-    const tokenizer = new GPT3Tokenizer({ type: 'gpt3' })
-    let tokenCount = 0
-    let contextText = ''
-    const sourceFiles = new Set<string>()
-
-    for (let i = 0; i < pageSections.length; i++) {
-      const pageSection = pageSections[i]
-      const content = pageSection.content
-      const encoded = tokenizer.encode(content)
-      tokenCount += encoded.text.length
-
-      // Prevent sending overly large contexts to optimize performance and safety
-      if (tokenCount >= 1500) {
-        break
-      }
-
-      contextText += `${content.trim()}\n---\n`
-
-      // Identify source documents to provide citations to the user interface
-      const pageData = pageMap.get(pageSection.page_id)
-      if (pageData) {
-        sourceFiles.add(`${pageData.filename}->${pageData.path}`)
-      }
-    }
-
-    // 8. Quota Saver Fallback: Instantly respond if no matching documents are found
-    // This completely bypasses calling the Gemini API for irrelevant questions, protecting your daily rate limits!
-    if (!contextText.trim()) {
-      const fallbackMsg = "Sorry, I couldn't find relevant information in your indexed documents for this specific question. Please ensure you have uploaded documents related to this topic, or try rephrasing your query."
-      const encoder = new TextEncoder()
-      const localStream = new ReadableStream({
-        start(controller) {
-          controller.enqueue(encoder.encode(fallbackMsg))
-          controller.close()
-        }
-      })
-      return new StreamingTextResponse(localStream)
-    }
-
-    // 9. Assemble the custom RAG prompt with retrieved context
-    const promptText = codeBlock`
-      ${oneLine`
-        You are a professional and precise document analysis assistant for the VectorMind workspace.
-        Given the following sections from the user's indexed documents, answer the question using only that information,
-        outputted in clean, structured markdown format. Be thorough, detailed, and cite specific facts directly.
-        If you are unsure or the answer is not explicitly written in the provided context documents, say:
-        "Sorry, I couldn't find relevant information in your indexed documents for this specific question."
-      `}
-
-      Context sections:
-      ${contextText}
-
-      Question: """
-      ${sanitizedQuery}
-      """
-
-      Answer:
-    `
-
-    // 10. Call gemini-2.5-flash with Google's native SSE endpoint via fetch
-    // This ensures full compatibility inside the Edge Runtime.
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${geminiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: promptText }] }],
-          generationConfig: {
-            maxOutputTokens: 1024,
-            temperature: 0.1,
-          },
-        }),
-      }
-    )
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      let parsedError = 'Failed to generate completion'
-      try {
-        const errorJson = JSON.parse(errorText)
-        if (errorJson.error?.message) {
-          parsedError = errorJson.error.message
-        }
-      } catch (e) {}
-      throw new ApplicationError(parsedError, { errorText })
-    }
-
-    // 11. Create the source documents reference metadata prefix block
-    const sourcesPrefix = sourceFiles.size > 0
-      ? `[SOURCES:${Array.from(sourceFiles).join('|')}]\n`
-      : ''
-
-    // 12. Convert the SSE response stream into a clean client stream
-    const encoder = new TextEncoder()
-    const decoder = new TextDecoder()
-    const webStream = new ReadableStream({
-      async start(controller) {
-        // Enqueue the citation references block at the start of the stream
-        if (sourcesPrefix) {
-          controller.enqueue(encoder.encode(sourcesPrefix))
-        }
-
-        if (!response.body) {
-          controller.close()
-          return
-        }
-
-        const reader = response.body.getReader()
-        let buffer = ''
-        try {
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
-            
-            buffer += decoder.decode(value, { stream: true })
-            const lines = buffer.split('\n')
-            buffer = lines.pop() || ''
-            
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                try {
-                  const data = JSON.parse(line.slice(6))
-                  const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-                  if (text) {
-                    controller.enqueue(encoder.encode(text))
-                  }
-                } catch (e) {
-                  // Ignore parse errors on incomplete chunks
-                }
-              }
-            }
-          }
-          controller.close()
-        } catch (err) {
-          controller.error(err)
-        }
-      },
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
     })
 
-    // 13. Return the streaming text response
-    return new StreamingTextResponse(webStream)
-  } catch (err: unknown) {
-    // 14. Graceful exception and quota/limit error formatting
-    if (err instanceof UserError) {
-      return new Response(
-        JSON.stringify({ error: err.message, data: err.data }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      )
-    } else if (err instanceof ApplicationError) {
-      console.error(`${err.message}: ${JSON.stringify(err.data)}`)
-      const isQuota = err.message.toLowerCase().includes('quota') || 
-                      err.message.toLowerCase().includes('limit') || 
-                      err.message.toLowerCase().includes('exhausted')
-      return new Response(
-        JSON.stringify({ error: err.message }),
-        { status: isQuota ? 429 : 400, headers: { 'Content-Type': 'application/json' } }
-      )
-    } else {
-      console.error('Unexpected error:', err)
-      if (err instanceof Error) {
-        console.error(err.stack)
+    // Get project providers
+    let embedProvider = (bodyEmbeddingProvider || 'cohere') as EmbeddingProviderId
+    let chatProvider = (bodyChatProvider || 'groq') as ChatProviderId
+
+    try {
+      const { data: proj } = await supabase.from('nods_project').select('embedding_provider, chat_provider').eq('id', projectId).single()
+      if (proj) {
+        if (proj.embedding_provider && !bodyEmbeddingProvider) embedProvider = proj.embedding_provider as EmbeddingProviderId
+        if (proj.chat_provider && !bodyChatProvider) chatProvider = proj.chat_provider as ChatProviderId
       }
+    } catch (e) {
+      console.warn('[VectorMind] Safe bypass of project lookup schema error:', e)
     }
 
-    return new Response(
-      JSON.stringify({
-        error: (err as any)?.message || 'There was an error processing your request',
-        stack: (err as any)?.stack
-      }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    // Auto-fallback if keys missing
+    if (!isProviderAvailable(EMBEDDING_PROVIDERS[embedProvider].keyEnv)) {
+      const fb = Object.values(EMBEDDING_PROVIDERS).find(p => isProviderAvailable(p.keyEnv))
+      if (!fb) { res.write('Error: No embedding API key configured.'); return res.end() }
+      embedProvider = fb.id
+    }
+    if (!isProviderAvailable(CHAT_PROVIDERS[chatProvider].keyEnv)) {
+      const fb = Object.values(CHAT_PROVIDERS).find(p => isProviderAvailable(p.keyEnv))
+      if (!fb) { res.write('Error: No chat API key configured.'); return res.end() }
+      chatProvider = fb.id
+    }
+
+    // HyDE expansion
+    const allQueries = await expandQueryHyDE(sanitizedQuery, chatProvider)
+    console.log(`[VectorMind] Queries (${allQueries.length}):`, allQueries)
+
+    // Embed queries using high-performance batching
+    let queryEmbeddings: number[][] = []
+    try {
+      queryEmbeddings = await generateEmbeddingsBatch(allQueries, embedProvider, 'query')
+    } catch (e: any) {
+      console.error('[VectorMind] Query batch embedding failed:', e.message)
+    }
+
+    if (queryEmbeddings.length === 0) {
+      res.write("Couldn't process your query. Please try again.")
+      return res.end()
+    }
+
+    // Hybrid search
+    const allResultLists: any[][] = []
+    for (let i = 0; i < queryEmbeddings.length; i++) {
+      const { data, error } = await supabase.rpc('hybrid_search', {
+        query_embedding: queryEmbeddings[i],
+        query_text: allQueries[i] || sanitizedQuery,
+        p_project_id: projectId,
+        match_count: 20,
+        similarity_threshold: 0.3,
+      })
+      if (error) { console.error(`[VectorMind] Search error ${i}:`, error); continue }
+      
+      let filteredData = data || []
+      if (selectedFileIds && selectedFileIds.length > 0) {
+        filteredData = filteredData.filter((item: any) => selectedFileIds.includes(String(item.page_id)))
+      }
+      if (filteredData.length > 0) allResultLists.push(filteredData)
+    }
+
+    if (allResultLists.length === 0) {
+      res.write("I couldn't find relevant information in the indexed documents.")
+      return res.end()
+    }
+
+    // RRF + MMR + Confidence
+    const fusedResults = rrfFusion(allResultLists)
+    const diverseResults = mmrFilter(fusedResults, 0.7, 20)
+    const confidence = computeConfidence(diverseResults)
+
+    if (confidence === 'LOW') {
+      res.write("I couldn't find relevant information in the indexed documents.")
+      return res.end()
+    }
+
+    console.log(`[VectorMind] ${diverseResults.length} results. ${confidence} confidence. Top: ${(diverseResults[0]?.similarity || 0).toFixed(4)}`)
+
+    const packedContext = packContext(diverseResults, 15000)
+
+    // Resolve sources
+    const pageIds = [...new Set(diverseResults.map((r: any) => r.page_id))]
+    const { data: pages } = await supabase.from('nods_page').select('id, path, meta').in('id', pageIds)
+    const sourceMap = new Map<number, string>()
+    pages?.forEach((p: any) => sourceMap.set(p.id, p.meta?.filename || p.path?.split('/').pop() || 'doc'))
+    const sourceIds = [...new Set(diverseResults.map((r: any) => sourceMap.get(r.page_id) || 'doc'))]
+
+    // Build system prompt
+    const systemPrompt = `You are VectorMind, an intelligent document assistant.
+Answer the user's question using ONLY the information in the CONTEXT section below.
+If the context does not contain enough information to answer, say: "I don't have enough information in the indexed documents to answer that."
+Do not make up facts. Cite sources when possible.
+Confidence level: ${confidence}
+
+CONTEXT:
+${packedContext}`
+
+    // Send metadata prefix + stream response
+    res.write(`[SOURCES:${JSON.stringify(sourceIds)}]\n[CONFIDENCE:${confidence}:${(diverseResults[0]?.similarity || 0).toFixed(4)}]\n`)
+
+    await streamChatResponse(
+      systemPrompt,
+      sanitizedQuery,
+      chatHistory || [],
+      chatProvider,
+      (text) => res.write(text)
     )
+
+    res.end()
+  } catch (err: any) {
+    console.error('[VectorMind] Search error:', err)
+    if (res.headersSent) {
+      try { res.write(`\n\nError: ${err.message}`); res.end() } catch {}
+      return
+    }
+    return res.status(500).json({ error: err.message || 'Search failed' })
   }
 }

@@ -1,1836 +1,2663 @@
 import Head from 'next/head'
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
-  Search,
-  UploadCloud,
-  Database,
-  Trash2,
-  Loader2,
-  CheckCircle,
-  XCircle,
-  FileText,
-  AlertCircle,
-  RefreshCw,
-  CornerDownLeft,
-  Wand,
-  Send,
-  Bot,
-  User,
-  MessageSquare,
-  Eye,
-  Zap
+  Search, UploadCloud, Database, Trash2, Loader2, CheckCircle,
+  XCircle, FileText, AlertCircle, RefreshCw, Send, Bot, User,
+  MessageSquare, Menu, X, PlusCircle, Activity, Info, Zap,
+  Folder, FolderPlus, Eye, 
+  LayoutDashboard, Copy, Square, Check, ChevronDown, BarChart3, Download,
+  Link as LinkIcon, Filter, ArrowUpDown, ChevronLeft, ChevronRight,
+  ArrowRight, MoreVertical, Edit2, History
 } from 'lucide-react'
-// @ts-ignore
 import { useCompletion } from 'ai/react'
-import Image from 'next/image'
-import Link from 'next/link'
+import { EMBEDDING_PROVIDER_OPTIONS, CHAT_PROVIDER_OPTIONS, EMBEDDING_PROVIDERS, CHAT_PROVIDERS, type ChatProviderId, type EmbeddingProviderId } from '../lib/providers'
 
+// ─── Markdown Renderer ───────────────────────────────────────────────────────
+function renderMarkdown(text: string): React.ReactNode[] {
+  const parseBold = (txt: string) =>
+    txt.replace(/\*\*(.*?)\*\*/g, '<strong class="text-zinc-50 font-semibold">$1</strong>')
+  const lines = text.split('\n')
+  const nodes: React.ReactNode[] = []
+  let ulBuf: string[] = []
+  let olBuf: { n: string; t: string }[] = []
+  let keyCounter = 0
+  const nextKey = () => `md-${keyCounter++}`
+
+  const flushUl = () => {
+    if (!ulBuf.length) return
+    const captured = [...ulBuf]
+    ulBuf = []
+    nodes.push(
+      <ul key={nextKey()} className="my-3 ml-5 space-y-1.5 list-none">
+        {captured.map((t, i) => (
+          <li key={i} className="flex gap-2 text-zinc-300">
+            <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-emerald-500/60 shrink-0" />
+            <span dangerouslySetInnerHTML={{ __html: parseBold(t) }} />
+          </li>
+        ))}
+      </ul>
+    )
+  }
+  const flushOl = () => {
+    if (!olBuf.length) return
+    const captured = [...olBuf]
+    olBuf = []
+    nodes.push(
+      <ol key={nextKey()} className="my-3 ml-5 space-y-1.5 list-none">
+        {captured.map((item, i) => (
+          <li key={i} className="flex gap-2.5 text-zinc-300">
+            <span className="shrink-0 w-5 h-5 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-[10px] font-bold text-zinc-400">
+              {item.n}
+            </span>
+            <span dangerouslySetInnerHTML={{ __html: parseBold(item.t) }} />
+          </li>
+        ))}
+      </ol>
+    )
+  }
+
+  lines.forEach((line) => {
+    if (line.startsWith('### ')) {
+      flushUl(); flushOl()
+      nodes.push(<h3 key={nextKey()} className="font-bold text-zinc-100 mt-6 mb-2 text-base border-l-2 border-emerald-500/50 pl-3">{line.slice(4)}</h3>)
+    } else if (line.startsWith('## ')) {
+      flushUl(); flushOl()
+      nodes.push(<h2 key={nextKey()} className="font-bold text-zinc-50 mt-7 mb-3 text-lg">{line.slice(3)}</h2>)
+    } else if (line.startsWith('# ')) {
+      flushUl(); flushOl()
+      nodes.push(<h1 key={nextKey()} className="font-bold text-zinc-50 mt-8 mb-4 text-xl">{line.slice(2)}</h1>)
+    } else if (/^(- |\* )/.test(line)) {
+      flushOl()
+      ulBuf.push(line.slice(2))
+    } else if (/^\d+\.\s/.test(line)) {
+      flushUl()
+      const m = line.match(/^(\d+)\.\s(.*)$/)
+      if (m) olBuf.push({ n: m[1], t: m[2] })
+    } else if (line.trim() === '') {
+      flushUl(); flushOl()
+      nodes.push(<div key={nextKey()} className="h-3" />)
+    } else {
+      flushUl(); flushOl()
+      nodes.push(<p key={nextKey()} className="mb-2.5 text-zinc-300 leading-7" dangerouslySetInnerHTML={{ __html: parseBold(line) }} />)
+    }
+  })
+  flushUl(); flushOl()
+  return nodes
+}
+
+
+// --- Animated Number Counter ---
+function AnimatedNumber({ value, duration = 600, className = '' }: { value: number; duration?: number; className?: string }) {
+  const [display, setDisplay] = useState(0)
+  const prevRef = useRef(0)
+  useEffect(() => {
+    const start = prevRef.current
+    const diff = value - start
+    if (diff === 0) return
+    const startTime = performance.now()
+    const animate = (now: number) => {
+      const elapsed = now - startTime
+      const progress = Math.min(elapsed / duration, 1)
+      const eased = 1 - Math.pow(1 - progress, 3) // ease-out cubic
+      setDisplay(Math.round(start + diff * eased))
+      if (progress < 1) requestAnimationFrame(animate)
+      else prevRef.current = value
+    }
+    requestAnimationFrame(animate)
+  }, [value, duration])
+  return <span className={className}>{display.toLocaleString()}</span>
+}
+
+// --- Sidebar Toggle Icon ---
+function SidebarToggleIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+      <line x1="9" y1="3" x2="9" y2="21" />
+    </svg>
+  )
+}
+
+// --- Mini 7-day Sparkline ---
+function MiniSparkline({ value, color = '#1D9E75' }: { value: number; color?: string }) {
+  // Generate fake 7-day data ending at current value
+  const bars = useMemo(() => {
+    const data = []
+    for (let i = 0; i < 7; i++) {
+      data.push(Math.max(1, Math.round(value * (0.3 + Math.random() * 0.7))))
+    }
+    data[6] = value
+    const max = Math.max(...data, 1)
+    return data.map(v => (v / max) * 100)
+  }, [value])
+  return (
+    <div className="flex items-end gap-[2px] h-8 w-16">
+      {bars.map((h, i) => (
+        <div key={i} className="flex-1 rounded-sm transition-all duration-500" style={{ height: `${Math.max(8, h)}%`, background: i === 6 ? color : `${color}40`, minHeight: '3px' }} />
+      ))}
+    </div>
+  )
+}
+
+// --- Typing Indicator ---
+function TypingIndicator() {
+  return (
+    <div className="typing-indicator flex items-center gap-1 py-2 px-1">
+      <span /><span /><span />
+    </div>
+  )
+}
+
+// --- Particle Burst Effect ---
+function useParticleBurst() {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const burst = useCallback((x: number, y: number) => {
+    if (!containerRef.current) return
+    const colors = ['#1D9E75', '#2BC48E', '#34d399', '#6ee7b7', '#a7f3d0']
+    for (let i = 0; i < 12; i++) {
+      const el = document.createElement('div')
+      el.className = 'particle'
+      el.style.left = `${x}px`
+      el.style.top = `${y}px`
+      el.style.background = colors[i % colors.length]
+      const angle = (Math.PI * 2 * i) / 12
+      const dist = 30 + Math.random() * 40
+      el.style.setProperty('--tx', `${Math.cos(angle) * dist}px`)
+      el.style.setProperty('--ty', `${Math.sin(angle) * dist}px`)
+      containerRef.current.appendChild(el)
+      setTimeout(() => el.remove(), 600)
+    }
+  }, [])
+  return { containerRef, burst }
+}
+
+// --- Flow Arrow Between Cards ---
+function FlowArrow() {
+  return (
+    <div className="hidden md:flex items-center justify-center py-1">
+      <svg width="40" height="24" viewBox="0 0 40 24" className="text-vm-accent">
+        <line x1="20" y1="0" x2="20" y2="18" className="flow-arrow-line" stroke="currentColor" strokeWidth="1.5" fill="none" />
+        <circle cx="20" cy="8" r="2" fill="currentColor" className="flow-arrow-dot" />
+        <polygon points="14,16 20,24 26,16" fill="currentColor" opacity="0.6" />
+      </svg>
+    </div>
+  )
+}
+
+// --- Types ---
+interface Project { id: string; name: string; created_at: string; provider?: string; embedding_provider?: string; chat_provider?: string; }
 interface IndexedDocument {
-  id: string
-  path: string
-  checksum: string | null
-  type: string | null
-  source: string | null
-  meta: {
-    filename?: string
-    size?: number
-    uploadedAt?: string
-  } | null
-  sectionCount: number
+  id: string; path: string; checksum: string | null; meta: any; sectionCount: number; projectId: string;
 }
-
-interface UploadQueueFile {
-  id: string
-  file: File
-  status: 'idle' | 'uploading' | 'success' | 'error'
-  progress: number
-  error?: string
-  chunks?: number
+interface UploadFile {
+  id: string; file: File; status: 'idle' | 'uploading' | 'success' | 'error';
+  progress: number; stage: string; error?: string; chunks?: number;
 }
-
 interface Message {
-  id: string
-  role: 'user' | 'assistant'
-  text: string
-  timestamp: Date
-  isLoading?: boolean
-  sources?: string[]
+  id: string; role: 'user' | 'assistant'; text: string; timestamp: Date;
+  isLoading?: boolean; sources?: string[]; confidence?: { level: string; score: string }; sourceUrls?: string[];
+}
+interface ChatChannel {
+  id: string; name: string; messages: Message[]; createdAt: string;
+}
+
+function getDocName(doc: IndexedDocument): string {
+  return doc.meta?.filename || doc.path?.split('/').pop() || doc.path || 'Untitled'
+}
+
+function formatDocSize(doc: IndexedDocument): string {
+  const bytes = doc.meta?.size
+  if (typeof bytes === 'number' && bytes > 0) {
+    return bytes >= 1024 * 1024
+      ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+      : `${(bytes / 1024).toFixed(1)} KB`
+  }
+  return '—'
+}
+
+// --- localStorage helpers ---
+const CHAT_STORAGE_KEY = 'vectormind_chats'
+const PROVIDER_STORAGE_KEY = 'vectormind_chat_providers'
+
+function loadChannels(projectId: string): ChatChannel[] {
+  try {
+    const raw = localStorage.getItem(`${CHAT_STORAGE_KEY}_${projectId}`)
+    if (!raw) return [{ id: '1', name: 'General', messages: [], createdAt: new Date().toISOString() }]
+    const parsed = JSON.parse(raw)
+    return parsed.length ? parsed : [{ id: '1', name: 'General', messages: [], createdAt: new Date().toISOString() }]
+  } catch { return [{ id: '1', name: 'General', messages: [], createdAt: new Date().toISOString() }] }
+}
+
+function saveChannels(projectId: string, channels: ChatChannel[]) {
+  try {
+    // Strip isLoading messages before saving
+    const clean = channels.map(c => ({ ...c, messages: c.messages.filter(m => !m.isLoading || m.text) }))
+    localStorage.setItem(`${CHAT_STORAGE_KEY}_${projectId}`, JSON.stringify(clean))
+  } catch {}
+}
+
+function loadChatProvider(projectId: string): string {
+  try {
+    const raw = localStorage.getItem(PROVIDER_STORAGE_KEY)
+    if (!raw) return 'groq'
+    const map = JSON.parse(raw)
+    return map[projectId] || 'groq'
+  } catch { return 'groq' }
+}
+
+function saveChatProvider(projectId: string, provider: string) {
+  try {
+    const raw = localStorage.getItem(PROVIDER_STORAGE_KEY)
+    const map = raw ? JSON.parse(raw) : {}
+    map[projectId] = provider
+    localStorage.setItem(PROVIDER_STORAGE_KEY, JSON.stringify(map))
+  } catch {}
+}
+
+function CustomSelect({ value, onChange, options, title, buttonClassName, containerClassName, dropdownPosition = 'top-full mt-1 left-0 right-0 z-[200] origin-top' }: { value: string, onChange: (val: string) => void, options: {value: string, label: string}[], title?: string, buttonClassName?: string, containerClassName?: string, dropdownPosition?: string }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [ref])
+
+  const selected = options.find(o => o.value === value)
+
+  return (
+    <div className={`relative ${containerClassName || 'flex-1'}`} ref={ref}>
+      <button 
+        type="button" 
+        onClick={(e) => { e.preventDefault(); setOpen(!open); }}
+        className={buttonClassName || "flex h-9 w-full items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-300 shadow-sm outline-none transition-colors hover:bg-zinc-900 hover:text-zinc-50"}
+        title={title}
+      >
+        <span className="truncate">{selected?.label || value}</span>
+        <ChevronDown className={`w-3.5 h-3.5 ml-2 transition-transform duration-200 shrink-0 ${open ? 'rotate-180 text-zinc-50' : 'text-zinc-500'}`} />
+      </button>
+      
+      {open && (
+        <div className={`absolute min-w-full overflow-hidden rounded-lg border border-zinc-850 bg-zinc-950 text-zinc-555 shadow-2xl shadow-black/80 ${dropdownPosition}`}>
+          <div className="max-h-[150px] overflow-y-auto custom-scrollbar p-1 flex flex-col gap-0.5">
+            {options.map(opt => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={(e) => { e.preventDefault(); onChange(opt.value); setOpen(false); }}
+                className={`flex w-full items-center rounded-md py-1.5 px-2 text-xs outline-none transition-colors ${value === opt.value ? 'bg-zinc-900 text-zinc-50 font-semibold border-l-2 border-emerald-500' : 'text-zinc-300 hover:bg-zinc-900 hover:text-zinc-50'}`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'search' | 'upload' | 'library' | 'docs'>('search')
+  const { containerRef: particleRef, burst: particleBurst } = useParticleBurst()
+
+  // --- State ---
+  const [activeTab, setActiveTab] = useState<'chat' | 'dashboard' | 'database'>('dashboard')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarExpanded, setSidebarExpanded] = useState(false)
+  const [toolsMenuOpen, setToolsMenuOpen] = useState(false)
+  const toolsMenuRef = useRef<HTMLDivElement>(null)
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  // Advanced File Management
+  const [selectedDocIds, setSelectedDocIds] = useState<string[]>([])
+  const [formatFilter, setFormatFilter] = useState<string>('all')
+
+  // Projects State
+  const [projects, setProjects] = useState<Project[]>([])
+  const [activeProjectId, setActiveProjectId] = useState<string>('')
+  const [isCreatingProject, setIsCreatingProject] = useState(false)
+  const [newProjectName, setNewProjectName] = useState('')
+  const [newEmbeddingProvider, setNewEmbeddingProvider] = useState('cohere')
+  const [newChatProvider, setNewChatProvider] = useState('groq')
+  const [projectDropdownOpen, setProjectDropdownOpen] = useState(false)
+  const [navbarDropdownOpen, setNavbarDropdownOpen] = useState(false)
+  const [sidebarProjSearch, setSidebarProjSearch] = useState('')
+  const [navbarProjSearch, setNavbarProjSearch] = useState('')
+  const [isCreatingProjectSidebar, setIsCreatingProjectSidebar] = useState(false)
+  const [isCreatingProjectNavbar, setIsCreatingProjectNavbar] = useState(false)
+
+  // Documents State
+  const [documents, setDocuments] = useState<IndexedDocument[]>([])
+  const [isLibraryLoading, setIsLibraryLoading] = useState(false)
   
-  // Search State
+  // Enterprise Scale Filtering & Pagination
+  const [fileSearchQuery, setFileSearchQuery] = useState('')
+  const [dashboardPage, setDashboardPage] = useState(1)
+  const ITEMS_PER_PAGE = 25
+  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc'|'desc' }>({ key: 'name', direction: 'asc' })
+  
+  // Search state
   const [searchQuery, setSearchQuery] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
-  const chatEndRef = useRef<HTMLDivElement>(null)
   const activeMessageIdRef = useRef<string | null>(null)
-  const [searchStep, setSearchStep] = useState<'idle' | 'embedding' | 'searching' | 'synthesizing' | 'done' | 'error'>('idle')
+  const chatEndRef = useRef<HTMLDivElement>(null)
+  const [searchStep, setSearchStep] = useState<'idle' | 'hyde' | 'search' | 'rrf' | 'synth'>('idle')
+  const [apiHealth, setApiHealth] = useState<'checking' | 'healthy' | 'error'>('checking')
+  const [apiStats, setApiStats] = useState<any>(null)
+  
+  // Multi-Chat Channels
+  const [chatChannels, setChatChannels] = useState<ChatChannel[]>([])
+  const [activeChatId, setActiveChatId] = useState<string>('1')
+  const [isCreatingChat, setIsCreatingChat] = useState(false)
+  const [newChatName, setNewChatName] = useState('')
+  const [chatSearchQuery, setChatSearchQuery] = useState('')
+  const [workspaceSearchQuery, setWorkspaceSearchQuery] = useState('')
+  const [chatListOpen, setChatListOpen] = useState(false)
+  const [selectedFileIds, setSelectedFileIds] = useState<string[]>([])
+  const [specificFileSearchQuery, setSpecificFileSearchQuery] = useState('')
+  
+  // Tab indicators
+  const tabRefMap = useRef<Record<string, HTMLButtonElement | null>>({})
+  const [indicatorStyle, setIndicatorStyle] = useState<{ left: number; width: number }>({ left: 0, width: 0 })
 
-  // Extract sources from the completion text
-  const parseCompletionSources = (text: string) => {
-    if (text.startsWith('[SOURCES:')) {
-      const closingIndex = text.indexOf(']\n')
-      if (closingIndex !== -1) {
-        const sourcesString = text.slice(9, closingIndex)
-        const sources = sourcesString ? sourcesString.split('|') : []
-        const cleanText = text.slice(closingIndex + 2)
-        return { sources, cleanText }
+  // Upload state
+  const [uploadQueue, setUploadQueue] = useState<UploadFile[]>([])
+  const [isUploading, setIsUploading] = useState(false)
+  const dbFileInputRef = useRef<HTMLInputElement>(null)
+  const [dbDragActive, setDbDragActive] = useState(false)
+  const [configError, setConfigError] = useState<string | null>(null)
+  
+  const [fileSelectorOpen, setFileSelectorOpen] = useState(false)
+  const fileSelectorRef = useRef<HTMLDivElement>(null)
+  
+  // Rename & Options Dropdowns
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null)
+  const [editingProjectName, setEditingProjectName] = useState<string>('')
+  const [editingChatId, setEditingChatId] = useState<string | null>(null)
+  const [editingChatName, setEditingChatName] = useState<string>('')
+  const [activeMenuProjectId, setActiveMenuProjectId] = useState<string | null>(null)
+  const [activeMenuChatId, setActiveMenuChatId] = useState<string | null>(null)
+
+  // Custom Confirm Modal
+  const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, title: string, message: string, onConfirm: () => void} | null>(null)
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (fileSelectorRef.current && !fileSelectorRef.current.contains(event.target as Node)) {
+        setFileSelectorOpen(false)
+      }
+      if (toolsMenuRef.current && !toolsMenuRef.current.contains(event.target as Node)) {
+        setToolsMenuOpen(false)
+      }
+      const target = event.target as HTMLElement
+      if (target && !target.closest('.options-menu-btn') && !target.closest('.options-menu-dropdown')) {
+        setActiveMenuProjectId(null)
+        setActiveMenuChatId(null)
       }
     }
-    return { sources: [], cleanText: text }
-  }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [fileSelectorRef])
 
-  // Dynamically generate 4 relevant suggestion chips based on uploaded documents!
-  const getDynamicSuggestions = () => {
-    if (documents.length === 0) {
-      return [
-        'How does this semantic search work?',
-        'What kinds of documents can I upload?',
-        'What is Retrieval-Augmented Generation?',
-        'How secure is my indexed data?'
-      ]
+  useEffect(() => {
+    if (window.innerWidth >= 768) setSidebarExpanded(false)
+  }, [])
+
+  useEffect(() => { fetchProjects() }, [])
+
+  useEffect(() => {
+    if (window.innerWidth < 768) {
+      setSidebarOpen(false)
     }
+  }, [activeProjectId, activeChatId])
 
-    const suggestions: string[] = []
-    
-    // Check if we have the Microprocessor syllabus
-    const hasMicroprocessor = documents.some(doc => {
-      const name = (doc.meta?.filename || doc.path || '').toLowerCase()
-      return name.includes('microprocessor') || name.includes('syllabus') || name.includes('3160712') || name.includes('gtu') || name.includes('mi-s2022')
-    })
-
-    // Check if we have the Women's Health report
-    const hasWomensHealth = documents.some(doc => {
-      const name = (doc.meta?.filename || doc.path || '').toLowerCase()
-      return name.includes('women') || name.includes('health') || name.includes('wef') || name.includes('innovation')
-    })
-
-    // Populate suggestions based on what documents are present
-    if (hasMicroprocessor && hasWomensHealth) {
-      // Show 2 from each for a beautiful balanced grid!
-      suggestions.push(
-        'What is subject 3160712 about?',
-        'How can I interface 8086 with external memory?',
-        "What are the structural gaps in women's health innovation?",
-        "What is the Women's Health Innovation Radar?"
-      )
-    } else if (hasMicroprocessor) {
-      suggestions.push(
-        'What is subject 3160712 about?',
-        'What is GTU and when was this exam conducted?',
-        'Summarize the key points of the Microprocessor syllabus.',
-        'How can I interface 8086 with external memory?'
-      )
-    } else if (hasWomensHealth) {
-      suggestions.push(
-        "What are the structural gaps in women's health innovation?",
-        "What is the Women's Health Innovation Radar?",
-        "Summarize the World Economic Forum's 2026 women's health report.",
-        "What are the key opportunities in women's health journey?"
-      )
-    } else {
-      // Construct dynamic questions for any arbitrary uploaded documents!
-      const topDocs = documents.slice(0, 2)
-      topDocs.forEach((doc, idx) => {
-        const name = doc.meta?.filename || doc.path.split('/').pop() || 'document'
-        // Clean file extensions for gorgeous rendering
-        const cleanName = name.replace(/\.[^/.]+$/, "")
-        if (idx === 0) {
-          suggestions.push(
-            `What is the primary objective of ${cleanName}?`,
-            `Summarize the key points described in ${cleanName}.`
-          )
-        } else {
-          suggestions.push(
-            `What are the core conclusions of ${cleanName}?`,
-            `Are there any specific dates or figures mentioned in ${cleanName}?`
-          )
+  const fetchProjects = async () => {
+    try {
+      const res = await fetch('/api/projects-new')
+      if (res.ok) {
+        const data = await res.json()
+        const enriched = data.map((p: Project) => {
+          const localChat = loadChatProvider(p.id)
+          return {
+            ...p,
+            chat_provider: p.chat_provider || localChat || 'groq',
+            embedding_provider: p.embedding_provider || p.provider || 'cohere'
+          }
+        })
+        setProjects(enriched)
+        if (enriched.length > 0) {
+          const savedId = localStorage.getItem('vectormind_active_project')
+          if (savedId && enriched.find((p: Project) => p.id === savedId)) {
+            setActiveProjectId(savedId)
+          } else {
+            setActiveProjectId(enriched[0].id)
+          }
         }
-      })
-      
-      // Pad to 4 suggestions if we only have 1 document
-      while (suggestions.length < 4) {
-        const firstDoc = documents[0]
-        const name = firstDoc.meta?.filename || firstDoc.path.split('/').pop() || 'document'
-        const cleanName = name.replace(/\.[^/.]+$/, "")
-        suggestions.push(
-          `Can you provide an overview of ${cleanName}?`,
-          `What are the most important details in ${cleanName}?`
-        )
+        else if (enriched.length === 0) setIsCreatingProject(true)
+      } else {
+        setConfigError("Database disconnected. Run the SQL migration.")
       }
-    }
-
-    return suggestions.slice(0, 4)
+    } catch (e) { setConfigError("Network error. Supabase unavailable.") }
   }
 
-  const { complete, completion, isLoading: isSearchLoading } = useCompletion({
-    api: '/api/vector-search',
-    onFinish: (prompt, finishedCompletion) => {
-      const currentId = activeMessageIdRef.current
-      const { sources, cleanText } = parseCompletionSources(finishedCompletion)
-      setMessages(prev => {
-        return prev.map(m => {
-          if (m.id === currentId) {
-            return {
-              ...m,
-              text: cleanText,
-              sources: sources.length > 0 ? sources : undefined,
-              isLoading: false
+  const checkApiHealth = async () => {
+    try {
+      const res = await fetch('/api/test-apis')
+      if (res.ok) {
+        const data = await res.json()
+        const supabaseOk = data.supabase?.projects?.ok && data.supabase?.pages?.ok
+        const aiOk = data.gemini?.chat?.ok || data.cohere?.chat?.ok || data.groq?.ok || data.openai?.chat?.ok
+        if (supabaseOk && aiOk) {
+          setApiHealth('healthy')
+        } else {
+          setApiHealth('error')
+        }
+        setApiStats(data)
+      } else {
+        setApiHealth('error')
+      }
+    } catch {
+      setApiHealth('error')
+    }
+  }
+
+  useEffect(() => {
+    checkApiHealth()
+  }, [])
+
+  // Save to localStorage when it changes
+  useEffect(() => {
+    if (activeProjectId) {
+      localStorage.setItem('vectormind_active_project', activeProjectId)
+    }
+  }, [activeProjectId])
+
+  const handleCreateProject = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newProjectName.trim()) return
+    try {
+      const res = await fetch('/api/projects-new', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newProjectName.trim(), embedding_provider: newEmbeddingProvider, chat_provider: newChatProvider })
+      })
+      if (res.ok) {
+        const proj = await res.json()
+        const enriched = {
+          ...proj,
+          chat_provider: proj.chat_provider || newChatProvider,
+          embedding_provider: proj.embedding_provider || newEmbeddingProvider
+        }
+        saveChatProvider(enriched.id, enriched.chat_provider)
+        setProjects(prev => [enriched, ...prev])
+        setActiveProjectId(enriched.id)
+        setNewProjectName('')
+        setNewEmbeddingProvider('cohere')
+        setNewChatProvider('groq')
+        setIsCreatingProject(false)
+        setProjectDropdownOpen(false)
+      }
+    } catch (e) {}
+  }
+  const handleCreateProjectNavbar = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newProjectName.trim()) return
+    try {
+      const res = await fetch('/api/projects-new', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newProjectName.trim(), embedding_provider: newEmbeddingProvider, chat_provider: newChatProvider })
+      })
+      if (res.ok) {
+        const proj = await res.json()
+        const enriched = {
+          ...proj,
+          chat_provider: proj.chat_provider || newChatProvider,
+          embedding_provider: proj.embedding_provider || newEmbeddingProvider
+        }
+        saveChatProvider(enriched.id, enriched.chat_provider)
+        setProjects(prev => [enriched, ...prev])
+        setActiveProjectId(enriched.id)
+        setNewProjectName('')
+        setIsCreatingProjectNavbar(false)
+        setNavbarDropdownOpen(false)
+      }
+    } catch (err) {}
+  }
+
+  const handleUpdateEmbeddingProvider = async (embedding_provider: string) => {
+    if (!activeProjectId) return
+    setConfirmModal({
+      isOpen: true,
+      title: 'Warning: Breaking Change',
+      message: 'Switching embedding models will break search for existing documents because vector dimensions differ. You must delete all existing files first. Proceed?',
+      onConfirm: async () => {
+        try {
+          const res = await fetch('/api/projects-new', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: activeProjectId, embedding_provider })
+          })
+          if (res.ok) {
+            setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, embedding_provider } : p))
+          }
+        } catch (e) {}
+      }
+    })
+  }
+
+  const deleteProject = async (id: string, name: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Workspace',
+      message: `Are you sure you want to permanently delete the workspace "${name}"? All files, vectors, and chat history inside this workspace will be completely destroyed. This cannot be undone.`,
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' })
+          if (res.ok) {
+            setProjects(prev => prev.filter(p => p.id !== id))
+            if (activeProjectId === id) {
+              const remaining = projects.filter(p => p.id !== id)
+              if (remaining.length > 0) setActiveProjectId(remaining[0].id)
+              else setActiveProjectId('')
             }
           }
-          return m
+        } catch (e) {}
+      }
+    })
+  }
+
+  const saveProjectRename = async (id: string, name: string) => {
+    setEditingProjectId(null)
+    if (!name || !name.trim()) return
+    // Optimistic UI update
+    setProjects(prev => prev.map(p => p.id === id ? { ...p, name: name.trim() } : p))
+    try {
+      const res = await fetch(`/api/projects/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() })
+      })
+      if (!res.ok) {
+        console.error('Failed to rename project database')
+      }
+    } catch (e) {
+      console.error('Rename project network error', e)
+    }
+  }
+
+  const saveChatRename = (id: string, name: string) => {
+    setEditingChatId(null)
+    if (!name || !name.trim()) return
+    const updated = chatChannels.map(c => c.id === id ? { ...c, name: name.trim() } : c)
+    setChatChannels(updated)
+    if (activeProjectId) saveChannels(activeProjectId, updated)
+  }
+
+  const handleUpdateChatProvider = async (chat_provider: string) => {
+    if (!activeProjectId) return
+    
+    // Optimistic UI update + save to local storage
+    setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, chat_provider } : p))
+    saveChatProvider(activeProjectId, chat_provider)
+
+    try {
+      const res = await fetch('/api/projects-new', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: activeProjectId, chat_provider })
+      })
+      if (!res.ok) {
+        console.warn("DB update failed, using local storage fallback for chat provider")
+      }
+    } catch (e: any) {
+      console.warn("Network error, using local storage fallback for chat provider")
+    }
+  }
+
+  // --- Multi-Chat Channel Management ---
+  const createNewChat = (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    const name = newChatName.trim() || `Chat ${chatChannels.length + 1}`
+    const newChat: ChatChannel = { id: Math.random().toString(), name, messages: [], createdAt: new Date().toISOString() }
+    const updated = [newChat, ...chatChannels]
+    setChatChannels(updated)
+    setActiveChatId(newChat.id)
+    setMessages([])
+    setNewChatName('')
+    setIsCreatingChat(false)
+    setChatListOpen(false)
+    if (activeProjectId) saveChannels(activeProjectId, updated)
+  }
+
+  const switchChat = (id: string) => {
+    const chat = chatChannels.find(c => c.id === id)
+    if (chat) {
+      setActiveChatId(id)
+      setMessages(chat.messages)
+      setChatListOpen(false)
+    }
+  }
+
+  const startNewChat = () => {
+    const name = `Chat ${chatChannels.length + 1}`
+    const newChat: ChatChannel = { id: Math.random().toString(), name, messages: [], createdAt: new Date().toISOString() }
+    const updated = [newChat, ...chatChannels]
+    setChatChannels(updated)
+    setActiveChatId(newChat.id)
+    setMessages([])
+    setSearchQuery('')
+    setChatListOpen(false)
+    if (activeProjectId) saveChannels(activeProjectId, updated)
+  }
+
+  const deleteChat = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (chatChannels.length <= 1) {
+      // Don't delete the last chat, just clear it
+      const cleared = [{ ...chatChannels[0], messages: [] }]
+      setChatChannels(cleared)
+      setMessages([])
+      if (activeProjectId) saveChannels(activeProjectId, cleared)
+      return
+    }
+    const updated = chatChannels.filter(c => c.id !== id)
+    setChatChannels(updated)
+    if (activeChatId === id) {
+      setActiveChatId(updated[0].id)
+      setMessages(updated[0].messages)
+    }
+    if (activeProjectId) saveChannels(activeProjectId, updated)
+  }
+
+  // Sync messages to active channel whenever they change
+  useEffect(() => {
+    if (!activeProjectId || !activeChatId) return
+    setChatChannels(prev => {
+      const activeChannel = prev.find(c => c.id === activeChatId)
+      if (!activeChannel) return prev
+      if (JSON.stringify(activeChannel.messages) === JSON.stringify(messages)) return prev
+      const updated = prev.map(c => c.id === activeChatId ? { ...c, messages } : c)
+      saveChannels(activeProjectId, updated)
+      return updated
+    })
+  }, [messages, activeChatId, activeProjectId])
+
+  // Sliding Tab Indicator Position Updater
+  useEffect(() => {
+    const updateIndicator = () => {
+      const activeBtn = tabRefMap.current[activeTab]
+      if (activeBtn) {
+        setIndicatorStyle({
+          left: activeBtn.offsetLeft,
+          width: activeBtn.offsetWidth
         })
-      });
+      }
+    }
+    updateIndicator()
+    const timer = setTimeout(updateIndicator, 50)
+    window.addEventListener('resize', updateIndicator)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('resize', updateIndicator)
+    }
+  }, [activeTab, projects, activeProjectId])
+
+  // --- Load library when project changes ---
+  useEffect(() => {
+    if (activeProjectId) {
+      fetchLibrary()
+      
+      // Reset document selector on workspace change
+      setSelectedFileIds([])
+      
+      // Load multi-chat channels
+      const channels = loadChannels(activeProjectId)
+      setChatChannels(channels)
+      setActiveChatId(channels[0].id)
+      setMessages(channels[0].messages)
+      
+      // Apply chat provider from local storage fallback if needed
+      const localProvider = loadChatProvider(activeProjectId)
+      const project = projects.find(p => p.id === activeProjectId)
+      if (project && !project.chat_provider && localProvider) {
+        setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, chat_provider: localProvider } : p))
+      }
+
+      setFileSearchQuery('')
+      setDashboardPage(1)
+      setSelectedDocIds([])
+    }
+  }, [activeProjectId])
+
+  const fetchLibrary = async () => {
+    if (!activeProjectId) return
+    setIsLibraryLoading(true)
+    try {
+      const res = await fetch(`/api/documents?projectId=${activeProjectId}`)
+      if (res.ok) setDocuments(await res.json())
+    } catch (err) { console.error(err) } finally { setIsLibraryLoading(false) }
+  }
+
+  // --- Enterprise Document Filtering ---
+  const filteredAndSortedDocs = useMemo(() => {
+    let result = documents
+    
+    if (fileSearchQuery.trim()) {
+      const query = fileSearchQuery.toLowerCase()
+      result = result.filter(d => (d.meta?.filename || d.path).toLowerCase().includes(query))
+    }
+
+    if (formatFilter !== 'all') {
+      result = result.filter(d => {
+        const name = d.meta?.filename || d.path
+        return name.toLowerCase().endsWith(formatFilter)
+      })
+    }
+    
+    result = [...result].sort((a, b) => {
+      const aVal = sortConfig.key === 'name' ? (a.meta?.filename || a.path) : sortConfig.key === 'size' ? (a.meta?.size || 0) : a.sectionCount
+      const bVal = sortConfig.key === 'name' ? (b.meta?.filename || b.path) : sortConfig.key === 'size' ? (b.meta?.size || 0) : b.sectionCount
+      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1
+      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1
+      return 0
+    })
+    
+    return result
+  }, [documents, fileSearchQuery, formatFilter, sortConfig])
+
+  const paginatedDocs = useMemo(() => {
+    const start = (dashboardPage - 1) * ITEMS_PER_PAGE
+    return filteredAndSortedDocs.slice(start, start + ITEMS_PER_PAGE)
+  }, [filteredAndSortedDocs, dashboardPage])
+
+  const totalPages = Math.ceil(filteredAndSortedDocs.length / ITEMS_PER_PAGE)
+
+  const requestSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc'
+    if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc'
+    setSortConfig({ key, direction })
+  }
+
+  // --- Streaming Chat ---
+  const parseCompletion = (text: string) => {
+    let sources: string[] = []
+    let sourceUrls: string[] = []
+    let confidence: { level: string; score: string } | undefined
+    let remaining = text
+
+    if (remaining.startsWith('[SOURCES:')) {
+      const closingIndex = remaining.indexOf(']\n')
+      if (closingIndex !== -1) {
+        sources = JSON.parse(remaining.slice(9, closingIndex) || '[]')
+        remaining = remaining.slice(closingIndex + 2)
+      }
+    }
+    if (remaining.startsWith('[CONFIDENCE:')) {
+      const closingIndex = remaining.indexOf(']\n')
+      if (closingIndex !== -1) {
+        const [level, score] = remaining.slice(12, closingIndex).split(':')
+        confidence = { level, score: score || '0' }
+        remaining = remaining.slice(closingIndex + 2)
+      }
+    }
+
+    sourceUrls = sources.map(src => {
+      const doc = documents.find(d => d.meta?.filename === src)
+      return doc?.meta?.storageUrl || ''
+    })
+    return { sources, sourceUrls, confidence, cleanText: remaining }
+  }
+
+  const { complete, completion, isLoading: isSearchLoading, stop } = useCompletion({
+    api: '/api/vector-search',
+    onFinish: (prompt, result) => {
+      setSearchStep('idle')
+      const id = activeMessageIdRef.current
+      if (!id) return
+      const { sources, sourceUrls, confidence, cleanText } = parseCompletion(result)
+      setMessages(prev => prev.map(m => m.id === id ? { ...m, text: cleanText, sources, sourceUrls, confidence, isLoading: false } : m))
       activeMessageIdRef.current = null
-      setSearchStep('done')
     },
     onError: (err) => {
-      console.error('AI SDK Search Error:', err)
-      const currentId = activeMessageIdRef.current
-      setMessages(prev => {
-        return prev.map(m => {
-          if (m.id === currentId) {
-            return {
-              ...m,
-              text: `Error generating response: ${err.message || 'Please check your connection and try again.'}`,
-              isLoading: false
-            }
-          }
-          return m
-        })
-      });
+      setSearchStep('idle')
+      const id = activeMessageIdRef.current
+      if (!id) return
+      setMessages(prev => prev.map(m => m.id === id ? { ...m, text: `Error: ${err.message}`, isLoading: false } : m))
       activeMessageIdRef.current = null
-      setSearchStep('error')
     }
   })
 
-  // Auto scroll to bottom of chat
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  // Sync streaming completion with the active message bubble
   useEffect(() => {
     if (completion && isSearchLoading && activeMessageIdRef.current) {
-      setSearchStep('synthesizing')
-      const currentId = activeMessageIdRef.current
-      const { sources, cleanText } = parseCompletionSources(completion)
-      setMessages(prev => {
-        return prev.map(m => {
-          if (m.id === currentId) {
-            return {
-              ...m,
-              text: cleanText,
-              sources: sources.length > 0 ? sources : undefined,
-              isLoading: false
-            }
-          }
-          return m
-        })
-      });
+      setSearchStep('synth')
+      const { sources, sourceUrls, confidence, cleanText } = parseCompletion(completion)
+      setMessages(prev => prev.map(m => m.id === activeMessageIdRef.current ? { 
+        ...m, text: cleanText || '', sources, sourceUrls, confidence, isLoading: false 
+      } : m))
     }
-  }, [completion, isSearchLoading]);
+  }, [completion, isSearchLoading])
 
-  // Library State
-  const [documents, setDocuments] = useState<IndexedDocument[]>([])
-  const [isLibraryLoading, setIsLibraryLoading] = useState(false)
-  const [deletingIds, setDeletingIds] = useState<string[]>([])
-  const [libraryFilter, setLibraryFilter] = useState('')
-  const [previewDocUrl, setPreviewDocUrl] = useState<string | null>(null)
-  const [previewDocName, setPreviewDocName] = useState<string | null>(null)
-  
-  // Upload State
-  const [uploadQueue, setUploadQueue] = useState<UploadQueueFile[]>([])
-  const [isUploading, setIsUploading] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const [dragActive, setDragActive] = useState(false)
-
-  // Close preview modal on Escape key & lock body scroll
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && previewDocUrl) {
-        setPreviewDocUrl(null)
-        setPreviewDocName(null)
-      }
-    }
-    document.addEventListener('keydown', handleEscape)
-    // Lock body scroll when modal is open
-    if (previewDocUrl) {
-      document.body.style.overflow = 'hidden'
-    } else {
-      document.body.style.overflow = ''
-    }
-    return () => {
-      document.removeEventListener('keydown', handleEscape)
-      document.body.style.overflow = ''
-    }
-  }, [previewDocUrl])
-
-  // Fetch Library Documents
-  const fetchLibrary = async () => {
-    setIsLibraryLoading(true)
-    try {
-      const res = await fetch('/api/documents')
-      if (res.ok) {
-        const data = await res.json()
-        setDocuments(data)
-      }
-    } catch (err) {
-      console.error('Failed to load library:', err)
-    } finally {
-      setIsLibraryLoading(false)
-    }
-  }
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
   useEffect(() => {
-    fetchLibrary()
-  }, [])
+    function handleGlobalClick(e: MouseEvent) {
+      const target = e.target as HTMLElement
+      if (
+        target.tagName === 'BUTTON' || 
+        target.tagName === 'A' || 
+        target.closest('button') || 
+        target.closest('.cursor-pointer') ||
+        target.closest('input[type="checkbox"]') ||
+        target.closest('.custom-checkbox')
+      ) {
+        particleBurst(e.clientX, e.clientY)
+      }
+    }
+    window.addEventListener('click', handleGlobalClick)
+    return () => window.removeEventListener('click', handleGlobalClick)
+  }, [particleBurst])
 
-  // Delete Document
-  const handleDeleteDocument = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this document? This will remove all its text sections and vector embeddings from the search index.')) {
+  const openPreview = (doc: IndexedDocument) => {
+    const url = doc.meta?.storageUrl as string | undefined
+    const path = doc.meta?.storagePath as string | undefined
+    if (url) {
+      setPreviewPdfUrl(url)
       return
     }
-    setDeletingIds(prev => [...prev, id])
-    try {
-      const res = await fetch(`/api/documents?id=${id}`, {
-        method: 'DELETE',
-      })
-      if (res.ok) {
-        setDocuments(prev => prev.filter(doc => doc.id !== id))
-      } else {
-        alert('Failed to delete document')
-      }
-    } catch (err) {
-      console.error('Delete error:', err)
-      alert('An error occurred during deletion')
-    } finally {
-      setDeletingIds(prev => prev.filter(x => x !== id))
+    if (path) {
+      setPreviewPdfUrl(`/api/preview/${encodeURIComponent(path)}`)
+      return
+    }
+    setPreviewPdfUrl(`/api/preview/${encodeURIComponent(getDocName(doc))}`)
+  }
+
+  const handleSearchSubmit = async (e?: React.FormEvent, overrideQuery?: string) => {
+    if (e) e.preventDefault()
+    const query = (overrideQuery ?? searchQuery).trim()
+    if (!query || !activeProjectId) return
+
+    if (isSearchLoading) {
+      stop()
+      return
+    }
+
+    setSearchQuery('')
+    
+    const userMsg: Message = { id: Math.random().toString(), role: 'user', text: query, timestamp: new Date() }
+    const activeId = Math.random().toString()
+    activeMessageIdRef.current = activeId
+    const botMsg: Message = { id: activeId, role: 'assistant', text: '', timestamp: new Date(), isLoading: true }
+    
+    setMessages(prev => [...prev, userMsg, botMsg])
+    
+    setSearchStep('hyde')
+    setTimeout(() => setSearchStep('search'), 1200)
+    setTimeout(() => setSearchStep('rrf'), 2500)
+    
+    const chatHistory = messages.filter(m => !m.isLoading && m.text).slice(-6).map(m => ({ role: m.role, text: m.text }))
+    try { 
+      await complete(query, { 
+        body: { 
+          chatHistory, 
+          projectId: activeProjectId,
+          chatProvider: activeProject?.chat_provider || 'groq',
+          embeddingProvider: activeProject?.embedding_provider || 'cohere',
+          selectedFileIds
+        } 
+      }) 
+    } catch (err) { 
+      console.error(err) 
     }
   }
 
-  // Handle Drag & Drop
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true)
-    } else if (e.type === 'dragleave') {
-      setDragActive(false)
-    }
+  const handleCopy = (id: string, text: string) => {
+    navigator.clipboard.writeText(text)
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(null), 2000)
   }
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragActive(false)
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      addFilesToQueue(Array.from(e.dataTransfer.files))
-    }
-  }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      addFilesToQueue(Array.from(e.target.files))
-    }
-  }
-
-  const MAX_FILE_SIZE = 15 * 1024 * 1024 // 15MB
-  const ALLOWED_EXTENSIONS = ['.pdf', '.md', '.txt', '.json', '.js', '.jsx', '.ts', '.tsx', '.css', '.yaml', '.yml']
-  const MAX_FILE_COUNT = 100
-
-  const addFilesToQueue = (files: File[]) => {
-    const currentCount = uploadQueue.length
-    const allowedNewFiles = files.slice(0, MAX_FILE_COUNT - currentCount)
-
-    if (files.length > allowedNewFiles.length) {
-      alert(`Queue limit: You can only upload up to ${MAX_FILE_COUNT} files simultaneously in the queue. Extra files were ignored.`)
-    }
-
-    const newQueueItems = allowedNewFiles.map(file => {
-      const dotIndex = file.name.lastIndexOf('.')
-      const ext = dotIndex !== -1 ? file.name.substring(dotIndex).toLowerCase() : ''
-      const isAllowedType = ALLOWED_EXTENSIONS.includes(ext)
-      const isAllowedSize = file.size <= MAX_FILE_SIZE
-      const isEmpty = file.size === 0
-
-      let status: 'idle' | 'error' = 'idle'
-      let error: string | undefined = undefined
-
-      if (isEmpty) {
-        status = 'error'
-        error = `File is empty (0 bytes).`
-      } else if (!isAllowedType) {
-        status = 'error'
-        error = `Unsupported format (${ext || 'no extension'}). Supported: PDF, MD, TXT, JSON, Code.`
-      } else if (!isAllowedSize) {
-        status = 'error'
-        error = `Size exceeds 15MB limit.`
-      }
-
-      return {
-        id: Math.random().toString(36).substring(7),
-        file,
-        status,
-        progress: 0,
-        error
-      }
-    })
-    setUploadQueue(prev => [...prev, ...newQueueItems])
-  }
-
-  const removeFromQueue = (id: string) => {
+  const removeQueueItem = (id: string) => {
     setUploadQueue(prev => prev.filter(item => item.id !== id))
   }
 
-  const clearQueue = () => {
-    setUploadQueue([])
+  const addFilesToQueue = (files: File[]) => {
+    if (!activeProjectId) return alert("Select a project first.")
+    const newItems = files.map(file => ({ 
+      id: Math.random().toString(36).substring(7), 
+      file, 
+      status: 'idle' as const, 
+      progress: 0, 
+      stage: 'Waiting...',
+      projectId: activeProjectId
+    }))
+    setUploadQueue(prev => [...prev, ...newItems])
+    if (window.innerWidth < 768) setSidebarOpen(true)
   }
 
-  // Upload progress helper wrapping XMLHttpRequest
-  const uploadFileWithProgress = (
-    file: File,
-    base64Data: string,
-    onProgress: (percent: number) => void
-  ): Promise<any> => {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest()
-      xhr.open('POST', '/api/upload', true)
-      xhr.setRequestHeader('Content-Type', 'application/json')
 
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
-          const percent = Math.round((event.loaded / event.total) * 100)
-          onProgress(Math.min(percent, 99)) // Cap at 99% until server responds
+  const startUpload = async (overrideQueue?: any[]) => {
+    if (isUploading || !activeProjectId) return
+    setIsUploading(true)
+    const queueToProcess = (overrideQueue || uploadQueue).filter(item => item.projectId === activeProjectId)
+    for (const item of queueToProcess.filter(q => q.status === 'idle')) {
+      setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'uploading', progress: 5, stage: 'Uploading & chunking...' } : q))
+      try {
+        const reader = new FileReader()
+        const base64 = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve((reader.result as string).split(',')[1])
+          reader.onerror = () => reject(reader.error)
+          reader.readAsDataURL(item.file)
+        })
+
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            filename: item.file.name, 
+            base64, 
+            projectId: activeProjectId,
+            embeddingProvider: activeProject?.embedding_provider || 'cohere'
+          })
+        })
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}))
+          throw new Error(errData.error || `Upload failed with status ${res.status}`)
         }
-      }
 
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const res = JSON.parse(xhr.responseText)
-            onProgress(100)
-            resolve(res)
-          } catch (_) {
-            reject(new Error('Invalid response from server'))
-          }
-        } else {
-          let errorMessage = `Upload failed: Status ${xhr.status}`
-          try {
-            const errorData = JSON.parse(xhr.responseText)
-            errorMessage = errorData.error || errorMessage
-          } catch (_) {
-            if (xhr.responseText) {
-              errorMessage = xhr.responseText.slice(0, 150)
+        const bodyReader = res.body?.getReader()
+        if (!bodyReader) throw new Error('No stream body available')
+
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let successResult: any = null
+
+        while (true) {
+          const { done, value } = await bodyReader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+          
+          for (const line of lines) {
+            if (!line.trim()) continue
+            try {
+              const data = JSON.parse(line)
+              if (data.status === 'started') {
+                setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, progress: 10, stage: `Chunking into ${data.chunksTotal} units...` } : q))
+              } else if (data.status === 'warning') {
+                setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, stage: `⚠️ ${data.message}` } : q))
+              } else if (data.status === 'chunk') {
+                const chunkIndex = data.chunkIndex
+                const total = data.total
+                const percentage = Math.round(15 + (chunkIndex / total) * 75)
+                setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, progress: percentage, stage: `Embedding Chunk ${chunkIndex + 1}/${total} (${data.provider})` } : q))
+              } else if (data.status === 'success') {
+                successResult = data
+              } else if (data.status === 'error') {
+                throw new Error(data.error)
+              }
+            } catch (e: any) {
+              console.error('SSE JSON error:', e)
             }
           }
-          reject(new Error(errorMessage))
         }
-      }
 
-      xhr.onerror = () => {
-        reject(new Error('Network error occurred'))
-      }
+        if (buffer.trim()) {
+          try {
+            const data = JSON.parse(buffer)
+            if (data.status === 'success') successResult = data
+            if (data.status === 'error') throw new Error(data.error)
+          } catch (e) {}
+        }
 
-      xhr.send(
-        JSON.stringify({
-          filename: file.name,
-          base64: base64Data,
-        })
-      )
-    })
-  }
+        if (!successResult) {
+          throw new Error('Upload stream finished without completion payload')
+        }
 
-  // Process uploads sequentially to prevent API rate limits
-  const startUpload = async () => {
-    // Only fetch items that are actually 'idle' (not error/success/uploading)
-    const pendingItems = uploadQueue.filter(q => q.status === 'idle')
-    if (pendingItems.length === 0 || isUploading) return
-    setIsUploading(true)
-
-    for (let index = 0; index < uploadQueue.length; index++) {
-      const item = uploadQueue[index]
-      if (item.status === 'success' || item.status === 'error') continue
-
-      // Update state to uploading
-      setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'uploading', progress: 0 } : q))
-
-      try {
-        const base64Data = await readFileAsBase64(item.file)
-        const result = await uploadFileWithProgress(item.file, base64Data, (percent) => {
-          setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, progress: percent } : q))
-        })
-
-        setUploadQueue(prev => prev.map(q => q.id === item.id ? {
-          ...q,
-          status: 'success',
-          progress: 100,
-          chunks: result.chunks
-        } : q))
+        setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'success', progress: 100, stage: 'Indexed successfully!', chunks: successResult.chunksIndexed } : q))
       } catch (err: any) {
-        console.error(`Error uploading ${item.file.name}:`, err)
-        setUploadQueue(prev => prev.map(q => q.id === item.id ? {
-          ...q,
-          status: 'error',
-          progress: 0,
-          error: err.message || 'Indexing failed'
-        } : q))
+        setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'error', progress: 0, stage: 'Failed Ingestion', error: err.message || 'Error occurred' } : q))
       }
     }
-
     setIsUploading(false)
     fetchLibrary()
   }
 
-  const readFileAsBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => {
-        const result = reader.result as string
-        const base64 = result.split(',')[1]
-        resolve(base64)
+  const deleteDocument = async (id: string, filename: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Document',
+      message: `Are you sure you want to permanently delete "${filename}"? Its vector embeddings will be permanently removed from this workspace.`,
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/documents?id=${id}`, { method: 'DELETE' })
+          if (res.ok) {
+            setDocuments(prev => prev.filter(d => d.id !== id))
+            setSelectedDocIds(prev => prev.filter(x => x !== id))
+          }
+        } catch (e) {}
       }
-      reader.onerror = () => reject(reader.error)
-      reader.readAsDataURL(file)
     })
   }
 
-  // Search Submit
-  const handleSearchSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault()
-    const query = searchQuery.trim()
-    if (!query || isSearchLoading) return
+  const toggleSelectDoc = (id: string) => {
+    setSelectedDocIds(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    )
+  }
 
-    setSearchQuery('')
-    
-    const activeId = Math.random().toString(36).substring(7)
-    activeMessageIdRef.current = activeId
-    setSearchStep('embedding')
-    
-    const userMsg: Message = {
-      id: Math.random().toString(),
-      role: 'user',
-      text: query,
-      timestamp: new Date()
-    }
-    
-    const assistantMsg: Message = {
-      id: activeId,
-      role: 'assistant',
-      text: '',
-      timestamp: new Date(),
-      isLoading: true
-    }
-    
-    setMessages(prev => [...prev, userMsg, assistantMsg])
-
-    // Transition to semantic database search after a short embedding window
-    setTimeout(() => {
-      setSearchStep(prev => prev === 'embedding' ? 'searching' : prev)
-    }, 1000)
-    
-    try {
-      await complete(query)
-    } catch (err) {
-      console.error('Submit query error caught:', err)
-      setSearchStep('error')
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      const pageDocIds = paginatedDocs.map(d => d.id)
+      setSelectedDocIds(prev => Array.from(new Set([...prev, ...pageDocIds])))
+    } else {
+      const pageDocIds = paginatedDocs.map(d => d.id)
+      setSelectedDocIds(prev => prev.filter(id => !pageDocIds.includes(id)))
     }
   }
 
-  // Trigger search from suggestions
-  const handleSuggestionClick = async (suggestion: string) => {
-    if (isSearchLoading) return
-    
-    const activeId = Math.random().toString(36).substring(7)
-    activeMessageIdRef.current = activeId
-    setSearchStep('embedding')
-
-    const userMsg: Message = {
-      id: Math.random().toString(),
-      role: 'user',
-      text: suggestion,
-      timestamp: new Date()
-    }
-    
-    const assistantMsg: Message = {
-      id: activeId,
-      role: 'assistant',
-      text: '',
-      timestamp: new Date(),
-      isLoading: true
-    }
-    
-    setMessages(prev => [...prev, userMsg, assistantMsg])
-
-    // Transition to semantic database search after a short embedding window
-    setTimeout(() => {
-      setSearchStep(prev => prev === 'embedding' ? 'searching' : prev)
-    }, 1000)
-    
-    try {
-      await complete(suggestion)
-    } catch (err) {
-      console.error('Suggestion click error caught:', err)
-      setSearchStep('error')
-    }
-  }
-
-  const handleClearChat = () => {
-    setMessages([])
-  }
-
-  const renderMarkdown = (text: string) => {
-    if (!text) return null
-    const lines = text.split('\n')
-    const elements: React.ReactNode[] = []
-    let inCodeBlock = false
-    let codeLines: string[] = []
-    let codeLang = ''
-
-    const formatInline = (str: string) => {
-      const parts: React.ReactNode[] = []
-      let lastIdx = 0
-      const regex = /(\*\*|`)(.*?)\1/g
-      let match
-
-      while ((match = regex.exec(str)) !== null) {
-        if (match.index > lastIdx) {
-          parts.push(str.substring(lastIdx, match.index))
+  const deleteSelectedDocuments = async () => {
+    if (selectedDocIds.length === 0) return
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Selected Documents',
+      message: `Are you sure you want to permanently delete all ${selectedDocIds.length} selected documents? All associated vector embeddings will be destroyed.`,
+      onConfirm: async () => {
+        setIsLibraryLoading(true)
+        try {
+          const idsParam = selectedDocIds.join(',')
+          const res = await fetch(`/api/documents?id=${idsParam}`, { method: 'DELETE' })
+          if (res.ok) {
+            setDocuments(prev => prev.filter(d => !selectedDocIds.includes(d.id)))
+            setSelectedDocIds([])
+          } else {
+            alert("Failed to delete some documents")
+          }
+        } catch (e) {
+          console.error(e)
+          alert("Error deleting documents")
+        } finally {
+          setIsLibraryLoading(false)
         }
-        if (match[1] === '**') {
-          parts.push(<strong key={`b-${match.index}`} className="text-emerald-400 font-bold">{match[2]}</strong>)
-        } else if (match[1] === '`') {
-          parts.push(<code key={`c-${match.index}`}>{match[2]}</code>)
-        }
-        lastIdx = regex.lastIndex
       }
-
-      if (lastIdx < str.length) {
-        parts.push(str.substring(lastIdx))
-      }
-
-      return parts.length > 0 ? parts : str
-    }
-
-    lines.forEach((line, lineIdx) => {
-      // Code block toggle
-      if (line.trim().startsWith('```')) {
-        if (!inCodeBlock) {
-          inCodeBlock = true
-          codeLang = line.trim().slice(3).trim()
-          codeLines = []
-        } else {
-          elements.push(
-            <pre key={`code-${lineIdx}`}>
-              <code>{codeLines.join('\n')}</code>
-            </pre>
-          )
-          inCodeBlock = false
-        }
-        return
-      }
-
-      if (inCodeBlock) {
-        codeLines.push(line)
-        return
-      }
-
-      // Headings
-      if (line.startsWith('### ')) {
-        elements.push(<h3 key={lineIdx}>{formatInline(line.slice(4))}</h3>)
-        return
-      }
-      if (line.startsWith('## ')) {
-        elements.push(<h2 key={lineIdx}>{formatInline(line.slice(3))}</h2>)
-        return
-      }
-      if (line.startsWith('# ')) {
-        elements.push(<h1 key={lineIdx}>{formatInline(line.slice(2))}</h1>)
-        return
-      }
-
-      // Blockquote
-      if (line.trim().startsWith('> ')) {
-        elements.push(
-          <blockquote key={lineIdx}>{formatInline(line.replace(/^>\s*/, ''))}</blockquote>
-        )
-        return
-      }
-
-      // Bullet list
-      const isBullet = line.trim().startsWith('* ') || line.trim().startsWith('- ')
-      if (isBullet) {
-        elements.push(
-          <li key={lineIdx} className="ml-4 list-disc text-slate-300 my-0.5 text-xs leading-relaxed">
-            {formatInline(line.replace(/^\s*[*-]\s+/, ''))}
-          </li>
-        )
-        return
-      }
-
-      // Numbered list
-      const numberedMatch = line.match(/^\s*(\d+)\.\s+(.*)/)
-      if (numberedMatch) {
-        elements.push(
-          <li key={lineIdx} className="ml-4 list-decimal text-slate-300 my-0.5 text-xs leading-relaxed">
-            {formatInline(numberedMatch[2])}
-          </li>
-        )
-        return
-      }
-
-      // Empty line
-      if (line.trim() === '') {
-        elements.push(<div key={lineIdx} className="h-1.5" />)
-        return
-      }
-
-      // Regular paragraph
-      elements.push(
-        <p key={lineIdx} className="text-slate-300 my-0.5 text-xs leading-relaxed">
-          {formatInline(line)}
-        </p>
-      )
     })
-
-    return <div className="prose-chat">{elements}</div>
   }
 
-  // Check if text is an error or quota/limit notification
-  const renderMessageContent = (msg: Message) => {
-    if (msg.isLoading) {
-      return (
-        <div className="p-4 rounded-2xl border border-slate-800 bg-slate-950/60 backdrop-blur-md text-xs space-y-4 shadow-lg shadow-emerald-500/[0.01] max-w-sm w-[320px] transition-all duration-500">
-          <div className="flex items-center justify-between text-emerald-400 font-bold text-[10px] uppercase tracking-wider">
-            <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-              AI Thought Process
-            </span>
-            <span className="text-slate-500 normal-case font-medium">Retrieval-Augmented Generation</span>
-          </div>
-          
-          <div className="space-y-4">
-            {/* Step 1: Embedding */}
-            <div className="flex items-start gap-3">
-              <div className="flex flex-col items-center shrink-0">
-                <div className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-bold transition-all duration-300 ${
-                  searchStep === 'embedding'
-                    ? 'border-emerald-400 text-emerald-400 bg-emerald-400/10'
-                    : 'border-slate-800 text-slate-500 bg-slate-900/40'
-                }`}>
-                  {searchStep !== 'embedding' ? '✓' : '1'}
-                </div>
-                <div className={`w-0.5 h-6 transition-all duration-300 ${searchStep !== 'embedding' ? 'bg-emerald-500/20' : 'bg-slate-800'}`} />
-              </div>
-              <div className="text-[11px] pt-0.5 min-w-0">
-                <div className={`font-semibold transition-colors duration-300 ${searchStep === 'embedding' ? 'text-slate-200' : 'text-slate-500'}`}>
-                  Analyzing query & generating embeddings
-                </div>
-                {searchStep === 'embedding' && (
-                  <p className="text-[10px] text-slate-400 mt-1 animate-pulse leading-normal">Converting question into 768-dim vector...</p>
-                )}
-              </div>
-            </div>
+  const isAllPageSelected = paginatedDocs.length > 0 && paginatedDocs.every(d => selectedDocIds.includes(d.id))
 
-            {/* Step 2: Semantic Search */}
-            <div className="flex items-start gap-3">
-              <div className="flex flex-col items-center shrink-0">
-                <div className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-bold transition-all duration-300 ${
-                  searchStep === 'searching'
-                    ? 'border-emerald-400 text-emerald-400 bg-emerald-400/10'
-                    : (searchStep === 'synthesizing' || searchStep === 'done')
-                    ? 'border-slate-800 text-emerald-500 bg-slate-900/40'
-                    : 'border-slate-800 text-slate-500 bg-slate-900/40'
-                }`}>
-                  {searchStep === 'synthesizing' || searchStep === 'done' ? '✓' : '2'}
-                </div>
-                <div className={`w-0.5 h-6 transition-all duration-300 ${searchStep === 'synthesizing' || searchStep === 'done' ? 'bg-emerald-500/20' : 'bg-slate-800'}`} />
-              </div>
-              <div className="text-[11px] pt-0.5 min-w-0">
-                <div className={`font-semibold transition-colors duration-300 ${searchStep === 'searching' ? 'text-slate-200' : 'text-slate-500'}`}>
-                  Searching vector database
-                </div>
-                {searchStep === 'searching' && (
-                  <p className="text-[10px] text-slate-400 mt-1 animate-pulse leading-normal">Querying pgvector via Supabase RPC...</p>
-                )}
-              </div>
-            </div>
+  const totalChunks = documents.reduce((sum, doc) => sum + doc.sectionCount, 0)
+  const totalStorageBytes = documents.reduce((sum, doc) => sum + (Number(doc.meta?.size) || 0), 0)
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 KB'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+  }
+  const formattedStorage = formatBytes(totalStorageBytes)
+  const activeProject = projects.find(p => p.id === activeProjectId)
+  const activeChannel = chatChannels.find(c => c.id === activeChatId)
+  const activeChannelName = activeChannel?.name
+  const chatProviderId = (activeProject?.chat_provider || 'groq') as ChatProviderId
+  const chatProviderLabel = CHAT_PROVIDERS[chatProviderId]?.name?.replace(/ \(.*\)/, '') || 'Groq'
+  const embedProviderId = (activeProject?.embedding_provider || 'cohere') as EmbeddingProviderId
+  const embedProvider = EMBEDDING_PROVIDERS[embedProviderId]
+  const showExpandedSidebar = sidebarExpanded || sidebarOpen
 
-            {/* Step 3: Synthesis */}
-            <div className="flex items-start gap-3">
-              <div className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-bold shrink-0 transition-all duration-300 ${
-                searchStep === 'synthesizing'
-                  ? 'border-emerald-400 text-emerald-400 bg-emerald-400/10 animate-pulse'
-                  : 'border-slate-800 text-slate-500 bg-slate-900/40'
-              }`}>
-                3
-              </div>
-              <div className="text-[11px] pt-0.5 min-w-0">
-                <div className={`font-semibold transition-colors duration-300 ${searchStep === 'synthesizing' ? 'text-slate-200' : 'text-slate-500'}`}>
-                  Synthesizing answer
-                </div>
-                {searchStep === 'synthesizing' && (
-                  <p className="text-[10px] text-slate-400 mt-1 animate-pulse leading-normal">VectorMind is synthesizing your answer...</p>
-                )}
-              </div>
-            </div>
-          </div>
+  const toggleSidebarPanel = () => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setSidebarOpen(v => !v)
+    } else {
+      setSidebarExpanded(v => !v)
+    }
+  }
+
+  const chatComposerBlock = (
+    <>
+      {selectedFileIds.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2 justify-center">
+          {selectedFileIds.map(id => {
+            const doc = documents.find(d => d.id === id)
+            if (!doc) return null
+            return (
+              <span key={id} className="inline-flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 rounded-full pl-2.5 pr-1 py-0.5 text-[11px] font-medium">
+                {getDocName(doc)}
+                <button type="button" onClick={() => setSelectedFileIds(prev => prev.filter(x => x !== id))} className="p-0.5 rounded-full hover:bg-emerald-500/20" aria-label="Remove filter"><X className="w-3 h-3" /></button>
+              </span>
+            )
+          })}
+          <button type="button" onClick={() => setSelectedFileIds([])} className="text-[11px] text-zinc-500 hover:text-zinc-300 px-2">Clear</button>
         </div>
-      )
-    }
-
-    if (msg.role === 'assistant') {
-      const text = msg.text
-      const isQuotaError = text.toLowerCase().includes('quota') || text.toLowerCase().includes('limit') || text.toLowerCase().includes('exhausted') || text.includes('429')
-      const isGenericError = text.startsWith('Error generating response:')
-
-      if (isQuotaError) {
-        return (
-          <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/[0.03] backdrop-blur-md text-xs space-y-3 shadow-lg shadow-amber-500/[0.02]">
-            <div className="flex items-center gap-2 text-amber-400 font-bold text-[11px] uppercase tracking-wider">
-              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-              API Rate Limit Reached (429)
-            </div>
-            <p className="text-slate-300 leading-relaxed text-[11px]">
-              You have exceeded your free tier rate limit or daily request quota. Google AI Studio limits some accounts on the free plan to <strong>20 requests per day</strong> or <strong>15 requests per minute</strong>.
-            </p>
-            <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-900 font-mono text-[10px] text-slate-400 space-y-1">
-              <div>• <strong>Current Model:</strong> gemini-2.5-flash</div>
-              <div>• <strong>Quota reset:</strong> wait a minute or daily cycle</div>
-            </div>
-            <p className="text-[10px] text-slate-500 leading-relaxed">
-              <strong>Tip:</strong> Consider spacing out your requests or check your API key credentials at <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">Google AI Studio</a>.
-            </p>
-          </div>
-        )
-      }
-
-      if (isGenericError) {
-        return (
-          <div className="p-4 rounded-xl border border-red-500/20 bg-red-500/[0.03] backdrop-blur-md text-xs space-y-3 shadow-lg shadow-red-500/[0.02]">
-            <div className="flex items-center gap-2 text-red-400 font-bold text-[11px] uppercase tracking-wider">
-              <XCircle className="w-4 h-4 text-red-400 shrink-0" />
-              API Operational Error
-            </div>
-            <p className="text-slate-300 leading-relaxed text-[11px]">
-              {text.replace('Error generating response:', '').trim() || 'A backend database or system error occurred.'}
-            </p>
-          </div>
-        )
-      }
-
-      return (
-        <div className="space-y-3">
-          <div className="whitespace-pre-wrap">{renderMarkdown(text)}</div>
-          {msg.sources && msg.sources.length > 0 && (
-            <div className="pt-2 border-t border-slate-800/40 space-y-1.5">
-              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Source Documents</span>
-              <div className="flex flex-wrap gap-2">
-                {msg.sources.map((src, idx) => {
-                  const [filename, path] = src.split('->')
-                  return (
-                    <button
-                      key={idx}
-                      onClick={() => {
-                        setPreviewDocUrl(`/uploads/${filename}`)
-                        setPreviewDocName(filename || 'Document')
-                      }}
-                      className="text-[10px] font-semibold text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 px-2.5 py-1 rounded-full border border-emerald-500/10 hover:border-emerald-500/20 transition flex items-center gap-1.5 shrink-0"
-                    >
-                      <FileText className="w-3 h-3 text-emerald-400 shrink-0" />
-                      {filename}
-                    </button>
-                  )
-                })}
-              </div>
+      )}
+      <form onSubmit={handleSearchSubmit} className="vm-pill-input flex items-center gap-1 pl-1.5 pr-2 py-1.5 w-full">
+        <div ref={toolsMenuRef} className="relative shrink-0">
+          <button type="button" onClick={() => setToolsMenuOpen(!toolsMenuOpen)} className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-400 hover:bg-white/5 hover:text-zinc-100" aria-label="More options">
+            <PlusCircle className="w-5 h-5" />
+          </button>
+          {toolsMenuOpen && (
+            <div className="absolute bottom-full left-0 mb-2 w-56 rounded-xl border border-white/10 bg-[#1e1f20] shadow-xl p-1.5 z-50 animate-slide-up">
+              <button type="button" className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-zinc-200 hover:bg-white/5 flex items-center gap-2" onClick={() => { setActiveTab('database'); setTimeout(() => dbFileInputRef.current?.click(), 100); setToolsMenuOpen(false); }}>
+                <UploadCloud className="w-4 h-4 text-emerald-400" /> Upload documents
+              </button>
+              <button type="button" className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-zinc-200 hover:bg-white/5 flex items-center gap-2" onClick={() => { setFileSelectorOpen(!fileSelectorOpen); setToolsMenuOpen(false) }}>
+                <Paperclip className="w-4 h-4 text-emerald-400" /> Search specific files
+              </button>
+              <button type="button" className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-zinc-200 hover:bg-white/5 flex items-center gap-2" onClick={() => { startNewChat(); setToolsMenuOpen(false) }}>
+                <MessageSquare className="w-4 h-4 text-emerald-400" /> New chat
+              </button>
             </div>
           )}
         </div>
-      )
-    }
+        <input type="text" disabled={!activeProjectId} placeholder={!activeProjectId ? 'Create a workspace in the sidebar…' : 'Ask your documents anything…'} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="flex-1 min-w-0 bg-transparent py-2.5 px-1 outline-none text-zinc-100 placeholder:text-zinc-500 text-[15px] disabled:opacity-50" />
+        <div className="hidden sm:block w-28 shrink-0">
+          <CustomSelect value={activeProject?.chat_provider || 'groq'} onChange={handleUpdateChatProvider} options={CHAT_PROVIDER_OPTIONS} containerClassName="w-full" buttonClassName="flex h-9 w-full items-center justify-between rounded-full bg-white/5 px-3 text-xs text-zinc-300 hover:bg-white/10 border-0" dropdownPosition="bottom-full mb-2 left-0 right-0 z-[200] origin-bottom" />
+        </div>
+        {isSearchLoading ? (
+          <button type="button" onClick={() => stop()} className="w-9 h-9 shrink-0 rounded-full bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-all flex items-center justify-center shadow-lg shadow-red-500/5 animate-pulse" aria-label="Stop">
+            <Square className="w-3.5 h-3.5 fill-current" />
+          </button>
+        ) : (
+          <button type="submit" disabled={!searchQuery.trim() || !activeProjectId} className="w-9 h-9 shrink-0 rounded-full bg-emerald-500 text-[#0a0a0c] hover:bg-emerald-450 hover:scale-105 active:scale-95 disabled:opacity-30 disabled:hover:scale-100 disabled:active:scale-100 transition-all flex items-center justify-center shadow-lg shadow-emerald-500/10" aria-label="Search">
+            <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+          </button>
+        )}
+      </form>
+      <p className="text-center text-[10px] text-zinc-650 mt-2">
+        {selectedFileIds.length === 0 
+          ? (documents.length === 1 ? 'Searches 1 workspace file' : `Searches all ${documents.length} workspace files`) 
+          : `Searching ${selectedFileIds.length} selected file(s)`
+        } · Embed: <span className="text-emerald-400/80 font-medium">{embedProvider?.name || 'Cohere'}</span> + Chat: <span className="text-emerald-400/80 font-medium">{chatProviderLabel}</span>
+      </p>
+      {fileSelectorOpen && (
+        <div ref={fileSelectorRef} className="mt-2 rounded-xl border border-white/10 bg-[#1e1f20] p-3 max-h-68 overflow-y-auto custom-scrollbar space-y-2.5">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-bold text-zinc-450 uppercase tracking-wider">Pick files to search (optional)</p>
+            {selectedFileIds.length > 0 && (
+              <button 
+                type="button" 
+                onClick={() => setSelectedFileIds([])} 
+                className="text-[10px] text-red-400 hover:text-red-300 font-bold transition"
+              >
+                Clear all ({selectedFileIds.length})
+              </button>
+            )}
+          </div>
+          
+          {/* Search box for filtering specific files */}
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Filter files by name..."
+              value={specificFileSearchQuery}
+              onChange={(e) => setSpecificFileSearchQuery(e.target.value)}
+              className="w-full bg-zinc-950/60 hover:bg-zinc-950/80 focus:bg-zinc-950 border border-white/[0.06] focus:border-emerald-500/30 rounded-lg px-2.5 py-1.5 text-xs text-zinc-250 placeholder:text-zinc-600 outline-none transition-all"
+            />
+            {specificFileSearchQuery && (
+              <button 
+                type="button" 
+                onClick={() => setSpecificFileSearchQuery('')} 
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-550 hover:text-zinc-300 text-[10px] font-bold"
+              >
+                Clear
+              </button>
+            )}
+          </div>
 
-    return <div className="whitespace-pre-wrap">{msg.text}</div>
+          <div className="space-y-1 max-h-44 overflow-y-auto custom-scrollbar pr-0.5">
+            {documents.length === 0 ? (
+              <p className="text-xs text-zinc-500 py-3 text-center">No files uploaded yet.</p>
+            ) : (() => {
+              const filtered = documents.filter(doc => getDocName(doc).toLowerCase().includes(specificFileSearchQuery.toLowerCase()))
+              if (filtered.length === 0) {
+                return <p className="text-xs text-zinc-550 py-3 text-center">No matching files found.</p>
+              }
+              return filtered.map(doc => {
+                const isChecked = selectedFileIds.includes(doc.id)
+                return (
+                  <button 
+                    key={doc.id} 
+                    type="button" 
+                    onClick={() => setSelectedFileIds(prev => isChecked ? prev.filter(id => id !== doc.id) : [...prev, doc.id])} 
+                    className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs text-left transition ${isChecked ? 'bg-emerald-500/10 text-emerald-300 font-medium' : 'text-zinc-400 hover:bg-white/5'}`}
+                  >
+                    <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 transition-colors ${isChecked ? 'border-emerald-500 bg-emerald-500' : 'border-zinc-700 bg-zinc-900/50'}`}>
+                      {isChecked && <Check className="w-2.5 h-2.5 text-[#0a0a0c] stroke-[3]" />}
+                    </span>
+                    <span className="truncate">{getDocName(doc)}</span>
+                  </button>
+                )
+              })
+            })()}
+          </div>
+        </div>
+      )}
+    </>
+  )
+
+  function navBtn(tab: 'chat' | 'dashboard' | 'database', icon: React.ReactNode, label: string) {
+    return (
+      <button
+        type="button"
+        onClick={() => { setActiveTab(tab); if (window.innerWidth < 768) setSidebarOpen(false) }}
+        title={label}
+        aria-label={label}
+        className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${activeTab === tab ? 'bg-white/10 text-emerald-400' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-100'}`}
+      >
+        {icon}
+      </button>
+    )
   }
 
-  // Filtered Library Documents
-  const filteredDocs = documents.filter(doc => {
-    const term = libraryFilter.toLowerCase()
-    const name = doc.meta?.filename?.toLowerCase() || doc.path.toLowerCase()
-    return name.includes(term)
-  })
-
-  // Counts for status info
-  const successUploadsCount = uploadQueue.filter(q => q.status === 'success').length
-  const totalUploadsCount = uploadQueue.length
-
+  // --- Render ---
   return (
-    <>
+    <div className="flex h-[100dvh] w-full bg-[#131314] text-zinc-200 font-sans overflow-hidden selection:bg-zinc-800">
       <Head>
-        <title>VectorMind — AI Document Search</title>
-        <meta
-          name="description"
-          content="VectorMind — AI-powered document intelligence platform with semantic search, powered by Google Gemini & Supabase pgvector."
-        />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <link rel="icon" href="/favicon.ico" />
+        <title>VectorMind</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
       </Head>
 
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500/30">
-        {/* Glow Effects */}
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none" />
-        <div className="absolute top-10 right-1/4 w-96 h-96 bg-violet-600/10 rounded-full blur-[120px] pointer-events-none" />
+      {/* Particle Burst Container */}
+      <div ref={particleRef} className="fixed inset-0 pointer-events-none z-[9999]" />
 
-        {/* Header */}
-        <header className="border-b border-slate-900 bg-slate-950/80 backdrop-blur-md sticky top-0 z-40">
-          <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                <Database className="w-5 h-5 text-slate-950 stroke-[2.5]" />
-              </div>
-              <div>
-                <h1 className="text-base font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-teal-300">
-                  VectorMind
-                </h1>
-                <p className="text-[10px] text-slate-500 font-medium tracking-widest">AI DOCUMENT INTELLIGENCE</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-2 text-xs font-semibold text-slate-400">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>VectorMind Online</span>
-            </div>
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <button type="button" className="fixed inset-0 z-40 bg-black/60 md:hidden" aria-label="Close menu" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      {/* Unified Left Sidebar */}
+      <div
+        className={`fixed md:relative inset-y-0 left-0 z-50 flex shrink-0 border-r border-white/[0.06] bg-[#1a1a1c] transition-[width] duration-300 ease-out overflow-hidden ${
+          showExpandedSidebar 
+            ? 'w-[min(100vw,332px)] md:w-[332px]' 
+            : 'w-0 md:w-[52px] border-r-0 md:border-r'
+        }`}
+      >
+        {/* Leftmost Rail: Icons Only (Always visible on desktop) */}
+        <aside className="w-[52px] shrink-0 flex flex-col items-center bg-[#131314] py-3 border-r border-white/[0.03]">
+          <button 
+            type="button" 
+            onClick={toggleSidebarPanel} 
+            title={showExpandedSidebar ? "Collapse panel" : "Expand panel"} 
+            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/5 mb-2 group relative transition-all duration-200"
+          >
+            <Zap className={`w-5 h-5 text-emerald-400 absolute transition-all duration-200 ${showExpandedSidebar ? 'opacity-0 scale-75 rotate-45' : 'group-hover:opacity-0 group-hover:scale-75 group-hover:rotate-45'}`} />
+            <SidebarToggleIcon className={`w-5 h-5 text-zinc-400 absolute transition-all duration-200 ${showExpandedSidebar ? 'opacity-100 scale-100 rotate-0' : 'opacity-0 scale-75 rotate-45 group-hover:opacity-100 group-hover:scale-100 group-hover:rotate-0'}`} />
+          </button>
+          <div className="w-8 border-t border-white/[0.06] my-1" />
+          {navBtn('dashboard', <LayoutDashboard className="w-5 h-5" />, 'Dashboard')}
+          {navBtn('chat', <MessageSquare className="w-5 h-5" />, 'Chat')}
+          {navBtn('database', <Database className="w-5 h-5" />, 'Library')}
+          <div className="mt-auto flex flex-col items-center gap-2 pb-2">
+            <button
+              type="button"
+              onClick={checkApiHealth}
+              title={apiHealth === 'healthy' ? 'Connected' : apiHealth === 'checking' ? 'Checking…' : 'Setup needed'}
+              className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/5"
+            >
+              <span className={`w-2.5 h-2.5 rounded-full ${apiHealth === 'healthy' ? 'bg-emerald-500' : apiHealth === 'checking' ? 'bg-amber-400 animate-pulse' : 'bg-red-500'}`} />
+            </button>
           </div>
-        </header>
+        </aside>
 
-        {/* Main Content Area */}
-        <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-8 flex flex-col">
-          {/* Hero Banner */}
-          <div className="mb-8 p-6 rounded-2xl border border-slate-900 bg-gradient-to-br from-slate-900 to-slate-950/60 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h2 className="text-xl font-bold flex items-center gap-2">
-                <Wand className="w-5 h-5 text-emerald-400" />
-                Intelligent Document Retrieval
-              </h2>
-              <p className="text-xs text-slate-400 mt-1.5 max-w-xl leading-relaxed">
-                Upload documents and ask questions instantly. VectorMind chunks your files, embeds them into 768-dimensional vectors, and indexes them for precise semantic retrieval.
-              </p>
-            </div>
-            <div className="flex items-center space-x-6 shrink-0 bg-slate-950/40 px-4 py-3 rounded-xl border border-slate-900">
-              <div className="text-center">
-                <div className="text-xl font-bold text-emerald-400">{documents.length}</div>
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Indexed Files</div>
+        {/* Right side of sidebar: Panel content, width 280px */}
+        <div className={`flex flex-col h-full w-[280px] shrink-0 transition-opacity duration-200 ${showExpandedSidebar ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+          <div className="h-14 px-4 flex items-center justify-between shrink-0 border-b border-white/[0.06]">
+            <button 
+              type="button" 
+              onClick={toggleSidebarPanel}
+              className="flex items-center gap-2 group text-left focus:outline-none select-none min-w-0"
+              title="Collapse panel"
+            >
+              <div className="relative w-6 h-6 flex items-center justify-center shrink-0">
+                <Zap className="w-5 h-5 text-emerald-400 absolute transition-all duration-200 group-hover:opacity-0 group-hover:scale-75 group-hover:rotate-45" />
+                <SidebarToggleIcon className="w-5 h-5 text-zinc-400 absolute opacity-0 scale-75 rotate-45 transition-all duration-200 group-hover:opacity-100 group-hover:scale-100 group-hover:rotate-0" />
               </div>
-              <div className="h-8 border-l border-slate-900" />
-              <div className="text-center">
-                <div className="text-xl font-bold text-violet-400">
-                  {documents.reduce((sum, doc) => sum + doc.sectionCount, 0)}
-                </div>
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Total Sections</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Navigation Tabs */}
-          <div className="flex space-x-1 border-b border-slate-900 mb-6 pb-px">
-            <button
-              onClick={() => setActiveTab('search')}
-              className={`px-4 py-2.5 text-xs font-bold transition-all relative ${
-                activeTab === 'search'
-                  ? 'text-emerald-400 font-extrabold'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Search Documents
-              {activeTab === 'search' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-400 rounded-full" />
-              )}
+              <span className="font-semibold text-sm text-zinc-100 truncate group-hover:text-emerald-400 transition-colors">VectorMind</span>
             </button>
-            <button
-              onClick={() => setActiveTab('upload')}
-              className={`px-4 py-2.5 text-xs font-bold transition-all relative ${
-                activeTab === 'upload'
-                  ? 'text-emerald-400 font-extrabold'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+            
+            {/* Mobile close button */}
+            <button 
+              type="button" 
+              onClick={() => setSidebarOpen(false)} 
+              className="md:hidden p-1.5 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-zinc-200 transition-all shrink-0"
+              title="Close sidebar"
             >
-              Upload Files
-              {activeTab === 'upload' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-400 rounded-full" />
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab('library')}
-              className={`px-4 py-2.5 text-xs font-bold transition-all relative ${
-                activeTab === 'library'
-                  ? 'text-emerald-400 font-extrabold'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Library Manager
-              {activeTab === 'library' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-400 rounded-full" />
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab('docs')}
-              className={`px-4 py-2.5 text-xs font-bold transition-all relative ${
-                activeTab === 'docs'
-                  ? 'text-emerald-400 font-extrabold'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              How It Works
-              {activeTab === 'docs' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-400 rounded-full" />
-              )}
+              <X className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Tab 1: Search Panel (Premium Chatbot Interface) */}
-          {activeTab === 'search' && (
-            <div className="flex-1 flex flex-col min-h-[500px] border border-slate-900 bg-slate-950/30 backdrop-blur-md rounded-2xl overflow-hidden shadow-2xl">
-              
-              {/* Chat Header */}
-              <div className="px-6 py-4 border-b border-slate-900/80 bg-slate-900/10 flex items-center justify-between shrink-0">
-                <div className="flex items-center space-x-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                    <MessageSquare className="w-4 h-4 text-emerald-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-bold text-slate-200">Semantic Chat Assistant</h3>
-                    <p className="text-[10px] text-slate-500">Ask questions over indexed documents</p>
-                  </div>
-                </div>
-                {messages.length > 0 && (
-                  <button
-                    onClick={handleClearChat}
-                    className="text-[10px] text-slate-400 hover:text-red-400 px-2.5 py-1.5 rounded-lg border border-slate-800 hover:border-red-950/40 bg-slate-900/20 hover:bg-red-950/10 transition font-bold flex items-center gap-1.5"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Clear Conversation
-                  </button>
-                )}
-              </div>
-
-              {/* Chat Scroll Window */}
-              <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 max-h-[550px] min-h-[350px] custom-scrollbar">
-                {messages.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center py-10 text-center animate-slide-up">
-                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20 flex items-center justify-center shadow-inner mb-4">
-                      <Wand className="w-7 h-7 text-emerald-400" />
-                    </div>
-                    <h4 className="text-sm font-bold text-slate-200">How can I assist you with your files?</h4>
-                    <p className="text-xs text-slate-500 mt-1 max-w-sm">
-                      {documents.length > 0
-                        ? `Ask a question to query your ${documents.length} indexed files using semantic search.`
-                        : 'Upload some documents first to begin chatting.'}
-                    </p>
-
-                    {/* Suggestions Section */}
-                    {documents.length > 0 && (
-                      <div className="mt-8 w-full max-w-lg">
-                        <div className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mb-3">Suggested Queries</div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-left">
-                          {getDynamicSuggestions().map((sug, idx) => (
-                            <button
-                              key={idx}
-                              onClick={() => handleSuggestionClick(sug)}
-                              className="suggestion-chip p-3 text-[11px] text-slate-400 hover:text-slate-200 bg-slate-900/30 hover:bg-slate-900/60 border border-slate-900 hover:border-emerald-500/20 rounded-xl transition-all duration-200 text-left font-medium hover:shadow-lg hover:shadow-emerald-500/[0.03] hover:translate-y-[-1px]"
-                            >
-                              {sug}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
+        {/* Sidebar content conditional on active tab */}
+        {activeTab === 'chat' ? (
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {/* Project Switcher */}
+            <div className="p-4 border-b border-white/[0.06] relative z-20">
+              <div className="text-[11px] font-medium text-zinc-500 mb-2">Workspace</div>
+              <div className="relative">
+                <button onClick={() => setProjectDropdownOpen(!projectDropdownOpen)} className="flex h-10 w-full items-center justify-between rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 shadow-sm outline-none transition-colors hover:bg-zinc-900 hover:text-zinc-50">
+                  <span className="text-sm font-medium truncate pr-2">
+                    {activeProject?.name || 'Select Workspace'}
+                  </span>
+                  <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform duration-200 ${projectDropdownOpen ? 'rotate-180 text-zinc-50' : ''}`} />
+                </button>
+                
+                {/* Dropdown Menu */}
+                {projectDropdownOpen && (
                   <>
-                    {messages.map((msg, index) => {
-                      const isUser = msg.role === 'user'
-                      return (
-                        <div
-                          key={msg.id || index}
-                          className={`flex items-start gap-3 animate-slide-up ${
-                            isUser ? 'justify-end' : 'justify-start'
-                          }`}
-                        >
-                          {/* Bot Avatar (Left side) */}
-                          {!isUser && (
-                            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shrink-0 shadow-md shadow-emerald-500/10">
-                              <Bot className="w-4 h-4 text-slate-950 stroke-[2.5]" />
-                            </div>
-                          )}
+                    <div className="fixed inset-0 z-40" onClick={() => setProjectDropdownOpen(false)} />
+                    <div className="absolute top-full left-0 right-0 mt-1.5 z-50 overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 text-zinc-550 shadow-md animate-slide-up origin-top">
+                    {/* Search Workspace Input */}
+                    <div className="px-2 py-1.5 border-b border-white/[0.04] mb-1">
+                      <input
+                        type="text"
+                        placeholder="Search workspaces..."
+                        value={sidebarProjSearch}
+                        onChange={(e) => setSidebarProjSearch(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full px-2 py-1.5 bg-zinc-900 border border-white/5 rounded text-xs text-zinc-200 placeholder-zinc-500 outline-none focus:border-emerald-500/30 transition-all"
+                      />
+                    </div>
 
-                          {/* Message Bubble */}
-                          <div
-                            className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs leading-relaxed transition-all duration-300 border ${
-                              isUser
-                                ? 'bg-gradient-to-br from-slate-900 to-slate-950/80 border-emerald-500/20 text-slate-200 rounded-tr-xs'
-                                : 'bg-slate-900/40 border-slate-900/80 text-slate-300 rounded-tl-xs'
-                            }`}
-                          >
-                            {/* Message Header (Sender Info) */}
-                            <div className="flex items-center justify-between mb-1.5">
-                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                                {isUser ? 'You' : 'VectorMind'}
-                              </span>
-                              <span className="text-[9px] text-slate-600">
-                                {msg.timestamp.toLocaleTimeString(undefined, {
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })}
-                              </span>
-                            </div>
-
-                            {/* Message Content */}
-                            {renderMessageContent(msg)}
+                    <div className="max-h-[200px] overflow-y-auto custom-scrollbar p-1">
+                      {projects
+                        .filter(p => p.name.toLowerCase().includes(sidebarProjSearch.toLowerCase()))
+                        .map(p => (
+                          <div key={p.id} className={`w-full flex items-center justify-between rounded-sm text-sm transition-colors ${activeProjectId === p.id ? 'bg-zinc-900 text-zinc-50 font-medium' : 'text-zinc-300 hover:bg-zinc-900 hover:text-zinc-50'}`}>
+                            <button onClick={() => { setActiveProjectId(p.id); setProjectDropdownOpen(false); }} className="flex-1 text-left truncate px-2.5 py-2 flex items-center gap-2">
+                              <Folder className={`w-3.5 h-3.5 shrink-0 ${activeProjectId === p.id ? 'text-emerald-450' : 'text-zinc-500'}`} />
+                              {p.name}
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); deleteProject(p.id, p.name); }} className="p-1.5 text-zinc-400 hover:text-red-405 hover:bg-red-500/10 rounded mr-1 transition-all" title="Delete Workspace">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
-
-                          {/* User Avatar (Right side) */}
-                          {isUser && (
-                            <div className="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
-                              <User className="w-4 h-4 text-slate-300" />
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                    <div ref={chatEndRef} />
+                        ))}
+                      {projects.filter(p => p.name.toLowerCase().includes(sidebarProjSearch.toLowerCase())).length === 0 && (
+                        <div className="px-3 py-4 text-xs text-zinc-500 text-center">No matching workspaces.</div>
+                      )}
+                    </div>
+                    <div className="border-t border-zinc-800 p-2 bg-zinc-950">
+                      {isCreatingProject ? (
+                        <form onSubmit={handleCreateProject} className="flex flex-col gap-2">
+                          <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="Workspace Name..." className="w-full bg-zinc-955 border border-zinc-800 rounded-md px-3 py-1.5 text-xs text-zinc-100 outline-none focus:border-zinc-700 transition-colors" autoFocus/>
+                          <div className="flex gap-1.5 relative z-50">
+                            <CustomSelect 
+                              value={newEmbeddingProvider} 
+                              onChange={setNewEmbeddingProvider} 
+                              options={EMBEDDING_PROVIDER_OPTIONS}
+                              title="Embedding Model"
+                            />
+                            <CustomSelect 
+                              value={newChatProvider} 
+                              onChange={setNewChatProvider} 
+                              options={CHAT_PROVIDER_OPTIONS}
+                              title="Chat Model"
+                            />
+                          </div>
+                          <div className="text-[8px] text-zinc-500 leading-tight my-1">
+                            <span className="text-emerald-500 font-bold">Tip:</span> Embedding is permanent per project. Chat LLMs can be freely swapped later!
+                          </div>
+                          <div className="flex gap-1.5">
+                            <button type="submit" disabled={!newProjectName.trim()} className="flex-1 bg-zinc-50 text-zinc-950 px-3 py-1.5 rounded-md font-bold text-xs hover:bg-zinc-200 disabled:opacity-50">Create</button>
+                            <button type="button" onClick={() => setIsCreatingProject(false)} className="bg-zinc-900 text-zinc-50 px-3 rounded-md font-bold hover:bg-zinc-800"><X className="w-3.5 h-3.5"/></button>
+                          </div>
+                        </form>
+                      ) : (
+                        <button onClick={() => setIsCreatingProject(true)} className="w-full flex items-center justify-center gap-2 text-xs font-semibold text-zinc-400 hover:text-zinc-50 py-2 rounded-md hover:bg-zinc-900 transition-colors">
+                          <FolderPlus className="w-3.5 h-3.5" /> Create Workspace
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   </>
                 )}
               </div>
+            </div>
 
-              {/* Chat Input Container */}
-              <div className="p-4 border-t border-slate-900/80 bg-slate-950/80 shrink-0">
-                <form
-                  onSubmit={handleSearchSubmit}
-                  className="relative flex items-center"
-                >
+            {/* Chat history */}
+            <div className="px-2 py-3 flex-1 flex flex-col min-h-0">
+              <div className="flex items-center justify-between mb-2 px-2 shrink-0">
+                <span className="text-xs font-semibold text-zinc-400 flex items-center gap-1.5"><History className="w-3.5 h-3.5" /> Chats</span>
+                <button type="button" onClick={startNewChat} className="flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold px-2 py-1 rounded-md hover:bg-emerald-500/10">
+                  <PlusCircle className="w-3.5 h-3.5" /> New
+                </button>
+              </div>
+
+              {/* Chat Search Bar */}
+              <div className="px-2 mb-2 shrink-0">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
                   <input
                     type="text"
-                    disabled={isSearchLoading || documents.length === 0}
-                    placeholder={
-                      documents.length === 0
-                        ? "Please index documents first..."
-                        : "Ask a question about your documents (e.g. microprocessor syllabus)..."
-                    }
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl py-3.5 pl-4 pr-14 text-xs focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition disabled:opacity-50"
+                    placeholder="Search chats..."
+                    value={chatSearchQuery}
+                    onChange={(e) => setChatSearchQuery(e.target.value)}
+                    className="w-full bg-zinc-950/40 hover:bg-zinc-950/60 focus:bg-zinc-950 border border-white/[0.04] focus:border-emerald-500/30 rounded-lg pl-8 pr-7 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-550 outline-none transition-all"
                   />
-                  <button
-                    type="submit"
-                    disabled={isSearchLoading || !searchQuery.trim()}
-                    className="absolute right-2 top-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-800 text-slate-950 p-2 rounded-lg transition disabled:text-slate-500 flex items-center justify-center shadow-lg hover:shadow-emerald-500/10"
-                  >
-                    {isSearchLoading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Send className="w-4 h-4 stroke-[2.5]" />
-                    )}
-                  </button>
-                </form>
-                <div className="flex items-center justify-between mt-2 px-1 text-[9px] text-slate-600 font-medium">
-                  <span>Enter to submit, Shift+Enter for new line</span>
-                  {documents.length > 0 && (
-                    <span>Searching over {documents.length} files</span>
+                  {chatSearchQuery && (
+                    <button type="button" onClick={() => setChatSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 p-0.5">
+                      <X className="w-3 h-3" />
+                    </button>
                   )}
                 </div>
               </div>
-            </div>
-          )}
 
-          {/* Tab 2: Upload Files Panel */}
-          {activeTab === 'upload' && (
-            <div className="space-y-6">
-              {/* Dropzone */}
-              <div
-                onDragEnter={handleDrag}
-                onDragOver={handleDrag}
-                onDragLeave={handleDrag}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition flex flex-col items-center justify-center ${
-                  dragActive
-                    ? 'border-emerald-500 bg-emerald-500/5'
-                    : 'border-slate-800 hover:border-slate-700 bg-slate-900/20'
-                }`}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  onChange={handleFileChange}
-                  className="hidden"
-                  accept=".txt,.md,.mdx,.json,.csv,.xml,.js,.ts,.html,.css"
-                />
-                <UploadCloud className="w-10 h-10 text-slate-500 mb-3" />
-                <h3 className="text-sm font-semibold text-slate-300">Drag & Drop files here</h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  or click to browse your computer
-                </p>
-                <p className="text-[10px] text-slate-600 mt-2">
-                  Supports text, markdown, configuration, or code files (up to 100+ files)
-                </p>
-              </div>
-
-              {/* Upload Queue */}
-              {uploadQueue.length > 0 && (
-                <div className="border border-slate-900 rounded-xl overflow-hidden bg-slate-900/10">
-                  <div className="bg-slate-900/40 px-4 py-3 border-b border-slate-900 flex items-center justify-between">
-                    <div>
-                      <h4 className="text-xs font-bold">Upload Queue</h4>
-                      <p className="text-[10px] text-slate-500 mt-0.5">
-                        {successUploadsCount} / {totalUploadsCount} Files Indexed
-                      </p>
-                    </div>
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={clearQueue}
-                        disabled={isUploading}
-                        className="text-[10px] text-slate-400 hover:text-slate-200 border border-slate-800 hover:border-slate-700 px-2.5 py-1.5 rounded font-bold transition disabled:opacity-50"
-                      >
-                        Clear Queue
-                      </button>
-                      <button
-                        onClick={startUpload}
-                        disabled={isUploading}
-                        className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-800 text-slate-950 font-bold px-3 py-1.5 rounded text-[10px] flex items-center gap-1 transition"
-                      >
-                        {isUploading ? (
-                          <>
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                            Indexing...
-                          </>
-                        ) : (
-                          'Start Upload'
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="max-h-80 overflow-y-auto divide-y divide-slate-900 text-xs">
-                    {uploadQueue.map(item => (
-                      <div key={item.id} className="p-3.5 flex flex-col hover:bg-slate-900/30 transition">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-3 min-w-0">
-                            <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                            <div className="min-w-0">
-                              <p className="font-medium text-slate-300 truncate max-w-[200px] sm:max-w-md">{item.file.name}</p>
-                              <p className="text-[10px] text-slate-500 mt-px">
-                                {(item.file.size / 1024).toFixed(1)} KB
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center space-x-3 shrink-0">
-                            {item.status === 'idle' && (
-                              <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-semibold">
-                                Ready
-                              </span>
-                            )}
-                            {item.status === 'uploading' && (
-                              <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
-                                <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                                {item.progress < 99 ? `Uploading (${item.progress}%)` : 'Embedding...'}
-                              </span>
-                            )}
-                            {item.status === 'success' && (
-                              <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
-                                <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
-                                Indexed ({item.chunks} chunks)
-                              </span>
-                            )}
-                            {item.status === 'error' && (
-                              <span
-                                title={item.error}
-                                className="text-[10px] bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded font-semibold flex items-center gap-1 max-w-[120px] sm:max-w-[200px] truncate cursor-help"
-                              >
-                                <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                                <span className="truncate">{item.error || 'Error'}</span>
-                              </span>
-                            )}
-
-                            {!isUploading && item.status !== 'success' && (
-                              <button
-                                onClick={() => removeFromQueue(item.id)}
-                                className="text-slate-500 hover:text-slate-300 transition"
-                              >
-                                <XCircle className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Upload Progress Bar */}
-                        {item.status === 'uploading' && (
-                          <div className="w-full mt-2 bg-slate-950 rounded-full h-1 overflow-hidden relative border border-slate-900">
-                            <div
-                              className="bg-gradient-to-r from-emerald-500 to-teal-400 h-1 rounded-full transition-all duration-300 ease-out"
-                              style={{ width: `${item.progress}%` }}
+              <div className="flex-1 overflow-y-auto custom-scrollbar space-y-0.5 px-1">
+                {chatChannels
+                  .filter(c => c.name.toLowerCase().includes(chatSearchQuery.toLowerCase()))
+                  .map(c => (
+                    <div key={c.id} className={`group flex items-center gap-1 rounded-xl transition-colors relative ${activeChatId === c.id ? 'bg-[#1D9E75]/10 ring-1 ring-[#1D9E75]/25' : 'hover:bg-white/5'}`}>
+                      {editingChatId === c.id ? (
+                        <div className="flex-1 flex items-center gap-2 px-2.5 py-2.5 min-w-0">
+                          <MessageSquare className="w-4 h-4 shrink-0 text-emerald-400" />
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault()
+                              saveChatRename(c.id, editingChatName)
+                            }}
+                            className="flex-1 min-w-0"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="text"
+                              value={editingChatName}
+                              onChange={(e) => setEditingChatName(e.target.value)}
+                              onBlur={() => saveChatRename(c.id, editingChatName)}
+                              className="w-full bg-zinc-950 border border-zinc-800 rounded px-1.5 py-0.5 text-xs text-zinc-100 outline-none focus:border-emerald-500/30"
+                              autoFocus
                             />
+                          </form>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => switchChat(c.id)} className="flex-1 flex items-center gap-2 text-left px-2.5 py-2.5 min-w-0">
+                          <MessageSquare className={`w-4 h-4 shrink-0 ${activeChatId === c.id ? 'text-emerald-400' : 'text-zinc-500'}`} />
+                          <div className="min-w-0 flex-1">
+                            <div className={`text-sm truncate font-medium ${activeChatId === c.id ? 'text-zinc-100' : 'text-zinc-300'}`}>{c.name}</div>
+                            <div className="text-[10px] text-zinc-650 truncate">{c.messages.filter(m => m.text).length || 0} messages</div>
                           </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Tab 3: Library Manager Panel */}
-          {activeTab === 'library' && (
-            <div className="space-y-6">
-              <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
-                <div className="relative w-full sm:max-w-xs">
-                  <input
-                    type="text"
-                    placeholder="Search indexed files..."
-                    value={libraryFilter}
-                    onChange={(e) => setLibraryFilter(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 pl-9 pr-4 text-xs focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
-                  />
-                  <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
-                </div>
-
-                <button
-                  onClick={fetchLibrary}
-                  disabled={isLibraryLoading}
-                  className="w-full sm:w-auto text-[10px] text-slate-300 hover:text-slate-100 border border-slate-800 hover:border-slate-700 bg-slate-900/30 px-3.5 py-2 rounded-lg font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isLibraryLoading ? 'animate-spin' : ''}`} />
-                  Refresh Library
-                </button>
-              </div>
-
-              {isLibraryLoading && documents.length === 0 ? (
-                <div className="text-center py-12">
-                  <Loader2 className="w-8 h-8 text-emerald-400 animate-spin mx-auto mb-2" />
-                  <p className="text-xs text-slate-500 font-medium">Scanning index database...</p>
-                </div>
-              ) : filteredDocs.length === 0 ? (
-                <div className="text-center py-12 border border-slate-900 border-dashed rounded-xl bg-slate-950/20">
-                  <FileText className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-                  <p className="text-xs text-slate-400 font-semibold">No documents found</p>
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    {libraryFilter ? 'Try clearing your filter search' : 'Index files inside the Upload tab first'}
-                  </p>
-                </div>
-              ) : (
-                <div className="border border-slate-900 rounded-xl overflow-hidden bg-slate-950/40">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="bg-slate-900/50 border-b border-slate-900 text-slate-400 font-bold">
-                          <th className="p-4">Document Path / Name</th>
-                          <th className="p-4">Type</th>
-                          <th className="p-4">Total Chunks</th>
-                          <th className="p-4">Upload Date</th>
-                          <th className="p-4 text-right">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-900">
-                        {filteredDocs.map(doc => (
-                          <tr key={doc.id} className="hover:bg-slate-900/20 transition">
-                            <td className="p-4 font-medium text-slate-300">
-                              <div className="truncate max-w-sm" title={doc.path}>
-                                {doc.meta?.filename || doc.path}
-                              </div>
-                            </td>
-                            <td className="p-4">
-                              <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-800">
-                                {doc.type || 'unknown'}
-                              </span>
-                            </td>
-                            <td className="p-4 font-semibold text-slate-400">{doc.sectionCount}</td>
-                            <td className="p-4 text-slate-500">
-                              {doc.meta?.uploadedAt
-                                ? new Date(doc.meta.uploadedAt).toLocaleDateString(undefined, {
-                                    month: 'short',
-                                    day: 'numeric',
-                                    year: 'numeric',
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                  })
-                                : 'Pre-indexed'}
-                            </td>
-                            <td className="p-4 text-right space-x-2 whitespace-nowrap">
-                              {doc.meta?.filename && (
-                                <button
-                                  onClick={() => {
-                                    setPreviewDocUrl(`/uploads/${doc.meta?.filename}`)
-                                    setPreviewDocName(doc.meta?.filename || 'Document')
-                                  }}
-                                  className="text-emerald-400 hover:text-emerald-300 p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 rounded border border-emerald-500/10 transition inline-flex items-center justify-center"
-                                  title="Preview Document"
-                                >
-                                  <Eye className="w-4 h-4" />
-                                </button>
-                              )}
+                        </button>
+                      )}
+                      
+                      {editingChatId !== c.id && (
+                        <div className="relative shrink-0">
+                          <button 
+                            type="button" 
+                            onClick={(e) => { 
+                              e.stopPropagation()
+                              setActiveMenuChatId(activeMenuChatId === c.id ? null : c.id)
+                              setActiveMenuProjectId(null)
+                            }} 
+                            className="p-2 mr-1 rounded-lg text-zinc-500 hover:text-zinc-350 transition-colors shrink-0 options-menu-btn" 
+                            aria-label="Options"
+                          >
+                            <MoreVertical className="w-3.5 h-3.5" />
+                          </button>
+                          
+                          {activeMenuChatId === c.id && (
+                            <div className="absolute right-1 top-full mt-0.5 w-28 rounded-lg border border-white/10 bg-[#1e1f20] shadow-xl p-1 z-50 text-left options-menu-dropdown">
                               <button
-                                onClick={() => handleDeleteDocument(doc.id)}
-                                disabled={deletingIds.includes(doc.id)}
-                                className="text-red-400 hover:text-red-300 disabled:opacity-50 p-1.5 bg-red-500/10 hover:bg-red-500/20 rounded border border-red-500/10 transition inline-flex items-center justify-center"
-                                title="Delete Document"
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setEditingChatId(c.id)
+                                  setEditingChatName(c.name)
+                                  setActiveMenuChatId(null)
+                                }}
+                                className="w-full text-left px-2 py-1.5 rounded text-xs text-zinc-200 hover:bg-white/5 flex items-center gap-1.5"
                               >
-                                {deletingIds.includes(doc.id) ? (
-                                  <Loader2 className="w-4 h-4 animate-spin text-red-400" />
-                                ) : (
-                                  <Trash2 className="w-4 h-4" />
-                                )}
+                                <Edit2 className="w-3.5 h-3.5 text-zinc-400" /> Rename
                               </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Tab 4: How It Works Panel */}
-          {activeTab === 'docs' && (
-            <div className="space-y-12 animate-slide-up pb-10">
-              
-              {/* Header card with gradient background and glow */}
-              <div className="relative border border-slate-900 bg-gradient-to-r from-slate-950 via-slate-900/60 to-slate-950 rounded-2xl p-8 overflow-hidden shadow-xl">
-                <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-[100px] pointer-events-none" />
-                <div className="relative z-10 max-w-3xl space-y-3">
-                  <span className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full">
-                    Hybrid RAG Engine (RRF)
-                  </span>
-                  <h3 className="text-2xl font-black text-slate-100 tracking-tight mt-2">
-                    How VectorMind Processes Your Data
-                  </h3>
-                  <p className="text-xs text-slate-400 leading-relaxed font-medium">
-                    VectorMind leverages an advanced **Hybrid Retrieval-Augmented Generation (RAG)** framework. By combining high-dimensional **semantic vectors** (concept matching) with PostgreSQL **full-text search GIN indexing** (literal keyword matching), and fusing them via **Reciprocal Rank Fusion (RRF)**, we guarantee maximum retrieval accuracy and eliminate AI hallucinations.
-                  </p>
-                </div>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  deleteChat(c.id, e as any)
+                                  setActiveMenuChatId(null)
+                                }}
+                                className="w-full text-left px-2 py-1.5 rounded text-xs text-red-400 hover:bg-red-500/10 flex items-center gap-1.5 font-bold"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-red-450" /> Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
               </div>
-
-              {/* Ingestion Pipeline Flowchart Section */}
-              <div className="space-y-6">
-                <div className="flex items-center space-x-3 px-1">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                    <UploadCloud className="w-4 h-4 text-emerald-400" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-extrabold text-slate-200 uppercase tracking-wider">1. The Document Ingestion Pipeline</h4>
-                    <p className="text-[10px] text-slate-500 font-medium">From raw file upload to automated vector embedding and lexical GIN indexation</p>
-                  </div>
-                </div>
-
-                {/* Horizontal Visual Flowchart Map */}
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 relative">
-                  
-                  {/* Step 1: Upload */}
-                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 01</span>
-                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
-                          <UploadCloud className="w-4 h-4 text-emerald-400" />
-                        </div>
-                      </div>
-                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">User Document Upload</h5>
-                      <p className="text-[10px] text-slate-500 leading-normal">
-                        Accepts PDFs, MD, text, JSON, and source code. Client converts binary files to safe Base64.
-                      </p>
-                    </div>
-                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
-                      API: /api/upload
-                    </div>
-                  </div>
-
-                  {/* Step 2: Parse & Sanitize */}
-                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 02</span>
-                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
-                          <FileText className="w-4 h-4 text-emerald-400" />
-                        </div>
-                      </div>
-                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">Extraction & Sanitation</h5>
-                      <p className="text-[10px] text-slate-500 leading-normal">
-                        <code>pdf-parse</code> extracts raw text streams. Strips null bytes (<code>\u0000</code>) to prevent DB failure.
-                      </p>
-                    </div>
-                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
-                      Output: Raw Text
-                    </div>
-                  </div>
-
-                  {/* Step 3: Chunking */}
-                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 03</span>
-                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
-                          <Database className="w-4 h-4 text-emerald-400" />
-                        </div>
-                      </div>
-                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">Sliding-Window Chunking</h5>
-                      <p className="text-[10px] text-slate-500 leading-normal">
-                        Slices text into 1,000-char blocks with 200-char overlap. Scans for whitespace to prevent word splitting.
-                      </p>
-                    </div>
-                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
-                      Size: 1000ch, Overlap: 200
-                    </div>
-                  </div>
-
-                  {/* Step 4: Embedding */}
-                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 04</span>
-                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
-                          <Wand className="w-4 h-4 text-emerald-400" />
-                        </div>
-                      </div>
-                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">Gemini Embeddings</h5>
-                      <p className="text-[10px] text-slate-500 leading-normal">
-                        Queries <code>gemini-embedding-2</code> (using <code>RETRIEVAL_DOCUMENT</code>) to convert chunks into vectors.
-                      </p>
-                    </div>
-                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
-                      Dimension: 768-Float
-                    </div>
-                  </div>
-
-                  {/* Step 5: pgvector DB */}
-                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 05</span>
-                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
-                          <CheckCircle className="w-4 h-4 text-emerald-400" />
-                        </div>
-                      </div>
-                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">Database GIN Indexing</h5>
-                      <p className="text-[10px] text-slate-500 leading-normal">
-                        Inserts 768-dim vector. Trigger automatically compiles <code>tsvector</code> lexical words into dynamic GIN search index.
-                      </p>
-                    </div>
-                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
-                      Auto Trigger Enabled
-                    </div>
-                  </div>
-
-                </div>
-              </div>
-
-              {/* RAG Query Loop Flowchart Section */}
-              <div className="space-y-6 pt-4">
-                <div className="flex items-center space-x-3 px-1">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                    <Search className="w-4 h-4 text-emerald-400" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-extrabold text-slate-200 uppercase tracking-wider">2. The Hybrid RAG Retrieval Loop</h4>
-                    <p className="text-[10px] text-slate-500 font-medium">Bypassing raw chat defaults to extract highly targeted and relevant document answers</p>
-                  </div>
-                </div>
-
-                {/* Horizontal Visual Flowchart Map */}
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 relative">
-                  
-                  {/* Step 1: User Query */}
-                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 01</span>
-                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
-                          <MessageSquare className="w-4 h-4 text-emerald-400" />
-                        </div>
-                      </div>
-                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">Natural Language Query</h5>
-                      <p className="text-[10px] text-slate-500 leading-normal">
-                        User inputs a question (e.g. &quot;How does 8086 interface memory?&quot;) on the Chat UI.
-                      </p>
-                    </div>
-                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
-                      API: /api/vector-search
-                    </div>
-                  </div>
-
-                  {/* Step 2: Vectorization */}
-                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 02</span>
-                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
-                          <Wand className="w-4 h-4 text-emerald-400" />
-                        </div>
-                      </div>
-                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">Query Vectorization</h5>
-                      <p className="text-[10px] text-slate-500 leading-normal">
-                        Converts the active question into a 768-dimension vector using Gemini <code>RETRIEVAL_QUERY</code> embedding configuration.
-                      </p>
-                    </div>
-                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
-                      Model: gemini-embedding-2
-                    </div>
-                  </div>
-
-                  {/* Step 3: DB Match */}
-                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 03</span>
-                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
-                          <Zap className="w-4 h-4 text-emerald-400" />
-                        </div>
-                      </div>
-                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">RRF Hybrid Search RPC</h5>
-                      <p className="text-[10px] text-slate-500 leading-normal">
-                        Queries both **pgvector** and **full-text tsvector** indexes, then fuses matches using the **Reciprocal Rank Fusion** algorithm.
-                      </p>
-                    </div>
-                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
-                      Method: 1 / (60 + Rank)
-                    </div>
-                  </div>
-
-                  {/* Step 4: Prompt Assembly */}
-                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 04</span>
-                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
-                          <AlertCircle className="w-4 h-4 text-emerald-400" />
-                        </div>
-                      </div>
-                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">RAG Context Prompt</h5>
-                      <p className="text-[10px] text-slate-500 leading-normal">
-                        Packs context fragments and instructions. Auto-returns fallback if no match is found, saving your API limits!
-                      </p>
-                    </div>
-                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
-                      Bound: 1500 Tokens
-                    </div>
-                  </div>
-
-                  {/* Step 5: Streaming Response */}
-                  <div className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/20 rounded-2xl p-5 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/[0.01] hover:translate-y-[-2px] relative flex flex-col justify-between min-h-[170px]">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-slate-600 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-900">STEP 05</span>
-                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/10 flex items-center justify-center">
-                          <Bot className="w-4 h-4 text-emerald-400" />
-                        </div>
-                      </div>
-                      <h5 className="text-[11px] font-extrabold text-slate-200 tracking-tight">Gemini Streaming</h5>
-                      <p className="text-[10px] text-slate-500 leading-normal">
-                        Feeds the unified context to <code>gemini-2.5-flash</code>. AI streams highly cited markdown responses instantly.
-                      </p>
-                    </div>
-                    <div className="text-[9px] font-mono text-slate-600 border-t border-slate-900/50 pt-2 mt-auto">
-                      Model: gemini-2.5-flash
-                    </div>
-                  </div>
-
-                </div>
-              </div>
-
-              {/* Grid 2: Storage Architecture & Schemas */}
-              <div className="space-y-6 pt-4">
-                <div className="flex items-center space-x-3 px-1">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                    <Database className="w-4 h-4 text-emerald-400" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-extrabold text-slate-200 uppercase tracking-wider">3. Database Schema & Storage Catalog</h4>
-                    <p className="text-[10px] text-slate-500 font-medium">Relational schemas inside Supabase mapping your indexed knowledge base</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  
-                  {/* Supabase Catalog Table */}
-                  <div className="border border-slate-900 bg-slate-950/40 rounded-2xl p-5 space-y-3">
-                    <div className="flex items-center space-x-2 text-emerald-400">
-                      <Database className="w-4 h-4" />
-                      <h4 className="text-xs font-bold uppercase tracking-wider">Table: nods_page</h4>
-                    </div>
-                    <p className="text-[10px] text-slate-500 leading-normal">
-                      Houses parent-level document records. Stores file check-sums to evaluate if content has changed.
-                    </p>
-                    <div className="space-y-1.5 font-mono text-[10px] text-slate-300 bg-slate-950 p-3.5 rounded-lg border border-slate-900 leading-normal">
-                      <div><span className="text-emerald-400">id</span>: bigint <span className="text-slate-600">(PK, Serial)</span></div>
-                      <div><span className="text-emerald-400">parent_page_id</span>: bigint <span className="text-slate-600">(FK)</span></div>
-                      <div><span className="text-emerald-400">path</span>: text <span className="text-slate-600">(Unique file URI)</span></div>
-                      <div><span className="text-emerald-400">checksum</span>: text <span className="text-slate-600">(SHA-256 string)</span></div>
-                      <div><span className="text-emerald-400">type</span>: text <span className="text-slate-600">(&quot;uploaded&quot; | &quot;guide&quot;)</span></div>
-                      <div><span className="text-emerald-400">source</span>: text <span className="text-slate-600">(&quot;web_upload&quot;)</span></div>
-                      <div><span className="text-emerald-400">meta</span>: jsonb <span className="text-slate-600">(Uploaded timestamp)</span></div>
-                    </div>
-                  </div>
-
-                  {/* Supabase Section Vector Table */}
-                  <div className="border border-slate-900 bg-slate-950/40 rounded-2xl p-5 space-y-3">
-                    <div className="flex items-center space-x-2 text-emerald-400">
-                      <Database className="w-4 h-4" />
-                      <h4 className="text-xs font-bold uppercase tracking-wider">Table: nods_page_section</h4>
-                    </div>
-                    <p className="text-[10px] text-slate-500 leading-normal">
-                      Contains the individual text fragments, their computed vectors, and the auto-updating keyword search indexes.
-                    </p>
-                    <div className="space-y-1.5 font-mono text-[10px] text-slate-300 bg-slate-950 p-3.5 rounded-lg border border-slate-900 leading-normal">
-                      <div><span className="text-emerald-400">id</span>: bigint <span className="text-slate-600">(PK, Serial)</span></div>
-                      <div><span className="text-emerald-400">page_id</span>: bigint <span className="text-slate-600">(FK references page)</span></div>
-                      <div><span className="text-emerald-400">slug</span>: text <span className="text-slate-600">(Anchor selector)</span></div>
-                      <div><span className="text-emerald-400">heading</span>: text <span className="text-slate-600">(Subheading title)</span></div>
-                      <div><span className="text-emerald-400">content</span>: text <span className="text-slate-600">(Raw text chunk)</span></div>
-                      <div><span className="text-emerald-400">embedding</span>: vector(768) <span className="text-slate-600">(pgvector array)</span></div>
-                      <div><span className="text-emerald-400">fts</span>: tsvector <span className="text-slate-600">(Trigger lexical index)</span></div>
-                    </div>
-                  </div>
-
-                  {/* Filesystem Preview Folder */}
-                  <div className="border border-slate-900 bg-slate-950/40 rounded-2xl p-5 space-y-3 flex flex-col justify-between">
-                    <div className="space-y-3">
-                      <div className="flex items-center space-x-2 text-emerald-400">
-                        <FileText className="w-4 h-4" />
-                        <h4 className="text-xs font-bold uppercase tracking-wider">Filesystem Previews</h4>
-                      </div>
-                      <p className="text-[10px] text-slate-500 leading-normal">
-                        Preserves physical duplicates of binary uploads locally. This feeds PDF previews to your dashboard in real-time.
-                      </p>
-                      <div className="bg-slate-950 p-3  rounded-lg border border-slate-900 font-mono text-[10px] text-slate-300">
-                        📂 public/uploads/
-                      </div>
-                    </div>
-                    <p className="text-[10px] leading-relaxed text-slate-400 border-t border-slate-900 pt-3 mt-4">
-                      When a preview eye icon is clicked in the Library panel, Next.js displays the file on-screen inside a secure, sandboxed PDF iframe.
-                    </p>
-                  </div>
-
-                </div>
-              </div>
-
-              {/* Vector DB & RRF Mathematics detail */}
-              <div className="border border-slate-900 bg-slate-950/20 rounded-2xl p-6 space-y-4">
-                <div className="flex items-center space-x-2 text-emerald-400">
-                  <Wand className="w-4 h-4" />
-                  <h4 className="text-xs font-bold uppercase tracking-wider">The Hybrid RRF Search Mathematics</h4>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs text-slate-400">
-                  <div className="space-y-2">
-                    <h5 className="font-extrabold text-slate-300 text-[11px] text-emerald-400">Why We Use Negative Dot Product (`&lt;#&gt;`)</h5>
-                    <p className="leading-normal">
-                      By default, vector search calculates similarity using Cosine Distance. However, calculating Cosine Distance requires computing vector square roots at query time.
-                    </p>
-                    <p className="leading-normal">
-                      Because **Google Gemini** embeddings are L2-normalized (mathematical length is exactly 1), **Negative Dot Product** produces the exact same relevance ranking as Cosine Distance, but executes up to **30% faster** because it operates entirely on simpler scalar addition and multiplication.
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <h5 className="font-extrabold text-slate-300 text-[11px] text-emerald-400">Understanding tsvector & GIN Indexing</h5>
-                    <p className="leading-normal">
-                      Full-text search parses text into lexical tokens (words stripped of prefixes/suffixes, e.g. &quot;microprocessors&quot; {"->"} &quot;microprocessor&quot;).
-                    </p>
-                    <p className="leading-normal">
-                      A **Generalized Inverted Index (GIN)** maps every unique word token to its occurrences in the database. When you search, Postgres performs direct keyword intersection matching, making queries execute in milliseconds.
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <h5 className="font-extrabold text-slate-300 text-[11px] text-emerald-400">Reciprocal Rank Fusion (RRF) Formula</h5>
-                    <p className="leading-normal">
-                      RRF merges ranked results from multiple search systems (Semantic + Full-text) using the following formula:
-                    </p>
-                    <div className="bg-slate-950/80 p-3 rounded-lg border border-slate-900 font-mono text-[10px] text-slate-200 mt-2 text-center">
-                      Score = 1 / (60 + Semantic_Rank) + 1 / (60 + Keyword_Rank)
-                    </div>
-                    <p className="leading-normal mt-2">
-                      Documents ranking high in **both** indices get heavily promoted, ensuring that precise keywords AND broad concept synonyms both drive the final answer!
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Google Gemini Rate Limit Info */}
-              <div className="border border-amber-500/10 bg-amber-500/[0.02] rounded-2xl p-6 space-y-3">
-                <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
-                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-                  Google Gemini API Rate Limits & Quota Guidelines
-                </div>
-                <p className="text-xs text-slate-400 leading-relaxed font-medium">
-                  Google Gemini features high-performance generative models in Google AI Studio, governed by strict free-tier rate limits:
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-400 mt-3">
-                  <div className="p-4 bg-slate-950/60 border border-slate-900 rounded-xl relative">
-                    <strong className="text-slate-200 block text-[11px] mb-1.5 text-amber-300">Requests Per Minute (RPM)</strong>
-                    The free model has a cap of **15 RPM**. Senders exceeding this rate will receive `429 Too Many Requests` limit errors.
-                  </div>
-                  <div className="p-4 bg-slate-950/60 border border-slate-900 rounded-xl relative">
-                    <strong className="text-slate-200 block text-[11px] mb-1.5 text-amber-300">Requests Per Day (RPD)</strong>
-                    Free tier users are allocated **1,500 RPD** globally (or 20 RPD for highly restricted or unverified developer accounts).
-                  </div>
-                  <div className="p-4 bg-slate-950/60 border border-slate-900 rounded-xl relative">
-                    <strong className="text-slate-200 block text-[11px] mb-1.5 text-amber-300">Rate Limit Defenses</strong>
-                    To safeguard your API quotas, VectorMind utilizes a sequential queue that paces embeddings during heavy batch uploads.
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          )}
-        </main>
-
-        {/* Footer */}
-        <footer className="border-t border-slate-900 py-6 bg-slate-950">
-          <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-4">
-            <p className="font-medium">VectorMind — Built with Next.js, Google Gemini, and Supabase pgvector.</p>
-            <div className="flex space-x-4">
-              <Link href="https://supabase.com" className="hover:text-slate-300 transition">
-                Supabase
-              </Link>
-              <Link href="https://ai.google.dev" className="hover:text-slate-300 transition">
-                Google AI Studio
-              </Link>
             </div>
           </div>
-        </footer>
+        ) : (
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {/* Workspaces List (Dashboard View) */}
+            <div className="p-4 border-b border-white/[0.06] flex items-center justify-between shrink-0">
+              <span className="text-[10px] font-bold text-zinc-555 uppercase tracking-wider flex items-center gap-1.5"><Folder className="w-3.5 h-3.5" /> Workspaces</span>
+              <button 
+                type="button" 
+                onClick={() => setIsCreatingProject(true)} 
+                className="flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold px-2 py-1 rounded-md hover:bg-emerald-500/10"
+              >
+                <PlusCircle className="w-3.5 h-3.5" /> Create
+              </button>
+            </div>
 
-        {/* PDF / Document Preview Modal */}
-        {previewDocUrl && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col h-[85vh]">
-              {/* Modal Header */}
-              <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/40 flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <FileText className="w-5 h-5 text-emerald-400" />
-                  <span className="text-xs font-bold text-slate-200 truncate max-w-lg">{previewDocName}</span>
-                </div>
-                <button
-                  onClick={() => {
-                    setPreviewDocUrl(null)
-                    setPreviewDocName(null)
-                  }}
-                  className="text-xs font-bold text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-800 hover:border-red-500/30 bg-slate-950/40 hover:bg-red-500/10 transition-all duration-200"
+            {/* Workspace Search Bar */}
+            <div className="px-3 mb-2 mt-2 shrink-0">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
+                <input
+                  type="text"
+                  placeholder="Search workspaces..."
+                  value={workspaceSearchQuery}
+                  onChange={(e) => setWorkspaceSearchQuery(e.target.value)}
+                  className="w-full bg-zinc-950/40 hover:bg-zinc-950/60 focus:bg-zinc-950 border border-white/[0.04] focus:border-emerald-500/30 rounded-lg pl-8 pr-7 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-550 outline-none transition-all"
+                />
+                {workspaceSearchQuery && (
+                  <button type="button" onClick={() => setWorkspaceSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 p-0.5">
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1">
+              {projects
+                .filter(p => p.name.toLowerCase().includes(workspaceSearchQuery.toLowerCase()))
+                .map(p => (
+                  <div key={p.id} className={`group flex items-center gap-1 rounded-xl transition-all relative ${activeProjectId === p.id ? 'bg-[#1D9E75]/10 border-l-2 border-[#1D9E75]' : 'hover:bg-white/5 border-l-2 border-transparent'}`}>
+                    {editingProjectId === p.id ? (
+                      <div className="flex-1 flex items-center gap-2.5 px-2.5 py-3 min-w-0">
+                        <Folder className="w-4 h-4 shrink-0 text-emerald-400" />
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault()
+                            saveProjectRename(p.id, editingProjectName)
+                          }}
+                          className="flex-1 min-w-0"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="text"
+                            value={editingProjectName}
+                            onChange={(e) => setEditingProjectName(e.target.value)}
+                            onBlur={() => saveProjectRename(p.id, editingProjectName)}
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded px-1.5 py-0.5 text-xs text-zinc-100 outline-none focus:border-emerald-500/30"
+                            autoFocus
+                          />
+                        </form>
+                      </div>
+                    ) : (
+                      <button 
+                        type="button" 
+                        onClick={() => setActiveProjectId(p.id)} 
+                        className="flex-1 flex items-center gap-2.5 text-left px-2.5 py-3 min-w-0"
+                      >
+                        <Folder className={`w-4 h-4 shrink-0 ${activeProjectId === p.id ? 'text-emerald-400' : 'text-zinc-500'}`} />
+                        <div className="min-w-0 flex-1">
+                          <div className={`text-sm truncate font-medium ${activeProjectId === p.id ? 'text-zinc-100' : 'text-zinc-300'}`}>{p.name}</div>
+                          <div className="text-[10px] text-zinc-550 truncate uppercase tracking-wider font-bold text-[8px] flex items-center gap-1.5 mt-0.5">
+                            <span>Embed:</span> <span className="text-emerald-400 font-semibold">{p.embedding_provider || 'cohere'}</span>
+                            <span className="text-zinc-700">·</span>
+                            <span>Chat:</span> <span className="text-zinc-400">{p.chat_provider || 'groq'}</span>
+                          </div>
+                        </div>
+                      </button>
+                    )}
+                    
+                    {editingProjectId !== p.id && (
+                      <div className="relative shrink-0">
+                        <button 
+                          type="button" 
+                          onClick={(e) => { 
+                            e.stopPropagation()
+                            setActiveMenuProjectId(activeMenuProjectId === p.id ? null : p.id)
+                            setActiveMenuChatId(null)
+                          }} 
+                          className="p-2 mr-1 rounded-lg text-zinc-500 hover:text-zinc-350 transition-colors shrink-0 options-menu-btn" 
+                          title="Options"
+                        >
+                          <MoreVertical className="w-3.5 h-3.5" />
+                        </button>
+                        
+                        {activeMenuProjectId === p.id && (
+                          <div className="absolute right-1 top-full mt-0.5 w-28 rounded-lg border border-white/10 bg-[#1e1f20] shadow-xl p-1 z-50 text-left options-menu-dropdown">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                  e.stopPropagation()
+                                  setEditingProjectId(p.id)
+                                  setEditingProjectName(p.name)
+                                  setActiveMenuProjectId(null)
+                              }}
+                              className="w-full text-left px-2 py-1.5 rounded text-xs text-zinc-200 hover:bg-white/5 flex items-center gap-1.5"
+                            >
+                              <Edit2 className="w-3.5 h-3.5 text-zinc-400" /> Rename
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                deleteProject(p.id, p.name)
+                                setActiveMenuProjectId(null)
+                              }}
+                              className="w-full text-left px-2 py-1.5 rounded text-xs text-red-400 hover:bg-red-500/10 flex items-center gap-1.5 font-bold"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-red-450" /> Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              {projects.length === 0 && (
+                <div className="text-zinc-500 text-center py-6 text-xs">No workspaces found.</div>
+              )}
+            </div>
+
+            {/* Quick Workspace Creation form at bottom */}
+            <div className="p-4 border-t border-white/[0.06] bg-zinc-950/20">
+              {isCreatingProject ? (
+                <form onSubmit={handleCreateProject} className="flex flex-col gap-2 bg-zinc-950 p-3.5 rounded-xl border border-zinc-800 animate-slide-up">
+                  <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="Workspace Name..." className="w-full bg-zinc-950 border border-zinc-850 rounded-md px-3 py-1.5 text-xs text-zinc-100 outline-none focus:border-zinc-700 transition-colors" autoFocus/>
+                  <div className="flex gap-1.5 relative z-50">
+                    <CustomSelect value={newEmbeddingProvider} onChange={setNewEmbeddingProvider} options={EMBEDDING_PROVIDER_OPTIONS} title="Embedding Model" />
+                    <CustomSelect value={newChatProvider} onChange={setNewChatProvider} options={CHAT_PROVIDER_OPTIONS} title="Chat Model" />
+                  </div>
+                  <div className="flex gap-1.5 mt-1">
+                    <button type="submit" disabled={!newProjectName.trim()} className="flex-1 bg-zinc-50 text-zinc-950 px-3 py-1.5 rounded-md font-bold text-xs hover:bg-zinc-200 disabled:opacity-50">Create</button>
+                    <button type="button" onClick={() => setIsCreatingProject(false)} className="bg-zinc-900 text-zinc-50 px-3 rounded-md font-bold hover:bg-zinc-800"><X className="w-3.5 h-3.5"/></button>
+                  </div>
+                </form>
+              ) : (
+                <button 
+                  onClick={() => setIsCreatingProject(true)} 
+                  className="w-full flex items-center justify-center gap-2 text-xs font-semibold text-zinc-400 hover:text-zinc-50 py-2.5 rounded-xl border border-dashed border-zinc-800 hover:border-emerald-500/30 transition-all hover:bg-white/[0.01]"
                 >
-                  Close Preview
+                  <FolderPlus className="w-3.5 h-3.5 text-emerald-400" /> Create Workspace
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        </div>
+      </div>
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col min-h-0 relative z-10">
+        <div className="h-14 border-b border-white/[0.06] bg-[#131314]/90 backdrop-blur-xl flex items-center justify-between px-4 shrink-0 sticky top-0 z-30">
+          <div className="flex items-center gap-3 min-w-0">
+            <button type="button" onClick={() => setSidebarOpen(true)} className="md:hidden p-2 rounded-full hover:bg-white/5 text-zinc-400 shrink-0"><Menu className="w-5 h-5" /></button>
+            
+            {/* Active Tab Badge */}
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md shrink-0 select-none">
+              {activeTab === 'dashboard' ? 'Dashboard' : activeTab === 'chat' ? 'Chat' : 'Library'}
+            </span>
+            
+            <span className="text-zinc-700 text-xs shrink-0 select-none">/</span>            {/* Workspace Indicator Selector Dropdown */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setNavbarDropdownOpen(!navbarDropdownOpen)}
+                className="text-xs font-semibold text-zinc-300 hover:text-zinc-100 flex items-center gap-1.5 min-w-0 bg-white/5 hover:bg-white/10 px-2.5 py-1.5 rounded-lg border border-white/[0.04] transition-all cursor-pointer select-none"
+              >
+                <Folder className="w-3.5 h-3.5 text-emerald-450 shrink-0" />
+                <span className="truncate max-w-[120px] sm:max-w-[200px]" title={activeProject?.name || 'No Workspace'}>
+                  {activeProject?.name || 'Select Workspace'}
+                </span>
+                <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" />
+              </button>
+               {navbarDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setNavbarDropdownOpen(false)} />
+                  <div className="fixed top-14 left-0 mt-0.5 w-64 rounded-xl border border-white/10 bg-[#1e1f20] shadow-xl p-1.5 z-50 text-left animate-slide-up">
+                    <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest px-2.5 py-1.5 border-b border-white/[0.04] mb-1.5">Switch Workspace</p>
+                    
+                    {/* Search Workspace Input */}
+                    <div className="px-2 py-1 mb-2">
+                      <input
+                        type="text"
+                        placeholder="Search workspaces..."
+                        value={navbarProjSearch}
+                        onChange={(e) => setNavbarProjSearch(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full px-2 py-1.5 bg-zinc-900 border border-white/5 rounded-lg text-xs text-zinc-200 placeholder-zinc-500 outline-none focus:border-emerald-500/30 transition-all"
+                      />
+                    </div>
+
+                    <div className="max-h-60 overflow-y-auto custom-scrollbar space-y-0.5 px-0.5">
+                      {projects
+                        .filter(p => p.name.toLowerCase().includes(navbarProjSearch.toLowerCase()))
+                        .map(p => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              setActiveProjectId(p.id)
+                              setNavbarDropdownOpen(false)
+                            }}
+                            className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition flex items-center gap-2 ${
+                              activeProjectId === p.id 
+                                ? 'bg-[#1D9E75]/10 text-emerald-400 font-semibold' 
+                                : 'text-zinc-300 hover:bg-white/5'
+                            }`}
+                          >
+                            <Folder className={`w-3.5 h-3.5 shrink-0 ${activeProjectId === p.id ? 'text-emerald-400' : 'text-zinc-500'}`} />
+                            <span className="truncate flex-1">{p.name}</span>
+                          </button>
+                        ))}
+                      {projects.filter(p => p.name.toLowerCase().includes(navbarProjSearch.toLowerCase())).length === 0 && (
+                        <div className="text-[10px] text-zinc-555 text-center py-4">No matching workspaces.</div>
+                      )}
+                    </div>
+
+                    {/* Create Workspace Inline Form */}
+                    <div className="border-t border-white/[0.04] mt-2 pt-2 px-1 bg-zinc-950/20 rounded-b-xl">
+                      {isCreatingProjectNavbar ? (
+                        <form
+                          onSubmit={handleCreateProjectNavbar}
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex flex-col gap-2 p-1.5"
+                        >
+                          <input
+                            type="text"
+                            placeholder="Workspace name..."
+                            autoFocus
+                            value={newProjectName}
+                            onChange={(e) => setNewProjectName(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-zinc-900 border border-white/5 rounded-lg text-xs text-zinc-200 outline-none focus:border-emerald-500/30"
+                          />
+                          <div className="flex gap-1.5 justify-end">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setIsCreatingProjectNavbar(false); }}
+                              className="px-2 py-1 text-[10px] text-zinc-400 hover:text-zinc-200"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="submit"
+                              className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-450 text-[#0a0a0c] font-bold text-[10px] rounded"
+                            >
+                              Create
+                            </button>
+                          </div>
+                        </form>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setIsCreatingProjectNavbar(true); }}
+                          className="w-full flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg hover:bg-white/5 text-[11px] text-emerald-400 font-semibold transition"
+                        >
+                          <FolderPlus className="w-3.5 h-3.5 text-emerald-400" /> Create Workspace
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {activeTab === 'chat' && activeChannelName && (
+              <>
+                <span className="text-zinc-700 text-xs shrink-0 select-none">/</span>
+                <div className="flex items-center gap-1 bg-[#1D9E75]/10 text-emerald-400 px-2.5 py-1.5 rounded-lg border border-[#1D9E75]/20 text-xs font-semibold max-w-[100px] sm:max-w-[150px] truncate select-none shadow-sm shadow-[#1D9E75]/5">
+                  <MessageSquare className="w-3.5 h-3.5 text-emerald-450 shrink-0" />
+                  <span className="truncate">{activeChannelName}</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3 shrink-0">
+            {isLibraryLoading && <Loader2 className="w-4 h-4 animate-spin text-zinc-550" />}
+            {activeTab === 'chat' && activeProjectId && (
+              <button 
+                type="button" 
+                onClick={startNewChat} 
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/10 hover:bg-white/5 text-zinc-300 hover:text-zinc-100 text-xs font-semibold transition-colors" 
+                title="New chat"
+              >
+                <PlusCircle className="w-3.5 h-3.5" /> 
+                <span className="hidden sm:inline">New Chat</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {configError && (
+          <div className="bg-red-950/20 border-b border-red-900/30 text-red-400 p-3 text-xs font-medium flex items-center gap-2 justify-center backdrop-blur-md">
+            <AlertCircle className="w-4 h-4" /> {configError}
+          </div>
+        )}
+
+        {/* --- View: Dashboard (Project DB) --- */}
+        {activeTab === 'dashboard' && (
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8 custom-scrollbar bg-[#131314]">
+            <div className="max-w-6xl mx-auto animate-page-load space-y-8">
+              
+              <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 text-zinc-400 font-bold text-sm tracking-widest uppercase mb-1">
+                    <BarChart3 className="w-4 h-4 text-zinc-500" /> Enterprise Analytics
+                  </div>
+                  <h2 className="text-3xl md:text-4xl font-bold text-zinc-100">{activeProject?.name || 'Workspace'}</h2>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setActiveTab('database')} className="flex items-center gap-2 px-3.5 py-2 border border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-50 rounded-md text-xs font-semibold transition-colors">
+                    <Database className="w-4 h-4 text-emerald-450" /> View Library
+                  </button>
+                  <button onClick={() => setActiveTab('chat')} className="flex items-center gap-2 px-3.5 py-2 border border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-50 rounded-md text-xs font-semibold transition-colors">
+                    <MessageSquare className="w-4 h-4 text-zinc-400" /> Chat
+                  </button>
+                </div>
+              </div>
+
+              {/* Stats Cards Grid (4 columns) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+                <button 
+                  onClick={() => setActiveTab('database')} 
+                  className="w-full text-left bg-zinc-900/30 border border-zinc-850 hover:border-emerald-500/25 hover:bg-zinc-900/50 rounded-md p-6 relative overflow-hidden group transition-all duration-300"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-xs font-bold text-zinc-550 uppercase tracking-widest">Total Files</div>
+                    <MiniSparkline value={documents.length} color="#1D9E75" />
+                  </div>
+                  <div className="text-5xl font-black text-zinc-100"><AnimatedNumber value={documents.length} /></div>
+                  <div className="text-[10px] text-zinc-500 mt-2 font-medium">+{Math.min(documents.length, 1)} today</div>
+                </button>
+
+                <button 
+                  onClick={() => setActiveTab('database')} 
+                  className="w-full text-left bg-zinc-900/30 border border-zinc-850 hover:border-emerald-500/25 hover:bg-zinc-900/50 rounded-md p-6 relative overflow-hidden group transition-all duration-300"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-xs font-bold text-zinc-550 uppercase tracking-widest">Vector Chunks</div>
+                    <MiniSparkline value={totalChunks} color="#1D9E75" />
+                  </div>
+                  <div className="text-5xl font-black text-zinc-100"><AnimatedNumber value={totalChunks} /></div>
+                  <div className="text-[10px] text-zinc-500 mt-2 font-medium">last sync just now</div>
+                </button>
+
+                <button 
+                  onClick={() => setActiveTab('chat')} 
+                  className="w-full text-left bg-zinc-900/30 border border-zinc-850 hover:border-emerald-500/25 hover:bg-zinc-900/50 rounded-md p-6 relative overflow-hidden group transition-all duration-300"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-xs font-bold text-zinc-550 uppercase tracking-widest">Total Chats</div>
+                    <MiniSparkline value={chatChannels.length} color="#1D9E75" />
+                  </div>
+                  <div className="text-5xl font-black text-zinc-100"><AnimatedNumber value={chatChannels.length} /></div>
+                  <div className="text-[10px] text-zinc-500 mt-2 font-medium">active sessions</div>
+                </button>
+
+                <button 
+                  onClick={() => setActiveTab('database')} 
+                  className="w-full text-left bg-zinc-900/30 border border-zinc-850 hover:border-emerald-500/25 hover:bg-zinc-900/50 rounded-md p-6 relative overflow-hidden group transition-all duration-300"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-xs font-bold text-zinc-555 uppercase tracking-widest">Storage Volume</div>
+                    <MiniSparkline value={totalStorageBytes > 0 ? 100 : 0} color="#1D9E75" />
+                  </div>
+                  <div className="text-4xl font-black text-zinc-100 mt-1">{formattedStorage}</div>
+                  <div className="text-[10px] text-zinc-500 mt-3 font-medium">raw workspace content</div>
                 </button>
               </div>
 
-              {/* Modal Body */}
-              <div className="flex-1 bg-slate-950 p-4">
-                <iframe
-                  src={previewDocUrl}
-                  className="w-full h-full rounded-xl border border-slate-900 bg-slate-900"
-                  title="Document Preview"
-                />
+              {/* Layout split: limits on left, providers select on right */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8 items-start">
+                {/* Left: API limits quotas (2/3 width) */}
+                <div className="lg:col-span-2 bg-zinc-900/30 border border-zinc-850 rounded-md p-5 shadow-inner">
+                  <div className="flex items-center gap-2 text-zinc-450 font-bold text-[10px] uppercase tracking-widest mb-3">
+                    <Activity className="w-3.5 h-3.5" /> API Quotas & Limits
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-zinc-400">
+                    <div className="bg-zinc-950 p-3.5 rounded-md border border-zinc-850 relative overflow-hidden group">
+                      <div className="text-zinc-250 font-bold mb-1.5 flex justify-between items-center">
+                        Gemini API 
+                        <div className="flex items-center gap-1.5">
+                          {!apiStats?.gemini?.chat?.ok && (
+                            <div className="tooltip-wrapper">
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-sm font-bold bg-red-955/20 text-red-400 animate-shake">
+                                {apiStats?.gemini?.chat?.error?.error?.status === 'RESOURCE_EXHAUSTED' ? 'QUOTA EXCEEDED' : 'OFFLINE'}
+                              </span>
+                              <span className="tooltip-text">
+                                {apiStats?.gemini?.chat?.error?.error?.message || 'Gemini API test failed. Check key configuration.'}
+                              </span>
+                            </div>
+                          )}
+                          {!apiStats?.gemini?.chat?.ok && (
+                            <button onClick={() => handleUpdateChatProvider('groq')} className="text-[8px] font-bold text-amber-400 hover:text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded transition-colors">
+                              Switch →
+                            </button>
+                          )}
+                          {apiStats?.gemini?.chat?.ok && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-sm font-bold bg-emerald-950/20 text-emerald-400 border border-emerald-900/20">ONLINE</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="font-mono text-[10px]">15 Req/Min • 1,500 Req/Day</div>
+                    </div>
+                    <div className="bg-zinc-950 p-3.5 rounded-md border border-zinc-850 relative overflow-hidden group">
+                      <div className="text-zinc-250 font-bold mb-1.5 flex justify-between items-center">
+                        Cohere API 
+                        <div className="flex items-center gap-1.5">
+                          {!apiStats?.cohere?.chat?.ok && (
+                            <div className="tooltip-wrapper">
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-sm font-bold bg-red-955/20 text-red-400 animate-shake">OFFLINE</span>
+                              <span className="tooltip-text">
+                                {apiStats?.cohere?.chat?.error?.message || apiStats?.cohere?.error || 'Cohere API test failed. Check key configuration.'}
+                              </span>
+                            </div>
+                          )}
+                          {!apiStats?.cohere?.chat?.ok && (
+                            <button onClick={() => handleUpdateChatProvider('groq')} className="text-[8px] font-bold text-amber-400 hover:text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded transition-colors">
+                              Switch →
+                            </button>
+                          )}
+                          {apiStats?.cohere?.chat?.ok && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-sm font-bold bg-emerald-950/20 text-emerald-400 border border-emerald-900/20">ONLINE</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="font-mono text-[10px]">10 Req/Min • 1,000 Req/Month</div>
+                    </div>
+                    <div className="bg-zinc-950 p-3.5 rounded-md border border-zinc-850 relative overflow-hidden group">
+                      <div className="text-zinc-250 font-bold mb-1.5 flex justify-between items-center">
+                        Groq API 
+                        <div className="flex items-center gap-1.5">
+                          {!apiStats?.groq?.ok && (
+                            <div className="tooltip-wrapper">
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-sm font-bold bg-red-955/20 text-red-400 animate-shake">
+                                {apiStats?.groq?.error ? 'OFFLINE' : 'KEY MISSING'}
+                              </span>
+                              <span className="tooltip-text">
+                                {apiStats?.groq?.error?.error?.message || apiStats?.groq?.error?.message || apiStats?.groq?.error || 'Groq API key not configured. Add GROQ_API_KEY to .env.local'}
+                              </span>
+                            </div>
+                          )}
+                          {!apiStats?.groq?.ok && (
+                            <button onClick={() => handleUpdateChatProvider('gemini')} className="text-[8px] font-bold text-amber-400 hover:text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded transition-colors">
+                              Switch →
+                            </button>
+                          )}
+                          {apiStats?.groq?.ok && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-sm font-bold bg-emerald-950/20 text-emerald-400 border border-emerald-900/20">ONLINE</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="font-mono text-[10px]">30 Req/Min • 14,400 Tokens/Min</div>
+                    </div>
+                    <div className="bg-zinc-950 p-3.5 rounded-md border border-zinc-850 relative overflow-visible group">
+                      <div className="text-zinc-250 font-bold mb-1.5 flex justify-between items-center">
+                        OpenAI (ChatGPT)
+                        <div className="flex items-center gap-1.5">
+                          {!apiStats?.openai?.chat?.ok && apiStats?.openai && (
+                            <div className="tooltip-wrapper">
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-sm font-bold bg-red-955/20 text-red-400 animate-shake">
+                                {apiStats?.openai?.chat?.error?.error?.code === 'insufficient_quota' ? 'QUOTA EXCEEDED' : 'OFFLINE'}
+                              </span>
+                              <span className="tooltip-text">
+                                {apiStats?.openai?.chat?.error?.error?.message || 
+                                 apiStats?.openai?.chat?.error?.message || 
+                                 apiStats?.openai?.error || 
+                                 'OpenAI API verification failed. Please check key/billing.'}
+                              </span>
+                            </div>
+                          )}
+                          {!apiStats?.openai?.chat?.ok && (
+                            <button onClick={() => handleUpdateChatProvider('cohere')} className="text-[8px] font-bold text-amber-400 hover:text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded transition-colors">
+                              Switch →
+                            </button>
+                          )}
+                          {apiStats?.openai?.chat?.ok && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-sm font-bold bg-emerald-950/20 text-emerald-400 border border-emerald-900/20">ONLINE</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="font-mono text-[10px]">gpt-4o-mini · embed-3-small</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 text-[10px] text-zinc-550">
+                    <strong className="text-zinc-400">Note:</strong> Free APIs do not return live remaining-token metrics. If a limit is reached, it shows as QUOTA EXCEEDED. Use the Switch button to swap providers instantly.
+                  </div>
+                </div>
+
+                {/* Right: AI Providers selection (1/3 width) */}
+                <div className="bg-zinc-900/30 border border-zinc-850 rounded-md p-6 relative overflow-visible">
+                  <div className="text-xs font-bold text-zinc-550 uppercase tracking-widest mb-3">AI Providers</div>
+                  <div className="space-y-3">
+                    <div className="bg-zinc-950 border border-zinc-850 rounded-lg px-3 py-3 space-y-2 overflow-visible">
+                      <div className="text-[10px] font-bold text-zinc-550 uppercase">Embedding</div>
+                      <div className="text-sm font-semibold text-zinc-200">{embedProvider?.name || 'Cohere'}</div>
+                      <div className="text-[9px] text-zinc-500 font-mono">{embedProvider?.dimension || 1024}d · {embedProvider?.model}</div>
+                      <CustomSelect 
+                        value={activeProject?.embedding_provider || 'cohere'}
+                        onChange={handleUpdateEmbeddingProvider}
+                        options={EMBEDDING_PROVIDER_OPTIONS}
+                        containerClassName="w-full relative z-30"
+                        buttonClassName="w-full bg-[#1e1f20] border border-white/10 hover:border-white/20 rounded-lg py-2 px-3 text-xs text-zinc-200 flex items-center justify-between"
+                        dropdownPosition="top-full mt-1 left-0 right-0 z-[200] origin-top"
+                      />
+                    </div>
+                    <div className="bg-zinc-950 border border-zinc-850 rounded-lg px-3 py-3 space-y-2 overflow-visible relative z-20">
+                      <div className="text-[10px] font-bold text-zinc-550 uppercase flex items-center gap-1.5">Chat LLM
+                        {apiStats && (() => {
+                          const cp = activeProject?.chat_provider || 'groq'
+                          const isOk = cp === 'groq' ? apiStats.groq?.ok : cp === 'openai' ? apiStats.openai?.chat?.ok : cp === 'cohere' ? apiStats.cohere?.chat?.ok : apiStats.gemini?.chat?.ok
+                          const latency = cp === 'groq' ? apiStats.groq?.latencyMs : cp === 'openai' ? apiStats.openai?.chat?.latencyMs : cp === 'cohere' ? apiStats.cohere?.chat?.latencyMs : apiStats.gemini?.chat?.latencyMs
+                          return <span className={`w-2 h-2 rounded-full ${isOk ? 'bg-emerald-500' : 'bg-red-500'}`} title={latency ? `${latency} ms` : 'offline'} />
+                        })()}
+                      </div>
+                      <div className="text-sm font-semibold text-zinc-200">{CHAT_PROVIDERS[chatProviderId]?.name}</div>
+                      <div className="text-[9px] text-zinc-500 font-mono">{CHAT_PROVIDERS[chatProviderId]?.model}</div>
+                      <CustomSelect 
+                        value={activeProject?.chat_provider || 'groq'}
+                        onChange={handleUpdateChatProvider}
+                        options={CHAT_PROVIDER_OPTIONS}
+                        containerClassName="w-full relative z-30"
+                        buttonClassName="w-full bg-[#1e1f20] border border-white/10 hover:border-white/20 rounded-lg py-2 px-3 text-xs text-zinc-200 flex items-center justify-between"
+                        dropdownPosition="top-full mt-1 left-0 right-0 z-[200] origin-top"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         )}
+        {/* --- View: Database (Repository & Library) --- */}
+        {activeTab === 'database' && (
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8 custom-scrollbar bg-[#131314]">
+            <div className="max-w-6xl mx-auto animate-page-load space-y-8">
+              
+              <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 text-zinc-450 font-bold text-xs tracking-widest uppercase mb-1.5">
+                    <Database className="w-3.5 h-3.5 text-zinc-500" /> Workspace Library
+                  </div>
+                  <h2 className="text-3xl md:text-4xl font-black text-zinc-150 tracking-tight">{activeProject?.name || 'Workspace'} Files</h2>
+                </div>
+                <div className="flex gap-2.5">
+                  <button onClick={() => setActiveTab('dashboard')} className="flex-1 md:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 border border-white/10 bg-transparent text-zinc-300 hover:bg-white/5 hover:text-zinc-100 rounded-xl text-xs font-semibold transition-all" title="View dashboard">
+                    <LayoutDashboard className="w-3.5 h-3.5 text-emerald-450" /> Dashboard
+                  </button>
+                  <button onClick={() => setActiveTab('chat')} className="flex-1 md:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-zinc-900 border border-white/5 text-zinc-300 hover:bg-zinc-850 hover:text-zinc-100 rounded-xl text-xs font-semibold transition-all" title="Open chat session">
+                    <MessageSquare className="w-3.5 h-3.5 text-blue-400" /> Chat
+                  </button>
+                </div>
+              </div>
+
+              {/* Database View: Ingestion Hub (Top) + Repository (Bottom) */}
+              <div className="flex flex-col gap-6 md:gap-8">
+                
+                {/* Top: Ingestion Hub (Full Width Card with Horizontal Split on desktop) */}
+                <div className="bg-zinc-950/60 backdrop-blur-md border border-white/[0.05] rounded-2xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.3)] relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-[#1D9E75]/5 rounded-full blur-2xl group-hover:bg-[#1D9E75]/10 transition-all duration-300 pointer-events-none" />
+                  
+                  <div className="flex flex-col lg:flex-row gap-6 items-stretch">
+                    {/* Left half: Drag & Drop Dropzone */}
+                    <div className="flex-1 space-y-4 flex flex-col justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-zinc-200 flex items-center gap-2">
+                          <UploadCloud className="w-4 h-4 text-[#1D9E75]" /> Ingestion Hub
+                        </h3>
+                        <p className="text-[11px] text-zinc-500 mt-1">Vectorize files directly into this workspace database.</p>
+                      </div>
+
+                      <div 
+                        onDragOver={(e) => { e.preventDefault(); setDbDragActive(true); }}
+                        onDragLeave={() => setDbDragActive(false)}
+                        onDrop={(e) => { 
+                          e.preventDefault(); 
+                          setDbDragActive(false); 
+                          if (e.dataTransfer.files) {
+                            addFilesToQueue(Array.from(e.dataTransfer.files))
+                          }
+                        }}
+                        onClick={() => dbFileInputRef.current?.click()}
+                        className={`group/drop relative overflow-hidden rounded-xl p-8 text-center cursor-pointer transition-all duration-300 border border-dashed flex-1 flex flex-col justify-center min-h-[160px] ${
+                          dbDragActive 
+                            ? 'border-emerald-500 bg-emerald-500/5 shadow-[0_0_15px_rgba(16,185,129,0.1)]' 
+                            : 'border-white/[0.08] hover:border-emerald-500/40 bg-zinc-950/40 hover:bg-zinc-900/10'
+                        }`}
+                      >
+                        <input ref={dbFileInputRef} type="file" multiple className="hidden" accept=".pdf,.md,.txt,.json,.docx" onChange={(e) => { if (e.target.files) addFilesToQueue(Array.from(e.target.files)) }} />
+                        <div className="w-10 h-10 mx-auto rounded-full flex items-center justify-center mb-2 bg-zinc-900/60 border border-white/[0.06] group-hover/drop:border-emerald-500/30 group-hover/drop:bg-zinc-900 transition-colors shadow-inner">
+                          <UploadCloud className="w-4.5 h-4.5 text-zinc-400 group-hover/drop:text-emerald-450 transition-colors" />
+                        </div>
+                        <div className="text-xs font-bold text-zinc-200 mb-0.5">Drag & drop files here</div>
+                        <div className="text-[10px] text-zinc-550 mb-2.5">or click to browse from device</div>
+                        <div className="inline-flex gap-1.5 flex-wrap justify-center">
+                          <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-white/5 text-[9px] font-medium text-zinc-500 select-none">PDF</span>
+                          <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-white/5 text-[9px] font-medium text-zinc-500 select-none">Markdown</span>
+                          <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-white/5 text-[9px] font-medium text-zinc-500 select-none">TXT</span>
+                          <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-white/5 text-[9px] font-medium text-zinc-500 select-none">JSON</span>
+                          <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-white/5 text-[9px] font-medium text-zinc-500 select-none">DOCX</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right half: Upload queue */}
+                    <div className="flex-1 w-full border-t lg:border-t-0 lg:border-l border-white/[0.06] pt-6 lg:pt-0 lg:pl-6 flex flex-col justify-between min-h-[220px]">
+                      {uploadQueue.filter(item => item.projectId === activeProjectId).length === 0 ? (
+                        <div className="flex-1 flex flex-col items-center justify-center text-center py-6">
+                          <FileText className="w-10 h-10 text-zinc-800 mb-2" />
+                          <div className="text-xs font-semibold text-zinc-500">No active ingestion jobs</div>
+                          <div className="text-[10px] text-zinc-650 max-w-[240px] mt-1 font-medium">Queued files will appear here with progress bars and stages.</div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col h-full justify-between gap-4">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-[10px] font-bold text-zinc-550 uppercase tracking-widest">Ingestion Jobs ({uploadQueue.filter(item => item.projectId === activeProjectId).length})</span>
+                            <button 
+                              onClick={() => startUpload()} 
+                              disabled={isUploading} 
+                              className="text-[10px] bg-[#1D9E75] hover:bg-[#1D9E75]/80 text-[#0a0a0c] px-3 py-1.5 rounded-lg font-bold disabled:opacity-50 transition-all flex items-center gap-1 shadow-md shadow-[#1D9E75]/10"
+                            >
+                              {isUploading ? <><Loader2 className="w-2.5 h-2.5 animate-spin" /> Ingesting</> : 'Start Ingest'}
+                            </button>
+                          </div>
+                          <div className="space-y-2 max-h-[160px] overflow-y-auto custom-scrollbar pr-1 flex-1">
+                            {uploadQueue.filter(item => item.projectId === activeProjectId).map(item => {
+                              const matchedDoc = documents.find(d => getDocName(d) === item.file.name)
+                              return (
+                                <div key={item.id} className="bg-zinc-950/80 border border-white/[0.04] rounded-xl p-3 text-xs relative overflow-hidden group">
+                                  <div className="relative z-10 flex justify-between items-center gap-2">
+                                    <div className="flex items-center gap-2 overflow-hidden">
+                                      <FileText className={`w-4 h-4 shrink-0 ${item.status === 'success' ? 'text-emerald-450' : 'text-zinc-500'}`} />
+                                      <span className="truncate text-zinc-300 font-medium max-w-[200px]" title={item.file.name}>{item.file.name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      {item.status === 'success' ? (
+                                        <>
+                                          {matchedDoc && (
+                                            <button
+                                              type="button"
+                                              onClick={() => openPreview(matchedDoc)}
+                                              className="p-1 text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded transition-all mr-0.5"
+                                              title="Preview indexed document"
+                                            >
+                                              <Eye className="w-3.5 h-3.5" />
+                                            </button>
+                                          )}
+                                          <CheckCircle className="w-4 h-4 text-emerald-450" />
+                                        </>
+                                      ) : item.status === 'error' ? (
+                                        <XCircle className="w-4 h-4 text-red-400" title={item.error} />
+                                      ) : (
+                                        <span className="text-[10px] font-mono font-bold text-emerald-400">{item.progress}%</span>
+                                      )}
+                                      
+                                      {/* Remove from queue button */}
+                                      {item.status !== 'uploading' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => removeQueueItem(item.id)}
+                                          className="p-1 text-zinc-500 hover:text-red-405 hover:bg-white/5 rounded transition-all ml-1 shrink-0"
+                                          title="Remove from queue"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {item.status === 'uploading' && (
+                                    <div className="relative z-10 space-y-1.5 mt-2">
+                                      <div className="h-1 bg-zinc-900 rounded-full overflow-hidden relative">
+                                        <div className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 animate-pulse transition-all duration-300" style={{ width: `${item.progress}%` }} />
+                                      </div>
+                                      <div className="flex items-center justify-between text-[9px] text-zinc-500 font-medium">
+                                        <div className="flex items-center gap-1">
+                                          <Loader2 className="w-2.5 h-2.5 animate-spin text-emerald-400" />
+                                          <span>{item.stage}</span>
+                                        </div>
+                                        <span>Ingesting...</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {item.status === 'error' && <div className="text-[9px] text-red-400 mt-1.5 truncate bg-red-950/20 px-2 py-1 rounded-md border border-red-900/10 font-medium">{item.error}</div>}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bottom: Repository Table (Full Width) */}
+                <div className="bg-zinc-950/60 backdrop-blur-md border border-white/[0.05] rounded-2xl overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.3)]">
+                  <div className="p-5 border-b border-white/[0.05] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <h3 className="text-base font-bold text-zinc-200 flex items-center gap-2"><Database className="w-4 h-4 text-emerald-450"/> Repository</h3>
+                      {selectedDocIds.length > 0 && (
+                        <button 
+                          onClick={deleteSelectedDocuments}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg text-xs font-bold transition-all shadow-sm animate-fade-in"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Delete Selected ({selectedDocIds.length})
+                        </button>
+                      )}
+                    </div>
+                    
+                    {/* Global Search & Filter */}
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <div className="flex flex-1 sm:flex-initial items-center gap-1.5 rounded-lg border border-white/[0.06] bg-zinc-950/40 hover:bg-zinc-950/60 focus-within:border-emerald-500/30 pl-3 pr-1 h-9 focus-within:ring-2 focus-within:ring-emerald-500/10 transition-all">
+                        <Search className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                        <input 
+                          type="text" 
+                          placeholder="Search files..." 
+                          value={fileSearchQuery}
+                          onChange={(e) => { setFileSearchQuery(e.target.value); setDashboardPage(1); }}
+                          className="w-full bg-transparent text-xs text-zinc-200 placeholder:text-zinc-550 outline-none"
+                        />
+                      </div>
+                      <CustomSelect 
+                        value={formatFilter}
+                        onChange={(val) => { setFormatFilter(val); setDashboardPage(1); }}
+                        options={[
+                          {value: 'all', label: 'All Formats'},
+                          {value: '.pdf', label: 'PDF'},
+                          {value: '.md', label: 'Markdown'},
+                          {value: '.txt', label: 'Text'},
+                          {value: '.json', label: 'JSON'},
+                          {value: '.docx', label: 'DOCX'}
+                        ]}
+                        containerClassName="w-32 shrink-0"
+                        buttonClassName="flex h-9 w-full items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-300 shadow-sm outline-none transition-all hover:bg-zinc-900 hover:text-zinc-50"
+                        dropdownPosition="top-full mt-1.5 right-0 w-36 origin-top"
+                      />
+                    </div>
+                  </div>
+                  
+                  {documents.length === 0 ? (
+                    <div className="text-center py-16 px-4">
+                      <FolderPlus className="w-16 h-16 text-zinc-800 mx-auto mb-4" />
+                      <h4 className="text-lg font-bold text-zinc-350">Repository is Empty</h4>
+                      <p className="text-xs text-zinc-550 max-w-sm mx-auto mt-2 font-medium leading-relaxed">Upload your first batch of files using the Ingestion Hub on the right to start building the vector database.</p>
+                    </div>
+                  ) : filteredAndSortedDocs.length === 0 ? (
+                    <div className="text-center py-16 px-4">
+                      <Search className="w-12 h-12 text-zinc-800 mx-auto mb-4" />
+                      <h4 className="text-lg font-bold text-zinc-350">No results found</h4>
+                      <p className="text-xs text-zinc-555 max-w-sm mx-auto mt-2">Try adjusting your search query.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="overflow-x-auto min-h-[400px]">
+                        <table className="w-full text-left text-sm text-zinc-400 whitespace-nowrap">
+                          <thead className="text-[10px] uppercase tracking-widest bg-zinc-900/10 text-zinc-500 border-b border-white/[0.04]">
+                            <tr>
+                              <th className="w-12 px-3 sm:px-6 py-3.5">
+                                <div 
+                                  onClick={() => handleSelectAll(!isAllPageSelected)}
+                                  className={`w-4 h-4 rounded border flex items-center justify-center cursor-pointer transition-all ${isAllPageSelected ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400' : 'border-zinc-800 bg-zinc-950 hover:border-zinc-700'}`}
+                                  title={isAllPageSelected ? "Deselect all page files" : "Select all page files"}
+                                >
+                                  {isAllPageSelected && <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+                                </div>
+                              </th>
+                              <th className="px-3 sm:px-6 py-3.5 font-bold cursor-pointer hover:text-zinc-200 transition group select-none" onClick={() => requestSort('name')}>
+                                <div className="flex items-center gap-1">Filename <ArrowUpDown className={`w-3 h-3 ${sortConfig.key === 'name' ? 'text-zinc-300' : 'opacity-0 group-hover:opacity-100'}`} /></div>
+                              </th>
+                              <th className="px-3 sm:px-6 py-3.5 font-bold cursor-pointer hover:text-zinc-200 transition group select-none hidden sm:table-cell" onClick={() => requestSort('size')}>
+                                <div className="flex items-center gap-1">Size <ArrowUpDown className={`w-3 h-3 ${sortConfig.key === 'size' ? 'text-zinc-300' : 'opacity-0 group-hover:opacity-100'}`} /></div>
+                              </th>
+                              <th className="px-3 sm:px-6 py-3.5 font-bold cursor-pointer hover:text-zinc-200 transition group select-none hidden md:table-cell" onClick={() => requestSort('chunks')}>
+                                <div className="flex items-center gap-1">Vectors <ArrowUpDown className={`w-3 h-3 ${sortConfig.key === 'chunks' ? 'text-zinc-300' : 'opacity-0 group-hover:opacity-100'}`} /></div>
+                              </th>
+                              <th className="px-3 sm:px-6 py-3.5 font-bold text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/[0.03]">
+                            {paginatedDocs.map(doc => {
+                              const name = getDocName(doc)
+                              const sizeStr = doc.meta?.size ? formatBytes(Number(doc.meta.size)) : '0 B'
+                              const chunkCount = doc.sectionCount || 0
+                              const isSelected = selectedDocIds.includes(doc.id)
+                              const extension = name.substring(name.lastIndexOf('.')).toLowerCase()
+                              return (
+                                <tr key={doc.id} className={`hover:bg-white/[0.01] transition-colors ${isSelected ? 'bg-emerald-500/[0.02]' : ''}`}>
+                                  <td className="px-3 sm:px-6 py-3.5">
+                                    <div 
+                                      onClick={() => toggleSelectDoc(doc.id)}
+                                      className={`w-4 h-4 rounded border flex items-center justify-center cursor-pointer transition-all ${isSelected ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400' : 'border-zinc-800 bg-zinc-950 hover:border-zinc-700'}`}
+                                      title={isSelected ? "Deselect file" : "Select file"}
+                                    >
+                                      {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+                                    </div>
+                                  </td>
+                                  <td className="px-3 sm:px-6 py-3.5 font-medium text-zinc-200 max-w-xs md:max-w-md truncate">
+                                    <div className="flex items-center gap-2.5">
+                                      {extension === '.pdf' ? <FileText className="w-4 h-4 text-rose-400 shrink-0" /> : 
+                                       extension === '.md' ? <FileText className="w-4 h-4 text-sky-400 shrink-0" /> : 
+                                       extension === '.json' ? <FileText className="w-4 h-4 text-amber-400 shrink-0" /> : 
+                                       extension === '.docx' ? <FileText className="w-4 h-4 text-blue-400 shrink-0" /> : 
+                                       <FileText className="w-4 h-4 text-emerald-450 shrink-0" />}
+                                      <span className="truncate" title={name}>{name}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 sm:px-6 py-3.5 text-xs text-zinc-450 hidden sm:table-cell">{sizeStr}</td>
+                                  <td className="px-3 sm:px-6 py-3.5 text-xs text-zinc-450 hidden md:table-cell">
+                                    <span className="px-2 py-0.5 bg-zinc-900 border border-white/5 rounded text-[10px] font-mono text-zinc-350">{chunkCount}</span>
+                                  </td>
+                                  <td className="px-3 sm:px-6 py-3.5 text-right text-xs">
+                                    <div className="flex justify-end gap-1.5">
+                                      <button 
+                                        onClick={() => openPreview(doc)}
+                                        className="p-1.5 text-zinc-450 hover:text-zinc-250 hover:bg-white/5 rounded transition-all"
+                                        title="Preview content"
+                                      >
+                                        <Eye className="w-4 h-4" />
+                                      </button>
+                                      <button 
+                                        onClick={() => deleteDocument(doc.id, name)}
+                                        className="p-1.5 text-zinc-450 hover:text-red-400 hover:bg-red-500/10 rounded transition-all"
+                                        title="Delete file"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      
+                      {/* Pagination */}
+                      {totalPages > 1 && (
+                        <div className="p-4 border-t border-white/[0.05] flex items-center justify-between bg-zinc-950/20">
+                          <div className="text-xs text-zinc-500">
+                            Showing <span className="font-semibold text-zinc-350">{(dashboardPage - 1) * ITEMS_PER_PAGE + 1}</span> to <span className="font-semibold text-zinc-350">{Math.min(dashboardPage * ITEMS_PER_PAGE, filteredAndSortedDocs.length)}</span> of <span className="font-semibold text-zinc-350">{filteredAndSortedDocs.length}</span> files
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button onClick={() => setDashboardPage(p => Math.max(1, p - 1))} disabled={dashboardPage === 1} className="p-1.5 rounded-lg border border-white/5 hover:bg-white/5 disabled:opacity-30 disabled:hover:bg-transparent transition text-zinc-300"><ChevronLeft className="w-4 h-4"/></button>
+                            <span className="text-xs font-semibold text-zinc-450 px-2">Page {dashboardPage} of {totalPages}</span>
+                            <button onClick={() => setDashboardPage(p => Math.min(totalPages, p + 1))} disabled={dashboardPage === totalPages} className="p-1.5 rounded-lg border border-white/5 hover:bg-white/5 disabled:opacity-30 disabled:hover:bg-transparent transition text-zinc-300"><ChevronRight className="w-4 h-4"/></button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- Chat (Gemini-style) --- */}
+        {activeTab === 'chat' && (
+          <div className="flex-1 min-h-0 flex flex-col relative overflow-hidden">
+            <div className="gemini-glow" aria-hidden />
+
+
+            <div className={`flex-1 min-h-0 flex flex-col relative z-10 ${messages.length === 0 ? 'justify-center' : ''}`}>
+              {messages.length === 0 ? (
+                <div className="flex flex-col items-center px-4 py-8 max-w-5xl mx-auto w-full">
+                  <h1 className="text-3xl md:text-4xl font-normal text-zinc-100 text-center mb-8 tracking-tight">
+                    {activeChannelName 
+                      ? `Ask anything in ${activeChannelName}`
+                      : activeProject?.name
+                        ? `Ask anything about ${activeProject.name}`
+                        : 'What would you like to know?'}
+                  </h1>
+                  {documents.length === 0 && activeProjectId && (
+                    <p className="text-xs text-zinc-500 text-center mb-6 max-w-md font-medium leading-relaxed">
+                      This workspace has no documents yet. Please <button type="button" className="text-emerald-400 hover:text-emerald-350 underline transition-colors" onClick={() => { setActiveTab('database'); setTimeout(() => dbFileInputRef.current?.click(), 100); }}>upload files</button> to get started.
+                    </p>
+                  )}
+                  {apiHealth === 'error' && (
+                    <div className="w-full max-w-xl mb-6 p-4 rounded-2xl bg-red-950/30 border border-red-900/40 text-left">
+                      <p className="text-sm text-red-300 font-medium mb-2">Setup needed</p>
+                      <p className="text-xs text-red-300/80 mb-3">Add API keys to <code className="bg-black/30 px-1 rounded">.env.local</code> and run the database migration.</p>
+                      <button type="button" onClick={checkApiHealth} className="text-xs font-semibold text-red-400 flex items-center gap-1"><RefreshCw className="w-3.5 h-3.5" /> Check again</button>
+                    </div>
+                  )}
+                  <div className="w-full mt-6">{chatComposerBlock}</div>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto custom-scrollbar w-full px-4 sm:px-8 pt-2 pb-4">
+                  <div className="max-w-5xl mx-auto space-y-6 w-full">
+                    {messages.map((msg) => (
+                    <div key={msg.id} className={`flex gap-3 md:gap-5 animate-slide-up ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      {msg.role === 'assistant' && (
+                        <div className="w-10 h-10 rounded-md bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 shadow-sm mt-1">
+                          <Bot className="w-5 h-5 text-zinc-400" />
+                        </div>
+                      )}
+                      
+                      <div className={`max-w-[95%] md:max-w-[85%] rounded-lg border text-sm shadow-sm ${msg.role === 'user' ? 'bg-zinc-900 border-zinc-800 text-zinc-50' : 'bg-zinc-950 border-zinc-850 text-zinc-200'}`}>
+                        <div className="px-5 py-4">
+                          
+                          {/* Rich Loading Visualizer */}
+                          {msg.isLoading && !msg.text ? (
+                            <div className="py-2 min-w-[280px]">
+                              <div className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                <Activity className="w-4 h-4 animate-pulse" /> Processing Query
+                              </div>
+                              <div className="space-y-6 relative">
+                                <div className="absolute left-[11px] top-3 bottom-3 w-px bg-zinc-800 z-0" />
+                                
+                                <div className="flex items-start gap-4 relative z-10">
+                                  <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 border-2 transition-colors duration-500 shadow-sm ${searchStep === 'hyde' ? 'bg-zinc-950 border-zinc-500 text-zinc-400' : searchStep !== 'idle' ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-zinc-950 border-zinc-800 text-zinc-600'}`}>
+                                    {searchStep === 'hyde' ? <span className="w-2 h-2 bg-zinc-400 rounded-full animate-pulse"/> : searchStep !== 'idle' ? <CheckCircle className="w-3.5 h-3.5"/> : <span className="text-[10px] font-bold">1</span>}
+                                  </div>
+                                  <div>
+                                    <div className={`text-sm font-semibold ${searchStep === 'hyde' ? 'text-zinc-50' : 'text-zinc-500'}`}>HyDE Expansion</div>
+                                    {searchStep === 'hyde' && <div className="text-xs text-zinc-450 mt-1">Generating semantic variations...</div>}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-start gap-4 relative z-10">
+                                  <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 border-2 transition-colors duration-500 shadow-sm ${searchStep === 'search' ? 'bg-zinc-950 border-zinc-500 text-zinc-400' : (searchStep === 'rrf' || searchStep === 'synth') ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-zinc-950 border-zinc-800 text-zinc-600'}`}>
+                                    {searchStep === 'search' ? <span className="w-2 h-2 bg-zinc-400 rounded-full animate-pulse"/> : (searchStep === 'rrf' || searchStep === 'synth') ? <CheckCircle className="w-3.5 h-3.5"/> : <span className="text-[10px] font-bold">2</span>}
+                                  </div>
+                                  <div>
+                                    <div className={`text-sm font-semibold ${searchStep === 'search' ? 'text-zinc-50' : 'text-zinc-500'}`}>Hybrid Search</div>
+                                    {searchStep === 'search' && <div className="text-xs text-zinc-450 mt-1">Scanning pgvector indexes...</div>}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-start gap-4 relative z-10">
+                                  <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 border-2 transition-colors duration-500 shadow-sm ${searchStep === 'rrf' ? 'bg-zinc-950 border-zinc-500 text-zinc-400' : searchStep === 'synth' ? 'bg-zinc-900 border-zinc-800 text-zinc-450' : 'bg-zinc-950 border-zinc-800 text-zinc-600'}`}>
+                                    {searchStep === 'rrf' ? <span className="w-2 h-2 bg-zinc-400 rounded-full animate-pulse"/> : searchStep === 'synth' ? <CheckCircle className="w-3.5 h-3.5"/> : <span className="text-[10px] font-bold">3</span>}
+                                  </div>
+                                  <div>
+                                    <div className={`text-sm font-semibold ${searchStep === 'rrf' ? 'text-zinc-50' : 'text-zinc-500'}`}>Rank Fusion & Filtering</div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className={`leading-relaxed text-[14.5px] ${msg.role === 'assistant' ? 'prose-chat' : 'font-medium tracking-wide'}`}>
+                              {msg.role === 'assistant'
+                                ? renderMarkdown(msg.text)
+                                : <span className="text-zinc-100">{msg.text}</span>
+                              }
+                            </div>
+                          )}
+                          
+                          {/* Assistant Message Actions & Metadata */}
+                          {msg.role === 'assistant' && !msg.isLoading && (
+                            <div className="mt-6 pt-4 border-t border-zinc-850 flex flex-col gap-4">
+                              
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  {msg.confidence && (
+                                    <div className={`text-[10px] font-bold px-2.5 py-1 rounded-md border flex items-center gap-1.5 shadow-sm ${
+                                      msg.confidence.level === 'HIGH' ? 'bg-zinc-900 text-zinc-200 border-zinc-800' : 
+                                      msg.confidence.level === 'MEDIUM' ? 'bg-zinc-900 text-zinc-350 border-zinc-800' : 
+                                      'bg-red-955/20 text-red-400 border-red-900/30'
+                                    }`}>
+                                      {msg.confidence.level === 'HIGH' && <CheckCircle className="w-3 h-3" />}
+                                      {msg.confidence.level === 'MEDIUM' && <AlertCircle className="w-3 h-3" />}
+                                      {msg.confidence.level === 'LOW' && <XCircle className="w-3 h-3" />}
+                                      {msg.confidence.level} CONFIDENCE
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                {/* AI Action Buttons */}
+                                <div className="flex items-center gap-2">
+                                  {isSearchLoading && activeMessageIdRef.current === msg.id && (
+                                    <button onClick={() => stop()} className="flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-955/20 hover:bg-red-900/30 border border-red-900/30 px-2 py-1 rounded-md transition-colors">
+                                      <Square className="w-3 h-3" /> STOP
+                                    </button>
+                                  )}
+                                  <button onClick={() => handleCopy(msg.id, msg.text)} className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-zinc-50 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 px-2 py-1 rounded-md transition-colors">
+                                    {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />} COPY
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Source Citations with SaaS styling */}
+                              {msg.sources && msg.sources.length > 0 && (
+                                <div>
+                                  <div className="text-[9px] font-bold text-zinc-550 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                    <LinkIcon className="w-3 h-3" /> Cited Sources
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    {msg.sources.map((src, idx) => {
+                                      const url = msg.sourceUrls?.[idx]
+                                      return (
+                                        <button 
+                                          key={idx} 
+                                          onClick={() => url ? setPreviewPdfUrl(url) : alert("Document preview not available in storage.")} 
+                                          className={`group relative overflow-hidden flex items-center gap-2 px-3 py-1.5 rounded-md border text-xs transition-all duration-200 ${url ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700 cursor-pointer hover:bg-zinc-855' : 'bg-transparent border-transparent text-zinc-650 cursor-not-allowed'}`}
+                                        >
+                                          <FileText className={`w-3.5 h-3.5 shrink-0 transition-colors ${url ? 'text-zinc-400 group-hover:text-zinc-300' : 'text-zinc-600'}`} /> 
+                                          <span className="truncate max-w-[180px] font-medium">{src}</span>
+                                          {url && <Eye className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 absolute right-3 text-zinc-450 transition-opacity" />}
+                                          {url && <span className="w-4 h-full bg-gradient-to-l from-zinc-900 group-hover:from-zinc-850 to-transparent absolute right-0" />}
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {msg.role === 'user' && (
+                        <div className="w-10 h-10 rounded-md bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 shadow-sm mt-1">
+                          <User className="w-5 h-5 text-zinc-400" />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  <div ref={chatEndRef} className="h-10" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {messages.length > 0 && (
+              <div className="relative z-20 shrink-0 w-full px-4 sm:px-8 pb-6 pt-3 bg-gradient-to-t from-[#131314] via-[#131314] to-transparent">
+                <div className="max-w-5xl mx-auto">{chatComposerBlock}</div>
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
-    </>
+
+      {/* --- Premium PDF Preview Modal --- */}
+      {previewPdfUrl && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 animate-fade-in">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setPreviewPdfUrl(null)} />
+          <div className="bg-zinc-950 border border-zinc-800 rounded-lg shadow-lg w-full max-w-6xl h-full sm:h-[90vh] flex flex-col relative z-10 animate-scale-in overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950">
+              <div className="flex items-center gap-3 font-semibold text-zinc-200">
+                <div className="w-8 h-8 rounded-md bg-zinc-900 flex items-center justify-center border border-zinc-800">
+                  <Eye className="w-4 h-4 text-zinc-405"/>
+                </div>
+                Document Viewer
+              </div>
+              <div className="flex items-center gap-3">
+                <a href={previewPdfUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-zinc-300 hover:text-zinc-550 bg-transparent hover:bg-zinc-900 px-3.5 py-1.5 rounded-md border border-zinc-800 transition-colors">
+                  Open External
+                </a>
+                <button onClick={() => setPreviewPdfUrl(null)} className="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-zinc-550 bg-transparent hover:bg-zinc-900 rounded-md transition-colors border border-zinc-800">
+                  <X className="w-4 h-4"/>
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 bg-zinc-900 relative p-1 flex items-center justify-center">
+              {previewPdfUrl.toLowerCase().includes('.docx') ? (
+                <div className="text-center p-8 max-w-md mx-auto space-y-4">
+                  <div className="w-16 h-16 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mx-auto text-blue-450 shadow-inner animate-pulse">
+                    <FileText className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <h3 className="text-zinc-200 font-semibold text-lg">DOCX Word Document</h3>
+                    <p className="text-zinc-450 text-xs mt-2 leading-relaxed">
+                      Word Documents cannot be rendered directly inside the browser. However, all text content has been successfully extracted, chunked, and fully indexed in your vector database.
+                    </p>
+                  </div>
+                  <div className="pt-2">
+                    <a 
+                      href={previewPdfUrl} 
+                      download
+                      className="inline-flex items-center gap-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 px-5 py-2.5 rounded-lg shadow transition-colors"
+                    >
+                      <Download className="w-4 h-4" /> Download DOCX File
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                <iframe src={`${previewPdfUrl}#view=FitH`} className="w-full h-full rounded-md bg-white border-0" title="PDF Preview" />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Global Confirm Modal */}
+      {confirmModal?.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setConfirmModal(null)} />
+          <div className="relative bg-zinc-950 border border-zinc-800 rounded-lg w-full max-w-md shadow-lg overflow-hidden animate-slide-up">
+            <div className="p-6">
+              <div className="w-10 h-10 rounded-full bg-red-955/20 flex items-center justify-center mb-4 border border-red-900/30">
+                <AlertCircle className="w-5 h-5 text-red-500" />
+              </div>
+              <h3 className="text-lg font-semibold text-zinc-50 mb-1">{confirmModal.title}</h3>
+              <p className="text-xs text-zinc-400 leading-relaxed mb-6">
+                {confirmModal.message}
+              </p>
+              <div className="flex gap-2.5 justify-end">
+                <button 
+                  onClick={() => setConfirmModal(null)}
+                  className="px-3.5 py-2 rounded-md text-xs font-medium border border-zinc-800 text-zinc-300 hover:bg-zinc-900 hover:text-zinc-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={async () => {
+                    await confirmModal.onConfirm()
+                    setConfirmModal(null)
+                  }}
+                  className="px-3.5 py-2 rounded-md text-xs font-semibold bg-red-650 hover:bg-red-500 text-white shadow-sm transition-colors"
+                >
+                  Confirm Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
