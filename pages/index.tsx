@@ -7,7 +7,7 @@ import {
   Folder, FolderPlus, Eye, 
   LayoutDashboard, Copy, Square, Check, ChevronDown, BarChart3, Download,
   Link as LinkIcon, Filter, ArrowUpDown, ChevronLeft, ChevronRight,
-  ArrowRight, MoreVertical, Edit2, History
+  ArrowRight, MoreVertical, Edit2, History, Paperclip
 } from 'lucide-react'
 import { useCompletion } from 'ai/react'
 import { EMBEDDING_PROVIDER_OPTIONS, CHAT_PROVIDER_OPTIONS, EMBEDDING_PROVIDERS, CHAT_PROVIDERS, type ChatProviderId, type EmbeddingProviderId } from '../lib/providers'
@@ -843,6 +843,7 @@ export default function Home() {
         ...m, text: cleanText || '', sources, sourceUrls, confidence, isLoading: false 
       } : m))
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [completion, isSearchLoading])
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
