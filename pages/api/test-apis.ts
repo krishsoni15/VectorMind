@@ -132,7 +132,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     results.groq = { error: 'GROQ_API_KEY not set — get free key at console.groq.com' }
   }
 
-  const openaiKey = process.env.OPENAI_API_KEY
+  const openaiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY
   if (openaiKey) {
     try {
       const r = await fetch('https://api.openai.com/v1/embeddings', {
@@ -179,7 +179,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Test Supabase
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
   if (supabaseUrl && supabaseKey) {
     const { createClient } = await import('@supabase/supabase-js')
     const supabase = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } })
@@ -261,7 +261,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
     COHERE_API_KEY: !!process.env.COHERE_API_KEY,
     GROQ_API_KEY: !!process.env.GROQ_API_KEY,
-    OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
+    OPENAI_API_KEY: !!(process.env.OPENAI_API_KEY || process.env.OPENAI_KEY),
     SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
   }
 

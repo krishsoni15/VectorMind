@@ -117,10 +117,16 @@ export const CHAT_PROVIDER_OPTIONS = Object.values(CHAT_PROVIDERS).map(p => ({
 // ─── Key Helpers ─────────────────────────────────────────────────────────────────
 
 export function getApiKey(envName: string): string | undefined {
+  if (envName === 'OPENAI_API_KEY') {
+    return process.env.OPENAI_API_KEY || process.env.OPENAI_KEY
+  }
   return process.env[envName]
 }
 
 export function isProviderAvailable(keyEnv: string): boolean {
+  if (keyEnv === 'OPENAI_API_KEY') {
+    return !!(process.env.OPENAI_API_KEY || process.env.OPENAI_KEY)
+  }
   return !!process.env[keyEnv]
 }
 
