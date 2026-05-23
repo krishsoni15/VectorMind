@@ -146,7 +146,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         query_text: allQueries[i] || sanitizedQuery,
         p_project_id: projectId,
         match_count: 20,
-        similarity_threshold: 0.3,
+        similarity_threshold: 0.1,
       })
       if (error) { console.error(`[VectorMind] Search error ${i}:`, error); continue }
       
@@ -157,17 +157,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (filteredData.length > 0) allResultLists.push(filteredData)
     }
 
-    if (allResultLists.length === 0) {
-      res.write("I couldn't find relevant information in the indexed documents.")
-      return res.end()
-    }
-
     // RRF + MMR + Confidence
     const fusedResults = rrfFusion(allResultLists)
     const diverseResults = mmrFilter(fusedResults, 0.7, 20)
     const confidence = computeConfidence(diverseResults)
 
-    if (confidence === 'LOW') {
+    if (diverseResults.length === 0) {
       res.write("I couldn't find relevant information in the indexed documents.")
       return res.end()
     }
