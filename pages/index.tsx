@@ -192,6 +192,7 @@ interface IndexedDocument {
 interface UploadFile {
   id: string; file: File; status: 'idle' | 'uploading' | 'success' | 'error';
   progress: number; stage: string; error?: string; chunks?: number;
+  projectId?: string | null;
 }
 interface Message {
   id: string; role: 'user' | 'assistant'; text: string; timestamp: Date;
@@ -2194,7 +2195,7 @@ export default function Home() {
                                           <CheckCircle className="w-4 h-4 text-emerald-450" />
                                         </>
                                       ) : item.status === 'error' ? (
-                                        <XCircle className="w-4 h-4 text-red-400" title={item.error} />
+                                        <span title={item.error}><XCircle className="w-4 h-4 text-red-400" /></span>
                                       ) : (
                                         <span className="text-[10px] font-mono font-bold text-emerald-400">{item.progress}%</span>
                                       )}
