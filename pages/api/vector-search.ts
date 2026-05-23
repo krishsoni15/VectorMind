@@ -177,11 +177,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const packedContext = packContext(diverseResults, 15000)
 
     // Resolve sources
-    const pageIds = [...new Set(diverseResults.map((r: any) => r.page_id))]
+    const pageIds = Array.from(new Set(diverseResults.map((r: any) => r.page_id)))
     const { data: pages } = await supabase.from('nods_page').select('id, path, meta').in('id', pageIds)
     const sourceMap = new Map<number, string>()
     pages?.forEach((p: any) => sourceMap.set(p.id, p.meta?.filename || p.path?.split('/').pop() || 'doc'))
-    const sourceIds = [...new Set(diverseResults.map((r: any) => sourceMap.get(r.page_id) || 'doc'))]
+    const sourceIds = Array.from(new Set(diverseResults.map((r: any) => sourceMap.get(r.page_id) || 'doc')))
 
     // Build system prompt
     const systemPrompt = `You are VectorMind, an intelligent document assistant.
