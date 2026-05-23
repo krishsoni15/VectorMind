@@ -255,5 +255,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     results.supabase = { error: 'Supabase env vars not set' }
   }
 
+  results.envKeys = {
+    NEXT_PUBLIC_SUPABASE_URL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
+    COHERE_API_KEY: !!process.env.COHERE_API_KEY,
+    GROQ_API_KEY: !!process.env.GROQ_API_KEY,
+    OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
+    SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+  }
+
   return res.status(200).json(results)
 }
