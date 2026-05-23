@@ -4,7 +4,7 @@ import {
   Search, UploadCloud, Database, Trash2, Loader2, CheckCircle,
   XCircle, FileText, AlertCircle, RefreshCw, Send, Bot, User,
   MessageSquare, Menu, X, PlusCircle, Activity, Info, Zap,
-  Folder, FolderPlus, Eye, 
+  Folder, FolderPlus, Eye,
   LayoutDashboard, Copy, Square, Check, ChevronDown, BarChart3, Download,
   Link as LinkIcon, Filter, ArrowUpDown, ChevronLeft, ChevronRight,
   ArrowRight, MoreVertical, Edit2, History, Paperclip
@@ -234,7 +234,7 @@ function saveChannels(projectId: string, channels: ChatChannel[]) {
     // Strip isLoading messages before saving
     const clean = channels.map(c => ({ ...c, messages: c.messages.filter(m => !m.isLoading || m.text) }))
     localStorage.setItem(`${CHAT_STORAGE_KEY}_${projectId}`, JSON.stringify(clean))
-  } catch {}
+  } catch { }
 }
 
 function loadChatProvider(projectId: string): string {
@@ -252,13 +252,13 @@ function saveChatProvider(projectId: string, provider: string) {
     const map = raw ? JSON.parse(raw) : {}
     map[projectId] = provider
     localStorage.setItem(PROVIDER_STORAGE_KEY, JSON.stringify(map))
-  } catch {}
+  } catch { }
 }
 
-function CustomSelect({ value, onChange, options, title, buttonClassName, containerClassName, dropdownPosition = 'top-full mt-1 left-0 right-0 z-[200] origin-top' }: { value: string, onChange: (val: string) => void, options: {value: string, label: string}[], title?: string, buttonClassName?: string, containerClassName?: string, dropdownPosition?: string }) {
+function CustomSelect({ value, onChange, options, title, buttonClassName, containerClassName, dropdownPosition = 'top-full mt-1 left-0 right-0 z-[200] origin-top' }: { value: string, onChange: (val: string) => void, options: { value: string, label: string }[], title?: string, buttonClassName?: string, containerClassName?: string, dropdownPosition?: string }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  
+
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false)
@@ -271,8 +271,8 @@ function CustomSelect({ value, onChange, options, title, buttonClassName, contai
 
   return (
     <div className={`relative ${containerClassName || 'flex-1'}`} ref={ref}>
-      <button 
-        type="button" 
+      <button
+        type="button"
         onClick={(e) => { e.preventDefault(); setOpen(!open); }}
         className={buttonClassName || "flex h-9 w-full items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-300 shadow-sm outline-none transition-colors hover:bg-zinc-900 hover:text-zinc-50"}
         title={title}
@@ -280,7 +280,7 @@ function CustomSelect({ value, onChange, options, title, buttonClassName, contai
         <span className="truncate">{selected?.label || value}</span>
         <ChevronDown className={`w-3.5 h-3.5 ml-2 transition-transform duration-200 shrink-0 ${open ? 'rotate-180 text-zinc-50' : 'text-zinc-500'}`} />
       </button>
-      
+
       {open && (
         <div className={`absolute min-w-full overflow-hidden rounded-lg border border-zinc-850 bg-zinc-950 text-zinc-555 shadow-2xl shadow-black/80 ${dropdownPosition}`}>
           <div className="max-h-[150px] overflow-y-auto custom-scrollbar p-1 flex flex-col gap-0.5">
@@ -334,13 +334,13 @@ export default function Home() {
   // Documents State
   const [documents, setDocuments] = useState<IndexedDocument[]>([])
   const [isLibraryLoading, setIsLibraryLoading] = useState(false)
-  
+
   // Enterprise Scale Filtering & Pagination
   const [fileSearchQuery, setFileSearchQuery] = useState('')
   const [dashboardPage, setDashboardPage] = useState(1)
   const ITEMS_PER_PAGE = 25
-  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc'|'desc' }>({ key: 'name', direction: 'asc' })
-  
+  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' })
+
   // Search state
   const [searchQuery, setSearchQuery] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
@@ -349,7 +349,7 @@ export default function Home() {
   const [searchStep, setSearchStep] = useState<'idle' | 'hyde' | 'search' | 'rrf' | 'synth'>('idle')
   const [apiHealth, setApiHealth] = useState<'checking' | 'healthy' | 'error'>('checking')
   const [apiStats, setApiStats] = useState<any>(null)
-  
+
   // Multi-Chat Channels
   const [chatChannels, setChatChannels] = useState<ChatChannel[]>([])
   const [activeChatId, setActiveChatId] = useState<string>('1')
@@ -360,7 +360,7 @@ export default function Home() {
   const [chatListOpen, setChatListOpen] = useState(false)
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([])
   const [specificFileSearchQuery, setSpecificFileSearchQuery] = useState('')
-  
+
   // Tab indicators
   const tabRefMap = useRef<Record<string, HTMLButtonElement | null>>({})
   const [indicatorStyle, setIndicatorStyle] = useState<{ left: number; width: number }>({ left: 0, width: 0 })
@@ -371,10 +371,10 @@ export default function Home() {
   const dbFileInputRef = useRef<HTMLInputElement>(null)
   const [dbDragActive, setDbDragActive] = useState(false)
   const [configError, setConfigError] = useState<string | null>(null)
-  
+
   const [fileSelectorOpen, setFileSelectorOpen] = useState(false)
   const fileSelectorRef = useRef<HTMLDivElement>(null)
-  
+
   // Rename & Options Dropdowns
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null)
   const [editingProjectName, setEditingProjectName] = useState<string>('')
@@ -384,7 +384,7 @@ export default function Home() {
   const [activeMenuChatId, setActiveMenuChatId] = useState<string | null>(null)
 
   // Custom Confirm Modal
-  const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, title: string, message: string, onConfirm: () => void} | null>(null)
+  const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean, title: string, message: string, onConfirm: () => void } | null>(null)
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -504,7 +504,7 @@ export default function Home() {
         setIsCreatingProject(false)
         setProjectDropdownOpen(false)
       }
-    } catch (e) {}
+    } catch (e) { }
   }
   const handleCreateProjectNavbar = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -529,7 +529,7 @@ export default function Home() {
         setIsCreatingProjectNavbar(false)
         setNavbarDropdownOpen(false)
       }
-    } catch (err) {}
+    } catch (err) { }
   }
 
   const handleUpdateEmbeddingProvider = async (embedding_provider: string) => {
@@ -548,7 +548,7 @@ export default function Home() {
           if (res.ok) {
             setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, embedding_provider } : p))
           }
-        } catch (e) {}
+        } catch (e) { }
       }
     })
   }
@@ -569,7 +569,7 @@ export default function Home() {
               else setActiveProjectId('')
             }
           }
-        } catch (e) {}
+        } catch (e) { }
       }
     })
   }
@@ -603,7 +603,7 @@ export default function Home() {
 
   const handleUpdateChatProvider = async (chat_provider: string) => {
     if (!activeProjectId) return
-    
+
     // Optimistic UI update + save to local storage
     setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, chat_provider } : p))
     saveChatProvider(activeProjectId, chat_provider)
@@ -714,16 +714,16 @@ export default function Home() {
   useEffect(() => {
     if (activeProjectId) {
       fetchLibrary()
-      
+
       // Reset document selector on workspace change
       setSelectedFileIds([])
-      
+
       // Load multi-chat channels
       const channels = loadChannels(activeProjectId)
       setChatChannels(channels)
       setActiveChatId(channels[0].id)
       setMessages(channels[0].messages)
-      
+
       // Apply chat provider from local storage fallback if needed
       const localProvider = loadChatProvider(activeProjectId)
       const project = projects.find(p => p.id === activeProjectId)
@@ -750,7 +750,7 @@ export default function Home() {
   // --- Enterprise Document Filtering ---
   const filteredAndSortedDocs = useMemo(() => {
     let result = documents
-    
+
     if (fileSearchQuery.trim()) {
       const query = fileSearchQuery.toLowerCase()
       result = result.filter(d => (d.meta?.filename || d.path).toLowerCase().includes(query))
@@ -762,7 +762,7 @@ export default function Home() {
         return name.toLowerCase().endsWith(formatFilter)
       })
     }
-    
+
     result = [...result].sort((a, b) => {
       const aVal = sortConfig.key === 'name' ? (a.meta?.filename || a.path) : sortConfig.key === 'size' ? (a.meta?.size || 0) : a.sectionCount
       const bVal = sortConfig.key === 'name' ? (b.meta?.filename || b.path) : sortConfig.key === 'size' ? (b.meta?.size || 0) : b.sectionCount
@@ -770,7 +770,7 @@ export default function Home() {
       if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1
       return 0
     })
-    
+
     return result
   }, [documents, fileSearchQuery, formatFilter, sortConfig])
 
@@ -840,8 +840,8 @@ export default function Home() {
     if (completion && isSearchLoading && activeMessageIdRef.current) {
       setSearchStep('synth')
       const { sources, sourceUrls, confidence, cleanText } = parseCompletion(completion)
-      setMessages(prev => prev.map(m => m.id === activeMessageIdRef.current ? { 
-        ...m, text: cleanText || '', sources, sourceUrls, confidence, isLoading: false 
+      setMessages(prev => prev.map(m => m.id === activeMessageIdRef.current ? {
+        ...m, text: cleanText || '', sources, sourceUrls, confidence, isLoading: false
       } : m))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -853,9 +853,9 @@ export default function Home() {
     function handleGlobalClick(e: MouseEvent) {
       const target = e.target as HTMLElement
       if (
-        target.tagName === 'BUTTON' || 
-        target.tagName === 'A' || 
-        target.closest('button') || 
+        target.tagName === 'BUTTON' ||
+        target.tagName === 'A' ||
+        target.closest('button') ||
         target.closest('.cursor-pointer') ||
         target.closest('input[type="checkbox"]') ||
         target.closest('.custom-checkbox')
@@ -892,31 +892,31 @@ export default function Home() {
     }
 
     setSearchQuery('')
-    
+
     const userMsg: Message = { id: Math.random().toString(), role: 'user', text: query, timestamp: new Date() }
     const activeId = Math.random().toString()
     activeMessageIdRef.current = activeId
     const botMsg: Message = { id: activeId, role: 'assistant', text: '', timestamp: new Date(), isLoading: true }
-    
+
     setMessages(prev => [...prev, userMsg, botMsg])
-    
+
     setSearchStep('hyde')
     setTimeout(() => setSearchStep('search'), 1200)
     setTimeout(() => setSearchStep('rrf'), 2500)
-    
+
     const chatHistory = messages.filter(m => !m.isLoading && m.text).slice(-6).map(m => ({ role: m.role, text: m.text }))
-    try { 
-      await complete(query, { 
-        body: { 
-          chatHistory, 
+    try {
+      await complete(query, {
+        body: {
+          chatHistory,
           projectId: activeProjectId,
           chatProvider: activeProject?.chat_provider || 'groq',
           embeddingProvider: activeProject?.embedding_provider || 'cohere',
           selectedFileIds
-        } 
-      }) 
-    } catch (err) { 
-      console.error(err) 
+        }
+      })
+    } catch (err) {
+      console.error(err)
     }
   }
 
@@ -933,11 +933,11 @@ export default function Home() {
 
   const addFilesToQueue = (files: File[]) => {
     if (!activeProjectId) return alert("Select a project first.")
-    const newItems = files.map(file => ({ 
-      id: Math.random().toString(36).substring(7), 
-      file, 
-      status: 'idle' as const, 
-      progress: 0, 
+    const newItems = files.map(file => ({
+      id: Math.random().toString(36).substring(7),
+      file,
+      status: 'idle' as const,
+      progress: 0,
       stage: 'Waiting...',
       projectId: activeProjectId
     }))
@@ -963,9 +963,9 @@ export default function Home() {
         const res = await fetch('/api/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            filename: item.file.name, 
-            base64, 
+          body: JSON.stringify({
+            filename: item.file.name,
+            base64,
             projectId: activeProjectId,
             embeddingProvider: activeProject?.embedding_provider || 'cohere'
           })
@@ -989,7 +989,7 @@ export default function Home() {
           buffer += decoder.decode(value, { stream: true })
           const lines = buffer.split('\n')
           buffer = lines.pop() || ''
-          
+
           for (const line of lines) {
             if (!line.trim()) continue
             try {
@@ -1019,7 +1019,7 @@ export default function Home() {
             const data = JSON.parse(buffer)
             if (data.status === 'success') successResult = data
             if (data.status === 'error') throw new Error(data.error)
-          } catch (e) {}
+          } catch (e) { }
         }
 
         if (!successResult) {
@@ -1047,13 +1047,13 @@ export default function Home() {
             setDocuments(prev => prev.filter(d => d.id !== id))
             setSelectedDocIds(prev => prev.filter(x => x !== id))
           }
-        } catch (e) {}
+        } catch (e) { }
       }
     })
   }
 
   const toggleSelectDoc = (id: string) => {
-    setSelectedDocIds(prev => 
+    setSelectedDocIds(prev =>
       prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
     )
   }
@@ -1175,8 +1175,8 @@ export default function Home() {
         )}
       </form>
       <p className="text-center text-[10px] text-zinc-650 mt-2">
-        {selectedFileIds.length === 0 
-          ? (documents.length === 1 ? 'Searches 1 workspace file' : `Searches all ${documents.length} workspace files`) 
+        {selectedFileIds.length === 0
+          ? (documents.length === 1 ? 'Searches 1 workspace file' : `Searches all ${documents.length} workspace files`)
           : `Searching ${selectedFileIds.length} selected file(s)`
         } · Embed: <span className="text-emerald-400/80 font-medium">{embedProvider?.name || 'Cohere'}</span> + Chat: <span className="text-emerald-400/80 font-medium">{chatProviderLabel}</span>
       </p>
@@ -1185,16 +1185,16 @@ export default function Home() {
           <div className="flex items-center justify-between">
             <p className="text-[11px] font-bold text-zinc-450 uppercase tracking-wider">Pick files to search (optional)</p>
             {selectedFileIds.length > 0 && (
-              <button 
-                type="button" 
-                onClick={() => setSelectedFileIds([])} 
+              <button
+                type="button"
+                onClick={() => setSelectedFileIds([])}
                 className="text-[10px] text-red-400 hover:text-red-300 font-bold transition"
               >
                 Clear all ({selectedFileIds.length})
               </button>
             )}
           </div>
-          
+
           {/* Search box for filtering specific files */}
           <div className="relative">
             <input
@@ -1205,9 +1205,9 @@ export default function Home() {
               className="w-full bg-zinc-950/60 hover:bg-zinc-950/80 focus:bg-zinc-950 border border-white/[0.06] focus:border-emerald-500/30 rounded-lg px-2.5 py-1.5 text-xs text-zinc-250 placeholder:text-zinc-600 outline-none transition-all"
             />
             {specificFileSearchQuery && (
-              <button 
-                type="button" 
-                onClick={() => setSpecificFileSearchQuery('')} 
+              <button
+                type="button"
+                onClick={() => setSpecificFileSearchQuery('')}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-550 hover:text-zinc-300 text-[10px] font-bold"
               >
                 Clear
@@ -1226,10 +1226,10 @@ export default function Home() {
               return filtered.map(doc => {
                 const isChecked = selectedFileIds.includes(doc.id)
                 return (
-                  <button 
-                    key={doc.id} 
-                    type="button" 
-                    onClick={() => setSelectedFileIds(prev => isChecked ? prev.filter(id => id !== doc.id) : [...prev, doc.id])} 
+                  <button
+                    key={doc.id}
+                    type="button"
+                    onClick={() => setSelectedFileIds(prev => isChecked ? prev.filter(id => id !== doc.id) : [...prev, doc.id])}
                     className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs text-left transition ${isChecked ? 'bg-emerald-500/10 text-emerald-300 font-medium' : 'text-zinc-400 hover:bg-white/5'}`}
                   >
                     <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 transition-colors ${isChecked ? 'border-emerald-500 bg-emerald-500' : 'border-zinc-700 bg-zinc-900/50'}`}>
@@ -1278,18 +1278,17 @@ export default function Home() {
 
       {/* Unified Left Sidebar */}
       <div
-        className={`fixed md:relative inset-y-0 left-0 z-50 flex shrink-0 border-r border-white/[0.06] bg-[#1a1a1c] transition-[width] duration-300 ease-out overflow-hidden ${
-          showExpandedSidebar 
-            ? 'w-[min(100vw,332px)] md:w-[332px]' 
+        className={`fixed md:relative inset-y-0 left-0 z-50 flex shrink-0 border-r border-white/[0.06] bg-[#1a1a1c] transition-[width] duration-300 ease-out overflow-hidden ${showExpandedSidebar
+            ? 'w-[min(100vw,332px)] md:w-[332px]'
             : 'w-0 md:w-[52px] border-r-0 md:border-r'
-        }`}
+          }`}
       >
         {/* Leftmost Rail: Icons Only (Always visible on desktop) */}
         <aside className="w-[52px] shrink-0 flex flex-col items-center bg-[#131314] py-3 border-r border-white/[0.03]">
-          <button 
-            type="button" 
-            onClick={toggleSidebarPanel} 
-            title={showExpandedSidebar ? "Collapse panel" : "Expand panel"} 
+          <button
+            type="button"
+            onClick={toggleSidebarPanel}
+            title={showExpandedSidebar ? "Collapse panel" : "Expand panel"}
             className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/5 mb-2 group relative transition-all duration-200"
           >
             <Zap className={`w-5 h-5 text-emerald-400 absolute transition-all duration-200 ${showExpandedSidebar ? 'opacity-0 scale-75 rotate-45' : 'group-hover:opacity-0 group-hover:scale-75 group-hover:rotate-45'}`} />
@@ -1314,8 +1313,8 @@ export default function Home() {
         {/* Right side of sidebar: Panel content, width 280px */}
         <div className={`flex flex-col h-full w-[280px] shrink-0 transition-opacity duration-200 ${showExpandedSidebar ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
           <div className="h-14 px-4 flex items-center justify-between shrink-0 border-b border-white/[0.06]">
-            <button 
-              type="button" 
+            <button
+              type="button"
               onClick={toggleSidebarPanel}
               className="flex items-center gap-2 group text-left focus:outline-none select-none min-w-0"
               title="Collapse panel"
@@ -1326,11 +1325,11 @@ export default function Home() {
               </div>
               <span className="font-semibold text-sm text-zinc-100 truncate group-hover:text-emerald-400 transition-colors">VectorMind</span>
             </button>
-            
+
             {/* Mobile close button */}
-            <button 
-              type="button" 
-              onClick={() => setSidebarOpen(false)} 
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(false)}
               className="md:hidden p-1.5 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-zinc-200 transition-all shrink-0"
               title="Close sidebar"
             >
@@ -1338,181 +1337,307 @@ export default function Home() {
             </button>
           </div>
 
-        {/* Sidebar content conditional on active tab */}
-        {activeTab === 'chat' ? (
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            {/* Project Switcher */}
-            <div className="p-4 border-b border-white/[0.06] relative z-20">
-              <div className="text-[11px] font-medium text-zinc-500 mb-2">Workspace</div>
-              <div className="relative">
-                <button onClick={() => setProjectDropdownOpen(!projectDropdownOpen)} className="flex h-10 w-full items-center justify-between rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 shadow-sm outline-none transition-colors hover:bg-zinc-900 hover:text-zinc-50">
-                  <span className="text-sm font-medium truncate pr-2">
-                    {activeProject?.name || 'Select Workspace'}
-                  </span>
-                  <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform duration-200 ${projectDropdownOpen ? 'rotate-180 text-zinc-50' : ''}`} />
-                </button>
-                
-                {/* Dropdown Menu */}
-                {projectDropdownOpen && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setProjectDropdownOpen(false)} />
-                    <div className="absolute top-full left-0 right-0 mt-1.5 z-50 overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 text-zinc-550 shadow-md animate-slide-up origin-top">
-                    {/* Search Workspace Input */}
-                    <div className="px-2 py-1.5 border-b border-white/[0.04] mb-1">
-                      <input
-                        type="text"
-                        placeholder="Search workspaces..."
-                        value={sidebarProjSearch}
-                        onChange={(e) => setSidebarProjSearch(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-full px-2 py-1.5 bg-zinc-900 border border-white/5 rounded text-xs text-zinc-200 placeholder-zinc-500 outline-none focus:border-emerald-500/30 transition-all"
-                      />
-                    </div>
+          {/* Sidebar content conditional on active tab */}
+          {activeTab === 'chat' ? (
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              {/* Project Switcher */}
+              <div className="p-4 border-b border-white/[0.06] relative z-20">
+                <div className="text-[11px] font-medium text-zinc-500 mb-2">Workspace</div>
+                <div className="relative">
+                  <button onClick={() => setProjectDropdownOpen(!projectDropdownOpen)} className="flex h-10 w-full items-center justify-between rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 shadow-sm outline-none transition-colors hover:bg-zinc-900 hover:text-zinc-50">
+                    <span className="text-sm font-medium truncate pr-2">
+                      {activeProject?.name || 'Select Workspace'}
+                    </span>
+                    <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform duration-200 ${projectDropdownOpen ? 'rotate-180 text-zinc-50' : ''}`} />
+                  </button>
 
-                    <div className="max-h-[200px] overflow-y-auto custom-scrollbar p-1">
-                      {projects
-                        .filter(p => p.name.toLowerCase().includes(sidebarProjSearch.toLowerCase()))
-                        .map(p => (
-                          <div key={p.id} className={`w-full flex items-center justify-between rounded-sm text-sm transition-colors ${activeProjectId === p.id ? 'bg-zinc-900 text-zinc-50 font-medium' : 'text-zinc-300 hover:bg-zinc-900 hover:text-zinc-50'}`}>
-                            <button onClick={() => { setActiveProjectId(p.id); setProjectDropdownOpen(false); }} className="flex-1 text-left truncate px-2.5 py-2 flex items-center gap-2">
-                              <Folder className={`w-3.5 h-3.5 shrink-0 ${activeProjectId === p.id ? 'text-emerald-450' : 'text-zinc-500'}`} />
-                              {p.name}
+                  {/* Dropdown Menu */}
+                  {projectDropdownOpen && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setProjectDropdownOpen(false)} />
+                      <div className="absolute top-full left-0 right-0 mt-1.5 z-50 overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 text-zinc-550 shadow-md animate-slide-up origin-top">
+                        {/* Search Workspace Input */}
+                        <div className="px-2 py-1.5 border-b border-white/[0.04] mb-1">
+                          <input
+                            type="text"
+                            placeholder="Search workspaces..."
+                            value={sidebarProjSearch}
+                            onChange={(e) => setSidebarProjSearch(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full px-2 py-1.5 bg-zinc-900 border border-white/5 rounded text-xs text-zinc-200 placeholder-zinc-500 outline-none focus:border-emerald-500/30 transition-all"
+                          />
+                        </div>
+
+                        <div className="max-h-[200px] overflow-y-auto custom-scrollbar p-1">
+                          {projects
+                            .filter(p => p.name.toLowerCase().includes(sidebarProjSearch.toLowerCase()))
+                            .map(p => (
+                              <div key={p.id} className={`w-full flex items-center justify-between rounded-sm text-sm transition-colors ${activeProjectId === p.id ? 'bg-zinc-900 text-zinc-50 font-medium' : 'text-zinc-300 hover:bg-zinc-900 hover:text-zinc-50'}`}>
+                                <button onClick={() => { setActiveProjectId(p.id); setProjectDropdownOpen(false); }} className="flex-1 text-left truncate px-2.5 py-2 flex items-center gap-2">
+                                  <Folder className={`w-3.5 h-3.5 shrink-0 ${activeProjectId === p.id ? 'text-emerald-450' : 'text-zinc-500'}`} />
+                                  {p.name}
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); deleteProject(p.id, p.name); }} className="p-1.5 text-zinc-400 hover:text-red-405 hover:bg-red-500/10 rounded mr-1 transition-all" title="Delete Workspace">
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          {projects.filter(p => p.name.toLowerCase().includes(sidebarProjSearch.toLowerCase())).length === 0 && (
+                            <div className="px-3 py-4 text-xs text-zinc-500 text-center">No matching workspaces.</div>
+                          )}
+                        </div>
+                        <div className="border-t border-zinc-800 p-2 bg-zinc-950">
+                          {isCreatingProject ? (
+                            <form onSubmit={handleCreateProject} className="flex flex-col gap-2">
+                              <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="Workspace Name..." className="w-full bg-zinc-955 border border-zinc-800 rounded-md px-3 py-1.5 text-xs text-zinc-100 outline-none focus:border-zinc-700 transition-colors" autoFocus />
+                              <div className="flex gap-1.5 relative z-50">
+                                <CustomSelect
+                                  value={newEmbeddingProvider}
+                                  onChange={setNewEmbeddingProvider}
+                                  options={EMBEDDING_PROVIDER_OPTIONS}
+                                  title="Embedding Model"
+                                />
+                                <CustomSelect
+                                  value={newChatProvider}
+                                  onChange={setNewChatProvider}
+                                  options={CHAT_PROVIDER_OPTIONS}
+                                  title="Chat Model"
+                                />
+                              </div>
+                              <div className="text-[8px] text-zinc-500 leading-tight my-1">
+                                <span className="text-emerald-500 font-bold">Tip:</span> Embedding is permanent per project. Chat LLMs can be freely swapped later!
+                              </div>
+                              <div className="flex gap-1.5">
+                                <button type="submit" disabled={!newProjectName.trim()} className="flex-1 bg-zinc-50 text-zinc-950 px-3 py-1.5 rounded-md font-bold text-xs hover:bg-zinc-200 disabled:opacity-50">Create</button>
+                                <button type="button" onClick={() => setIsCreatingProject(false)} className="bg-zinc-900 text-zinc-50 px-3 rounded-md font-bold hover:bg-zinc-800"><X className="w-3.5 h-3.5" /></button>
+                              </div>
+                            </form>
+                          ) : (
+                            <button onClick={() => setIsCreatingProject(true)} className="w-full flex items-center justify-center gap-2 text-xs font-semibold text-zinc-400 hover:text-zinc-50 py-2 rounded-md hover:bg-zinc-900 transition-colors">
+                              <FolderPlus className="w-3.5 h-3.5" /> Create Workspace
                             </button>
-                            <button onClick={(e) => { e.stopPropagation(); deleteProject(p.id, p.name); }} className="p-1.5 text-zinc-400 hover:text-red-405 hover:bg-red-500/10 rounded mr-1 transition-all" title="Delete Workspace">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                      {projects.filter(p => p.name.toLowerCase().includes(sidebarProjSearch.toLowerCase())).length === 0 && (
-                        <div className="px-3 py-4 text-xs text-zinc-500 text-center">No matching workspaces.</div>
-                      )}
-                    </div>
-                    <div className="border-t border-zinc-800 p-2 bg-zinc-950">
-                      {isCreatingProject ? (
-                        <form onSubmit={handleCreateProject} className="flex flex-col gap-2">
-                          <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="Workspace Name..." className="w-full bg-zinc-955 border border-zinc-800 rounded-md px-3 py-1.5 text-xs text-zinc-100 outline-none focus:border-zinc-700 transition-colors" autoFocus/>
-                          <div className="flex gap-1.5 relative z-50">
-                            <CustomSelect 
-                              value={newEmbeddingProvider} 
-                              onChange={setNewEmbeddingProvider} 
-                              options={EMBEDDING_PROVIDER_OPTIONS}
-                              title="Embedding Model"
-                            />
-                            <CustomSelect 
-                              value={newChatProvider} 
-                              onChange={setNewChatProvider} 
-                              options={CHAT_PROVIDER_OPTIONS}
-                              title="Chat Model"
-                            />
-                          </div>
-                          <div className="text-[8px] text-zinc-500 leading-tight my-1">
-                            <span className="text-emerald-500 font-bold">Tip:</span> Embedding is permanent per project. Chat LLMs can be freely swapped later!
-                          </div>
-                          <div className="flex gap-1.5">
-                            <button type="submit" disabled={!newProjectName.trim()} className="flex-1 bg-zinc-50 text-zinc-950 px-3 py-1.5 rounded-md font-bold text-xs hover:bg-zinc-200 disabled:opacity-50">Create</button>
-                            <button type="button" onClick={() => setIsCreatingProject(false)} className="bg-zinc-900 text-zinc-50 px-3 rounded-md font-bold hover:bg-zinc-800"><X className="w-3.5 h-3.5"/></button>
-                          </div>
-                        </form>
-                      ) : (
-                        <button onClick={() => setIsCreatingProject(true)} className="w-full flex items-center justify-center gap-2 text-xs font-semibold text-zinc-400 hover:text-zinc-50 py-2 rounded-md hover:bg-zinc-900 transition-colors">
-                          <FolderPlus className="w-3.5 h-3.5" /> Create Workspace
-                        </button>
-                      )}
-                    </div>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Chat history */}
+              <div className="px-2 py-3 flex-1 flex flex-col min-h-0">
+                <div className="flex items-center justify-between mb-2 px-2 shrink-0">
+                  <span className="text-xs font-semibold text-zinc-400 flex items-center gap-1.5"><History className="w-3.5 h-3.5" /> Chats</span>
+                  <button type="button" onClick={startNewChat} className="flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold px-2 py-1 rounded-md hover:bg-emerald-500/10">
+                    <PlusCircle className="w-3.5 h-3.5" /> New
+                  </button>
+                </div>
+
+                {/* Chat Search Bar */}
+                <div className="px-2 mb-2 shrink-0">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
+                    <input
+                      type="text"
+                      placeholder="Search chats..."
+                      value={chatSearchQuery}
+                      onChange={(e) => setChatSearchQuery(e.target.value)}
+                      className="w-full bg-zinc-950/40 hover:bg-zinc-950/60 focus:bg-zinc-950 border border-white/[0.04] focus:border-emerald-500/30 rounded-lg pl-8 pr-7 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-550 outline-none transition-all"
+                    />
+                    {chatSearchQuery && (
+                      <button type="button" onClick={() => setChatSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 p-0.5">
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
-                  </>
-                )}
+                </div>
+
+                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-0.5 px-1">
+                  {chatChannels
+                    .filter(c => c.name.toLowerCase().includes(chatSearchQuery.toLowerCase()))
+                    .map(c => (
+                      <div key={c.id} className={`group flex items-center gap-1 rounded-xl transition-colors relative ${activeChatId === c.id ? 'bg-[#1D9E75]/10 ring-1 ring-[#1D9E75]/25' : 'hover:bg-white/5'}`}>
+                        {editingChatId === c.id ? (
+                          <div className="flex-1 flex items-center gap-2 px-2.5 py-2.5 min-w-0">
+                            <MessageSquare className="w-4 h-4 shrink-0 text-emerald-400" />
+                            <form
+                              onSubmit={(e) => {
+                                e.preventDefault()
+                                saveChatRename(c.id, editingChatName)
+                              }}
+                              className="flex-1 min-w-0"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="text"
+                                value={editingChatName}
+                                onChange={(e) => setEditingChatName(e.target.value)}
+                                onBlur={() => saveChatRename(c.id, editingChatName)}
+                                className="w-full bg-zinc-950 border border-zinc-800 rounded px-1.5 py-0.5 text-xs text-zinc-100 outline-none focus:border-emerald-500/30"
+                                autoFocus
+                              />
+                            </form>
+                          </div>
+                        ) : (
+                          <button type="button" onClick={() => switchChat(c.id)} className="flex-1 flex items-center gap-2 text-left px-2.5 py-2.5 min-w-0">
+                            <MessageSquare className={`w-4 h-4 shrink-0 ${activeChatId === c.id ? 'text-emerald-400' : 'text-zinc-500'}`} />
+                            <div className="min-w-0 flex-1">
+                              <div className={`text-sm truncate font-medium ${activeChatId === c.id ? 'text-zinc-100' : 'text-zinc-300'}`}>{c.name}</div>
+                              <div className="text-[10px] text-zinc-650 truncate">{c.messages.filter(m => m.text).length || 0} messages</div>
+                            </div>
+                          </button>
+                        )}
+
+                        {editingChatId !== c.id && (
+                          <div className="relative shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setActiveMenuChatId(activeMenuChatId === c.id ? null : c.id)
+                                setActiveMenuProjectId(null)
+                              }}
+                              className="p-2 mr-1 rounded-lg text-zinc-500 hover:text-zinc-350 transition-colors shrink-0 options-menu-btn"
+                              aria-label="Options"
+                            >
+                              <MoreVertical className="w-3.5 h-3.5" />
+                            </button>
+
+                            {activeMenuChatId === c.id && (
+                              <div className="absolute right-1 top-full mt-0.5 w-28 rounded-lg border border-white/10 bg-[#1e1f20] shadow-xl p-1 z-50 text-left options-menu-dropdown">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setEditingChatId(c.id)
+                                    setEditingChatName(c.name)
+                                    setActiveMenuChatId(null)
+                                  }}
+                                  className="w-full text-left px-2 py-1.5 rounded text-xs text-zinc-200 hover:bg-white/5 flex items-center gap-1.5"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5 text-zinc-400" /> Rename
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    deleteChat(c.id, e as any)
+                                    setActiveMenuChatId(null)
+                                  }}
+                                  className="w-full text-left px-2 py-1.5 rounded text-xs text-red-400 hover:bg-red-500/10 flex items-center gap-1.5 font-bold"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 text-red-450" /> Delete
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                </div>
               </div>
             </div>
-
-            {/* Chat history */}
-            <div className="px-2 py-3 flex-1 flex flex-col min-h-0">
-              <div className="flex items-center justify-between mb-2 px-2 shrink-0">
-                <span className="text-xs font-semibold text-zinc-400 flex items-center gap-1.5"><History className="w-3.5 h-3.5" /> Chats</span>
-                <button type="button" onClick={startNewChat} className="flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold px-2 py-1 rounded-md hover:bg-emerald-500/10">
-                  <PlusCircle className="w-3.5 h-3.5" /> New
+          ) : (
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              {/* Workspaces List (Dashboard View) */}
+              <div className="p-4 border-b border-white/[0.06] flex items-center justify-between shrink-0">
+                <span className="text-[10px] font-bold text-zinc-555 uppercase tracking-wider flex items-center gap-1.5"><Folder className="w-3.5 h-3.5" /> Workspaces</span>
+                <button
+                  type="button"
+                  onClick={() => setIsCreatingProject(true)}
+                  className="flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold px-2 py-1 rounded-md hover:bg-emerald-500/10"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" /> Create
                 </button>
               </div>
 
-              {/* Chat Search Bar */}
-              <div className="px-2 mb-2 shrink-0">
+              {/* Workspace Search Bar */}
+              <div className="px-3 mb-2 mt-2 shrink-0">
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
                   <input
                     type="text"
-                    placeholder="Search chats..."
-                    value={chatSearchQuery}
-                    onChange={(e) => setChatSearchQuery(e.target.value)}
+                    placeholder="Search workspaces..."
+                    value={workspaceSearchQuery}
+                    onChange={(e) => setWorkspaceSearchQuery(e.target.value)}
                     className="w-full bg-zinc-950/40 hover:bg-zinc-950/60 focus:bg-zinc-950 border border-white/[0.04] focus:border-emerald-500/30 rounded-lg pl-8 pr-7 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-550 outline-none transition-all"
                   />
-                  {chatSearchQuery && (
-                    <button type="button" onClick={() => setChatSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 p-0.5">
+                  {workspaceSearchQuery && (
+                    <button type="button" onClick={() => setWorkspaceSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 p-0.5">
                       <X className="w-3 h-3" />
                     </button>
                   )}
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto custom-scrollbar space-y-0.5 px-1">
-                {chatChannels
-                  .filter(c => c.name.toLowerCase().includes(chatSearchQuery.toLowerCase()))
-                  .map(c => (
-                    <div key={c.id} className={`group flex items-center gap-1 rounded-xl transition-colors relative ${activeChatId === c.id ? 'bg-[#1D9E75]/10 ring-1 ring-[#1D9E75]/25' : 'hover:bg-white/5'}`}>
-                      {editingChatId === c.id ? (
-                        <div className="flex-1 flex items-center gap-2 px-2.5 py-2.5 min-w-0">
-                          <MessageSquare className="w-4 h-4 shrink-0 text-emerald-400" />
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1">
+                {projects
+                  .filter(p => p.name.toLowerCase().includes(workspaceSearchQuery.toLowerCase()))
+                  .map(p => (
+                    <div key={p.id} className={`group flex items-center gap-1 rounded-xl transition-all relative ${activeProjectId === p.id ? 'bg-[#1D9E75]/10 border-l-2 border-[#1D9E75]' : 'hover:bg-white/5 border-l-2 border-transparent'}`}>
+                      {editingProjectId === p.id ? (
+                        <div className="flex-1 flex items-center gap-2.5 px-2.5 py-3 min-w-0">
+                          <Folder className="w-4 h-4 shrink-0 text-emerald-400" />
                           <form
                             onSubmit={(e) => {
                               e.preventDefault()
-                              saveChatRename(c.id, editingChatName)
+                              saveProjectRename(p.id, editingProjectName)
                             }}
                             className="flex-1 min-w-0"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <input
                               type="text"
-                              value={editingChatName}
-                              onChange={(e) => setEditingChatName(e.target.value)}
-                              onBlur={() => saveChatRename(c.id, editingChatName)}
+                              value={editingProjectName}
+                              onChange={(e) => setEditingProjectName(e.target.value)}
+                              onBlur={() => saveProjectRename(p.id, editingProjectName)}
                               className="w-full bg-zinc-950 border border-zinc-800 rounded px-1.5 py-0.5 text-xs text-zinc-100 outline-none focus:border-emerald-500/30"
                               autoFocus
                             />
                           </form>
                         </div>
                       ) : (
-                        <button type="button" onClick={() => switchChat(c.id)} className="flex-1 flex items-center gap-2 text-left px-2.5 py-2.5 min-w-0">
-                          <MessageSquare className={`w-4 h-4 shrink-0 ${activeChatId === c.id ? 'text-emerald-400' : 'text-zinc-500'}`} />
+                        <button
+                          type="button"
+                          onClick={() => setActiveProjectId(p.id)}
+                          className="flex-1 flex items-center gap-2.5 text-left px-2.5 py-3 min-w-0"
+                        >
+                          <Folder className={`w-4 h-4 shrink-0 ${activeProjectId === p.id ? 'text-emerald-400' : 'text-zinc-500'}`} />
                           <div className="min-w-0 flex-1">
-                            <div className={`text-sm truncate font-medium ${activeChatId === c.id ? 'text-zinc-100' : 'text-zinc-300'}`}>{c.name}</div>
-                            <div className="text-[10px] text-zinc-650 truncate">{c.messages.filter(m => m.text).length || 0} messages</div>
+                            <div className={`text-sm truncate font-medium ${activeProjectId === p.id ? 'text-zinc-100' : 'text-zinc-300'}`}>{p.name}</div>
+                            <div className="text-[10px] text-zinc-550 truncate uppercase tracking-wider font-bold text-[8px] flex items-center gap-1.5 mt-0.5">
+                              <span>Embed:</span> <span className="text-emerald-400 font-semibold">{p.embedding_provider || 'cohere'}</span>
+                              <span className="text-zinc-700">·</span>
+                              <span>Chat:</span> <span className="text-zinc-400">{p.chat_provider || 'groq'}</span>
+                            </div>
                           </div>
                         </button>
                       )}
-                      
-                      {editingChatId !== c.id && (
+
+                      {editingProjectId !== p.id && (
                         <div className="relative shrink-0">
-                          <button 
-                            type="button" 
-                            onClick={(e) => { 
+                          <button
+                            type="button"
+                            onClick={(e) => {
                               e.stopPropagation()
-                              setActiveMenuChatId(activeMenuChatId === c.id ? null : c.id)
-                              setActiveMenuProjectId(null)
-                            }} 
-                            className="p-2 mr-1 rounded-lg text-zinc-500 hover:text-zinc-350 transition-colors shrink-0 options-menu-btn" 
-                            aria-label="Options"
+                              setActiveMenuProjectId(activeMenuProjectId === p.id ? null : p.id)
+                              setActiveMenuChatId(null)
+                            }}
+                            className="p-2 mr-1 rounded-lg text-zinc-500 hover:text-zinc-350 transition-colors shrink-0 options-menu-btn"
+                            title="Options"
                           >
                             <MoreVertical className="w-3.5 h-3.5" />
                           </button>
-                          
-                          {activeMenuChatId === c.id && (
+
+                          {activeMenuProjectId === p.id && (
                             <div className="absolute right-1 top-full mt-0.5 w-28 rounded-lg border border-white/10 bg-[#1e1f20] shadow-xl p-1 z-50 text-left options-menu-dropdown">
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  setEditingChatId(c.id)
-                                  setEditingChatName(c.name)
-                                  setActiveMenuChatId(null)
+                                  setEditingProjectId(p.id)
+                                  setEditingProjectName(p.name)
+                                  setActiveMenuProjectId(null)
                                 }}
                                 className="w-full text-left px-2 py-1.5 rounded text-xs text-zinc-200 hover:bg-white/5 flex items-center gap-1.5"
                               >
@@ -1522,8 +1647,8 @@ export default function Home() {
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  deleteChat(c.id, e as any)
-                                  setActiveMenuChatId(null)
+                                  deleteProject(p.id, p.name)
+                                  setActiveMenuProjectId(null)
                                 }}
                                 className="w-full text-left px-2 py-1.5 rounded text-xs text-red-400 hover:bg-red-500/10 flex items-center gap-1.5 font-bold"
                               >
@@ -1535,162 +1660,36 @@ export default function Home() {
                       )}
                     </div>
                   ))}
+                {projects.length === 0 && (
+                  <div className="text-zinc-500 text-center py-6 text-xs">No workspaces found.</div>
+                )}
               </div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            {/* Workspaces List (Dashboard View) */}
-            <div className="p-4 border-b border-white/[0.06] flex items-center justify-between shrink-0">
-              <span className="text-[10px] font-bold text-zinc-555 uppercase tracking-wider flex items-center gap-1.5"><Folder className="w-3.5 h-3.5" /> Workspaces</span>
-              <button 
-                type="button" 
-                onClick={() => setIsCreatingProject(true)} 
-                className="flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold px-2 py-1 rounded-md hover:bg-emerald-500/10"
-              >
-                <PlusCircle className="w-3.5 h-3.5" /> Create
-              </button>
-            </div>
 
-            {/* Workspace Search Bar */}
-            <div className="px-3 mb-2 mt-2 shrink-0">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
-                <input
-                  type="text"
-                  placeholder="Search workspaces..."
-                  value={workspaceSearchQuery}
-                  onChange={(e) => setWorkspaceSearchQuery(e.target.value)}
-                  className="w-full bg-zinc-950/40 hover:bg-zinc-950/60 focus:bg-zinc-950 border border-white/[0.04] focus:border-emerald-500/30 rounded-lg pl-8 pr-7 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-550 outline-none transition-all"
-                />
-                {workspaceSearchQuery && (
-                  <button type="button" onClick={() => setWorkspaceSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 p-0.5">
-                    <X className="w-3 h-3" />
+              {/* Quick Workspace Creation form at bottom */}
+              <div className="p-4 border-t border-white/[0.06] bg-zinc-950/20">
+                {isCreatingProject ? (
+                  <form onSubmit={handleCreateProject} className="flex flex-col gap-2 bg-zinc-950 p-3.5 rounded-xl border border-zinc-800 animate-slide-up">
+                    <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="Workspace Name..." className="w-full bg-zinc-950 border border-zinc-850 rounded-md px-3 py-1.5 text-xs text-zinc-100 outline-none focus:border-zinc-700 transition-colors" autoFocus />
+                    <div className="flex gap-1.5 relative z-50">
+                      <CustomSelect value={newEmbeddingProvider} onChange={setNewEmbeddingProvider} options={EMBEDDING_PROVIDER_OPTIONS} title="Embedding Model" />
+                      <CustomSelect value={newChatProvider} onChange={setNewChatProvider} options={CHAT_PROVIDER_OPTIONS} title="Chat Model" />
+                    </div>
+                    <div className="flex gap-1.5 mt-1">
+                      <button type="submit" disabled={!newProjectName.trim()} className="flex-1 bg-zinc-50 text-zinc-950 px-3 py-1.5 rounded-md font-bold text-xs hover:bg-zinc-200 disabled:opacity-50">Create</button>
+                      <button type="button" onClick={() => setIsCreatingProject(false)} className="bg-zinc-900 text-zinc-50 px-3 rounded-md font-bold hover:bg-zinc-800"><X className="w-3.5 h-3.5" /></button>
+                    </div>
+                  </form>
+                ) : (
+                  <button
+                    onClick={() => setIsCreatingProject(true)}
+                    className="w-full flex items-center justify-center gap-2 text-xs font-semibold text-zinc-400 hover:text-zinc-50 py-2.5 rounded-xl border border-dashed border-zinc-800 hover:border-emerald-500/30 transition-all hover:bg-white/[0.01]"
+                  >
+                    <FolderPlus className="w-3.5 h-3.5 text-emerald-400" /> Create Workspace
                   </button>
                 )}
               </div>
             </div>
-
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1">
-              {projects
-                .filter(p => p.name.toLowerCase().includes(workspaceSearchQuery.toLowerCase()))
-                .map(p => (
-                  <div key={p.id} className={`group flex items-center gap-1 rounded-xl transition-all relative ${activeProjectId === p.id ? 'bg-[#1D9E75]/10 border-l-2 border-[#1D9E75]' : 'hover:bg-white/5 border-l-2 border-transparent'}`}>
-                    {editingProjectId === p.id ? (
-                      <div className="flex-1 flex items-center gap-2.5 px-2.5 py-3 min-w-0">
-                        <Folder className="w-4 h-4 shrink-0 text-emerald-400" />
-                        <form
-                          onSubmit={(e) => {
-                            e.preventDefault()
-                            saveProjectRename(p.id, editingProjectName)
-                          }}
-                          className="flex-1 min-w-0"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <input
-                            type="text"
-                            value={editingProjectName}
-                            onChange={(e) => setEditingProjectName(e.target.value)}
-                            onBlur={() => saveProjectRename(p.id, editingProjectName)}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded px-1.5 py-0.5 text-xs text-zinc-100 outline-none focus:border-emerald-500/30"
-                            autoFocus
-                          />
-                        </form>
-                      </div>
-                    ) : (
-                      <button 
-                        type="button" 
-                        onClick={() => setActiveProjectId(p.id)} 
-                        className="flex-1 flex items-center gap-2.5 text-left px-2.5 py-3 min-w-0"
-                      >
-                        <Folder className={`w-4 h-4 shrink-0 ${activeProjectId === p.id ? 'text-emerald-400' : 'text-zinc-500'}`} />
-                        <div className="min-w-0 flex-1">
-                          <div className={`text-sm truncate font-medium ${activeProjectId === p.id ? 'text-zinc-100' : 'text-zinc-300'}`}>{p.name}</div>
-                          <div className="text-[10px] text-zinc-550 truncate uppercase tracking-wider font-bold text-[8px] flex items-center gap-1.5 mt-0.5">
-                            <span>Embed:</span> <span className="text-emerald-400 font-semibold">{p.embedding_provider || 'cohere'}</span>
-                            <span className="text-zinc-700">·</span>
-                            <span>Chat:</span> <span className="text-zinc-400">{p.chat_provider || 'groq'}</span>
-                          </div>
-                        </div>
-                      </button>
-                    )}
-                    
-                    {editingProjectId !== p.id && (
-                      <div className="relative shrink-0">
-                        <button 
-                          type="button" 
-                          onClick={(e) => { 
-                            e.stopPropagation()
-                            setActiveMenuProjectId(activeMenuProjectId === p.id ? null : p.id)
-                            setActiveMenuChatId(null)
-                          }} 
-                          className="p-2 mr-1 rounded-lg text-zinc-500 hover:text-zinc-350 transition-colors shrink-0 options-menu-btn" 
-                          title="Options"
-                        >
-                          <MoreVertical className="w-3.5 h-3.5" />
-                        </button>
-                        
-                        {activeMenuProjectId === p.id && (
-                          <div className="absolute right-1 top-full mt-0.5 w-28 rounded-lg border border-white/10 bg-[#1e1f20] shadow-xl p-1 z-50 text-left options-menu-dropdown">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                  e.stopPropagation()
-                                  setEditingProjectId(p.id)
-                                  setEditingProjectName(p.name)
-                                  setActiveMenuProjectId(null)
-                              }}
-                              className="w-full text-left px-2 py-1.5 rounded text-xs text-zinc-200 hover:bg-white/5 flex items-center gap-1.5"
-                            >
-                              <Edit2 className="w-3.5 h-3.5 text-zinc-400" /> Rename
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                deleteProject(p.id, p.name)
-                                setActiveMenuProjectId(null)
-                              }}
-                              className="w-full text-left px-2 py-1.5 rounded text-xs text-red-400 hover:bg-red-500/10 flex items-center gap-1.5 font-bold"
-                            >
-                              <Trash2 className="w-3.5 h-3.5 text-red-450" /> Delete
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              {projects.length === 0 && (
-                <div className="text-zinc-500 text-center py-6 text-xs">No workspaces found.</div>
-              )}
-            </div>
-
-            {/* Quick Workspace Creation form at bottom */}
-            <div className="p-4 border-t border-white/[0.06] bg-zinc-950/20">
-              {isCreatingProject ? (
-                <form onSubmit={handleCreateProject} className="flex flex-col gap-2 bg-zinc-950 p-3.5 rounded-xl border border-zinc-800 animate-slide-up">
-                  <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="Workspace Name..." className="w-full bg-zinc-950 border border-zinc-850 rounded-md px-3 py-1.5 text-xs text-zinc-100 outline-none focus:border-zinc-700 transition-colors" autoFocus/>
-                  <div className="flex gap-1.5 relative z-50">
-                    <CustomSelect value={newEmbeddingProvider} onChange={setNewEmbeddingProvider} options={EMBEDDING_PROVIDER_OPTIONS} title="Embedding Model" />
-                    <CustomSelect value={newChatProvider} onChange={setNewChatProvider} options={CHAT_PROVIDER_OPTIONS} title="Chat Model" />
-                  </div>
-                  <div className="flex gap-1.5 mt-1">
-                    <button type="submit" disabled={!newProjectName.trim()} className="flex-1 bg-zinc-50 text-zinc-950 px-3 py-1.5 rounded-md font-bold text-xs hover:bg-zinc-200 disabled:opacity-50">Create</button>
-                    <button type="button" onClick={() => setIsCreatingProject(false)} className="bg-zinc-900 text-zinc-50 px-3 rounded-md font-bold hover:bg-zinc-800"><X className="w-3.5 h-3.5"/></button>
-                  </div>
-                </form>
-              ) : (
-                <button 
-                  onClick={() => setIsCreatingProject(true)} 
-                  className="w-full flex items-center justify-center gap-2 text-xs font-semibold text-zinc-400 hover:text-zinc-50 py-2.5 rounded-xl border border-dashed border-zinc-800 hover:border-emerald-500/30 transition-all hover:bg-white/[0.01]"
-                >
-                  <FolderPlus className="w-3.5 h-3.5 text-emerald-400" /> Create Workspace
-                </button>
-              )}
-            </div>
-          </div>
-        )}
+          )}
         </div>
       </div>
 
@@ -1699,12 +1698,12 @@ export default function Home() {
         <div className="h-14 border-b border-white/[0.06] bg-[#131314]/90 backdrop-blur-xl flex items-center justify-between px-4 shrink-0 sticky top-0 z-30">
           <div className="flex items-center gap-3 min-w-0">
             <button type="button" onClick={() => setSidebarOpen(true)} className="md:hidden p-2 rounded-full hover:bg-white/5 text-zinc-400 shrink-0"><Menu className="w-5 h-5" /></button>
-            
+
             {/* Active Tab Badge */}
             <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md shrink-0 select-none">
               {activeTab === 'dashboard' ? 'Dashboard' : activeTab === 'chat' ? 'Chat' : 'Library'}
             </span>
-            
+
             <span className="text-zinc-700 text-xs shrink-0 select-none">/</span>            {/* Workspace Indicator Selector Dropdown */}
             <div className="relative">
               <button
@@ -1718,12 +1717,12 @@ export default function Home() {
                 </span>
                 <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" />
               </button>
-               {navbarDropdownOpen && (
+              {navbarDropdownOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setNavbarDropdownOpen(false)} />
                   <div className="fixed top-14 left-0 mt-0.5 w-64 rounded-xl border border-white/10 bg-[#1e1f20] shadow-xl p-1.5 z-50 text-left animate-slide-up">
                     <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest px-2.5 py-1.5 border-b border-white/[0.04] mb-1.5">Switch Workspace</p>
-                    
+
                     {/* Search Workspace Input */}
                     <div className="px-2 py-1 mb-2">
                       <input
@@ -1747,11 +1746,10 @@ export default function Home() {
                               setActiveProjectId(p.id)
                               setNavbarDropdownOpen(false)
                             }}
-                            className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition flex items-center gap-2 ${
-                              activeProjectId === p.id 
-                                ? 'bg-[#1D9E75]/10 text-emerald-400 font-semibold' 
+                            className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition flex items-center gap-2 ${activeProjectId === p.id
+                                ? 'bg-[#1D9E75]/10 text-emerald-400 font-semibold'
                                 : 'text-zinc-300 hover:bg-white/5'
-                            }`}
+                              }`}
                           >
                             <Folder className={`w-3.5 h-3.5 shrink-0 ${activeProjectId === p.id ? 'text-emerald-400' : 'text-zinc-500'}`} />
                             <span className="truncate flex-1">{p.name}</span>
@@ -1823,13 +1821,13 @@ export default function Home() {
           <div className="flex items-center gap-3 shrink-0">
             {isLibraryLoading && <Loader2 className="w-4 h-4 animate-spin text-zinc-550" />}
             {activeTab === 'chat' && activeProjectId && (
-              <button 
-                type="button" 
-                onClick={startNewChat} 
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/10 hover:bg-white/5 text-zinc-300 hover:text-zinc-100 text-xs font-semibold transition-colors" 
+              <button
+                type="button"
+                onClick={startNewChat}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/10 hover:bg-white/5 text-zinc-300 hover:text-zinc-100 text-xs font-semibold transition-colors"
                 title="New chat"
               >
-                <PlusCircle className="w-3.5 h-3.5" /> 
+                <PlusCircle className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">New Chat</span>
               </button>
             )}
@@ -1846,7 +1844,7 @@ export default function Home() {
         {activeTab === 'dashboard' && (
           <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8 custom-scrollbar bg-[#131314]">
             <div className="max-w-6xl mx-auto animate-page-load space-y-8">
-              
+
               <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2 text-zinc-400 font-bold text-sm tracking-widest uppercase mb-1">
@@ -1866,8 +1864,8 @@ export default function Home() {
 
               {/* Stats Cards Grid (4 columns) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-                <button 
-                  onClick={() => setActiveTab('database')} 
+                <button
+                  onClick={() => setActiveTab('database')}
                   className="w-full text-left bg-zinc-900/30 border border-zinc-850 hover:border-emerald-500/25 hover:bg-zinc-900/50 rounded-md p-6 relative overflow-hidden group transition-all duration-300"
                 >
                   <div className="flex items-center justify-between mb-3">
@@ -1878,8 +1876,8 @@ export default function Home() {
                   <div className="text-[10px] text-zinc-500 mt-2 font-medium">+{Math.min(documents.length, 1)} today</div>
                 </button>
 
-                <button 
-                  onClick={() => setActiveTab('database')} 
+                <button
+                  onClick={() => setActiveTab('database')}
                   className="w-full text-left bg-zinc-900/30 border border-zinc-850 hover:border-emerald-500/25 hover:bg-zinc-900/50 rounded-md p-6 relative overflow-hidden group transition-all duration-300"
                 >
                   <div className="flex items-center justify-between mb-3">
@@ -1890,8 +1888,8 @@ export default function Home() {
                   <div className="text-[10px] text-zinc-500 mt-2 font-medium">last sync just now</div>
                 </button>
 
-                <button 
-                  onClick={() => setActiveTab('chat')} 
+                <button
+                  onClick={() => setActiveTab('chat')}
                   className="w-full text-left bg-zinc-900/30 border border-zinc-850 hover:border-emerald-500/25 hover:bg-zinc-900/50 rounded-md p-6 relative overflow-hidden group transition-all duration-300"
                 >
                   <div className="flex items-center justify-between mb-3">
@@ -1902,8 +1900,8 @@ export default function Home() {
                   <div className="text-[10px] text-zinc-500 mt-2 font-medium">active sessions</div>
                 </button>
 
-                <button 
-                  onClick={() => setActiveTab('database')} 
+                <button
+                  onClick={() => setActiveTab('database')}
                   className="w-full text-left bg-zinc-900/30 border border-zinc-850 hover:border-emerald-500/25 hover:bg-zinc-900/50 rounded-md p-6 relative overflow-hidden group transition-all duration-300"
                 >
                   <div className="flex items-center justify-between mb-3">
@@ -1925,7 +1923,7 @@ export default function Home() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-zinc-400">
                     <div className="bg-zinc-950 p-3.5 rounded-md border border-zinc-850 relative overflow-hidden group">
                       <div className="text-zinc-250 font-bold mb-1.5 flex justify-between items-center">
-                        Gemini API 
+                        Gemini API
                         <div className="flex items-center gap-1.5">
                           {!apiStats?.gemini?.chat?.ok && (
                             <div className="tooltip-wrapper">
@@ -1951,7 +1949,7 @@ export default function Home() {
                     </div>
                     <div className="bg-zinc-950 p-3.5 rounded-md border border-zinc-850 relative overflow-hidden group">
                       <div className="text-zinc-250 font-bold mb-1.5 flex justify-between items-center">
-                        Cohere API 
+                        Cohere API
                         <div className="flex items-center gap-1.5">
                           {!apiStats?.cohere?.chat?.ok && (
                             <div className="tooltip-wrapper">
@@ -1975,7 +1973,7 @@ export default function Home() {
                     </div>
                     <div className="bg-zinc-950 p-3.5 rounded-md border border-zinc-850 relative overflow-hidden group">
                       <div className="text-zinc-250 font-bold mb-1.5 flex justify-between items-center">
-                        Groq API 
+                        Groq API
                         <div className="flex items-center gap-1.5">
                           {!apiStats?.groq?.ok && (
                             <div className="tooltip-wrapper">
@@ -2009,10 +2007,10 @@ export default function Home() {
                                 {apiStats?.openai?.chat?.error?.error?.code === 'insufficient_quota' ? 'QUOTA EXCEEDED' : 'OFFLINE'}
                               </span>
                               <span className="tooltip-text">
-                                {apiStats?.openai?.chat?.error?.error?.message || 
-                                 apiStats?.openai?.chat?.error?.message || 
-                                 apiStats?.openai?.error || 
-                                 'OpenAI API verification failed. Please check key/billing.'}
+                                {apiStats?.openai?.chat?.error?.error?.message ||
+                                  apiStats?.openai?.chat?.error?.message ||
+                                  apiStats?.openai?.error ||
+                                  'OpenAI API verification failed. Please check key/billing.'}
                               </span>
                             </div>
                           )}
@@ -2042,7 +2040,7 @@ export default function Home() {
                       <div className="text-[10px] font-bold text-zinc-550 uppercase">Embedding</div>
                       <div className="text-sm font-semibold text-zinc-200">{embedProvider?.name || 'Cohere'}</div>
                       <div className="text-[9px] text-zinc-500 font-mono">{embedProvider?.dimension || 1024}d · {embedProvider?.model}</div>
-                      <CustomSelect 
+                      <CustomSelect
                         value={activeProject?.embedding_provider || 'cohere'}
                         onChange={handleUpdateEmbeddingProvider}
                         options={EMBEDDING_PROVIDER_OPTIONS}
@@ -2062,7 +2060,7 @@ export default function Home() {
                       </div>
                       <div className="text-sm font-semibold text-zinc-200">{CHAT_PROVIDERS[chatProviderId]?.name}</div>
                       <div className="text-[9px] text-zinc-500 font-mono">{CHAT_PROVIDERS[chatProviderId]?.model}</div>
-                      <CustomSelect 
+                      <CustomSelect
                         value={activeProject?.chat_provider || 'groq'}
                         onChange={handleUpdateChatProvider}
                         options={CHAT_PROVIDER_OPTIONS}
@@ -2081,7 +2079,7 @@ export default function Home() {
         {activeTab === 'database' && (
           <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8 custom-scrollbar bg-[#131314]">
             <div className="max-w-6xl mx-auto animate-page-load space-y-8">
-              
+
               <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2 text-zinc-450 font-bold text-xs tracking-widest uppercase mb-1.5">
@@ -2101,11 +2099,11 @@ export default function Home() {
 
               {/* Database View: Ingestion Hub (Top) + Repository (Bottom) */}
               <div className="flex flex-col gap-6 md:gap-8">
-                
+
                 {/* Top: Ingestion Hub (Full Width Card with Horizontal Split on desktop) */}
                 <div className="bg-zinc-950/60 backdrop-blur-md border border-white/[0.05] rounded-2xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.3)] relative overflow-hidden group">
                   <div className="absolute top-0 right-0 w-24 h-24 bg-[#1D9E75]/5 rounded-full blur-2xl group-hover:bg-[#1D9E75]/10 transition-all duration-300 pointer-events-none" />
-                  
+
                   <div className="flex flex-col lg:flex-row gap-6 items-stretch">
                     {/* Left half: Drag & Drop Dropzone */}
                     <div className="flex-1 space-y-4 flex flex-col justify-between">
@@ -2116,22 +2114,21 @@ export default function Home() {
                         <p className="text-[11px] text-zinc-500 mt-1">Vectorize files directly into this workspace database.</p>
                       </div>
 
-                      <div 
+                      <div
                         onDragOver={(e) => { e.preventDefault(); setDbDragActive(true); }}
                         onDragLeave={() => setDbDragActive(false)}
-                        onDrop={(e) => { 
-                          e.preventDefault(); 
-                          setDbDragActive(false); 
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setDbDragActive(false);
                           if (e.dataTransfer.files) {
                             addFilesToQueue(Array.from(e.dataTransfer.files))
                           }
                         }}
                         onClick={() => dbFileInputRef.current?.click()}
-                        className={`group/drop relative overflow-hidden rounded-xl p-8 text-center cursor-pointer transition-all duration-300 border border-dashed flex-1 flex flex-col justify-center min-h-[160px] ${
-                          dbDragActive 
-                            ? 'border-emerald-500 bg-emerald-500/5 shadow-[0_0_15px_rgba(16,185,129,0.1)]' 
+                        className={`group/drop relative overflow-hidden rounded-xl p-8 text-center cursor-pointer transition-all duration-300 border border-dashed flex-1 flex flex-col justify-center min-h-[160px] ${dbDragActive
+                            ? 'border-emerald-500 bg-emerald-500/5 shadow-[0_0_15px_rgba(16,185,129,0.1)]'
                             : 'border-white/[0.08] hover:border-emerald-500/40 bg-zinc-950/40 hover:bg-zinc-900/10'
-                        }`}
+                          }`}
                       >
                         <input ref={dbFileInputRef} type="file" multiple className="hidden" accept=".pdf,.md,.txt,.json,.docx" onChange={(e) => { if (e.target.files) addFilesToQueue(Array.from(e.target.files)) }} />
                         <div className="w-10 h-10 mx-auto rounded-full flex items-center justify-center mb-2 bg-zinc-900/60 border border-white/[0.06] group-hover/drop:border-emerald-500/30 group-hover/drop:bg-zinc-900 transition-colors shadow-inner">
@@ -2161,9 +2158,9 @@ export default function Home() {
                         <div className="flex flex-col h-full justify-between gap-4">
                           <div className="flex justify-between items-center mb-1">
                             <span className="text-[10px] font-bold text-zinc-550 uppercase tracking-widest">Ingestion Jobs ({uploadQueue.filter(item => item.projectId === activeProjectId).length})</span>
-                            <button 
-                              onClick={() => startUpload()} 
-                              disabled={isUploading} 
+                            <button
+                              onClick={() => startUpload()}
+                              disabled={isUploading}
                               className="text-[10px] bg-[#1D9E75] hover:bg-[#1D9E75]/80 text-[#0a0a0c] px-3 py-1.5 rounded-lg font-bold disabled:opacity-50 transition-all flex items-center gap-1 shadow-md shadow-[#1D9E75]/10"
                             >
                               {isUploading ? <><Loader2 className="w-2.5 h-2.5 animate-spin" /> Ingesting</> : 'Start Ingest'}
@@ -2199,7 +2196,7 @@ export default function Home() {
                                       ) : (
                                         <span className="text-[10px] font-mono font-bold text-emerald-400">{item.progress}%</span>
                                       )}
-                                      
+
                                       {/* Remove from queue button */}
                                       {item.status !== 'uploading' && (
                                         <button
@@ -2242,9 +2239,9 @@ export default function Home() {
                 <div className="bg-zinc-950/60 backdrop-blur-md border border-white/[0.05] rounded-2xl overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.3)]">
                   <div className="p-5 border-b border-white/[0.05] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
-                      <h3 className="text-base font-bold text-zinc-200 flex items-center gap-2"><Database className="w-4 h-4 text-emerald-450"/> Repository</h3>
+                      <h3 className="text-base font-bold text-zinc-200 flex items-center gap-2"><Database className="w-4 h-4 text-emerald-450" /> Repository</h3>
                       {selectedDocIds.length > 0 && (
-                        <button 
+                        <button
                           onClick={deleteSelectedDocuments}
                           className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg text-xs font-bold transition-all shadow-sm animate-fade-in"
                         >
@@ -2252,29 +2249,29 @@ export default function Home() {
                         </button>
                       )}
                     </div>
-                    
+
                     {/* Global Search & Filter */}
                     <div className="flex items-center gap-2 w-full sm:w-auto">
                       <div className="flex flex-1 sm:flex-initial items-center gap-1.5 rounded-lg border border-white/[0.06] bg-zinc-950/40 hover:bg-zinc-950/60 focus-within:border-emerald-500/30 pl-3 pr-1 h-9 focus-within:ring-2 focus-within:ring-emerald-500/10 transition-all">
                         <Search className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                        <input 
-                          type="text" 
-                          placeholder="Search files..." 
+                        <input
+                          type="text"
+                          placeholder="Search files..."
                           value={fileSearchQuery}
                           onChange={(e) => { setFileSearchQuery(e.target.value); setDashboardPage(1); }}
                           className="w-full bg-transparent text-xs text-zinc-200 placeholder:text-zinc-550 outline-none"
                         />
                       </div>
-                      <CustomSelect 
+                      <CustomSelect
                         value={formatFilter}
                         onChange={(val) => { setFormatFilter(val); setDashboardPage(1); }}
                         options={[
-                          {value: 'all', label: 'All Formats'},
-                          {value: '.pdf', label: 'PDF'},
-                          {value: '.md', label: 'Markdown'},
-                          {value: '.txt', label: 'Text'},
-                          {value: '.json', label: 'JSON'},
-                          {value: '.docx', label: 'DOCX'}
+                          { value: 'all', label: 'All Formats' },
+                          { value: '.pdf', label: 'PDF' },
+                          { value: '.md', label: 'Markdown' },
+                          { value: '.txt', label: 'Text' },
+                          { value: '.json', label: 'JSON' },
+                          { value: '.docx', label: 'DOCX' }
                         ]}
                         containerClassName="w-32 shrink-0"
                         buttonClassName="flex h-9 w-full items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-300 shadow-sm outline-none transition-all hover:bg-zinc-900 hover:text-zinc-50"
@@ -2282,7 +2279,7 @@ export default function Home() {
                       />
                     </div>
                   </div>
-                  
+
                   {documents.length === 0 ? (
                     <div className="text-center py-16 px-4">
                       <FolderPlus className="w-16 h-16 text-zinc-800 mx-auto mb-4" />
@@ -2302,7 +2299,7 @@ export default function Home() {
                           <thead className="text-[10px] uppercase tracking-widest bg-zinc-900/10 text-zinc-500 border-b border-white/[0.04]">
                             <tr>
                               <th className="w-12 px-3 sm:px-6 py-3.5">
-                                <div 
+                                <div
                                   onClick={() => handleSelectAll(!isAllPageSelected)}
                                   className={`w-4 h-4 rounded border flex items-center justify-center cursor-pointer transition-all ${isAllPageSelected ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400' : 'border-zinc-800 bg-zinc-950 hover:border-zinc-700'}`}
                                   title={isAllPageSelected ? "Deselect all page files" : "Select all page files"}
@@ -2332,7 +2329,7 @@ export default function Home() {
                               return (
                                 <tr key={doc.id} className={`hover:bg-white/[0.01] transition-colors ${isSelected ? 'bg-emerald-500/[0.02]' : ''}`}>
                                   <td className="px-3 sm:px-6 py-3.5">
-                                    <div 
+                                    <div
                                       onClick={() => toggleSelectDoc(doc.id)}
                                       className={`w-4 h-4 rounded border flex items-center justify-center cursor-pointer transition-all ${isSelected ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400' : 'border-zinc-800 bg-zinc-950 hover:border-zinc-700'}`}
                                       title={isSelected ? "Deselect file" : "Select file"}
@@ -2342,11 +2339,11 @@ export default function Home() {
                                   </td>
                                   <td className="px-3 sm:px-6 py-3.5 font-medium text-zinc-200 max-w-xs md:max-w-md truncate">
                                     <div className="flex items-center gap-2.5">
-                                      {extension === '.pdf' ? <FileText className="w-4 h-4 text-rose-400 shrink-0" /> : 
-                                       extension === '.md' ? <FileText className="w-4 h-4 text-sky-400 shrink-0" /> : 
-                                       extension === '.json' ? <FileText className="w-4 h-4 text-amber-400 shrink-0" /> : 
-                                       extension === '.docx' ? <FileText className="w-4 h-4 text-blue-400 shrink-0" /> : 
-                                       <FileText className="w-4 h-4 text-emerald-450 shrink-0" />}
+                                      {extension === '.pdf' ? <FileText className="w-4 h-4 text-rose-400 shrink-0" /> :
+                                        extension === '.md' ? <FileText className="w-4 h-4 text-sky-400 shrink-0" /> :
+                                          extension === '.json' ? <FileText className="w-4 h-4 text-amber-400 shrink-0" /> :
+                                            extension === '.docx' ? <FileText className="w-4 h-4 text-blue-400 shrink-0" /> :
+                                              <FileText className="w-4 h-4 text-emerald-450 shrink-0" />}
                                       <span className="truncate" title={name}>{name}</span>
                                     </div>
                                   </td>
@@ -2356,14 +2353,14 @@ export default function Home() {
                                   </td>
                                   <td className="px-3 sm:px-6 py-3.5 text-right text-xs">
                                     <div className="flex justify-end gap-1.5">
-                                      <button 
+                                      <button
                                         onClick={() => openPreview(doc)}
                                         className="p-1.5 text-zinc-450 hover:text-zinc-250 hover:bg-white/5 rounded transition-all"
                                         title="Preview content"
                                       >
                                         <Eye className="w-4 h-4" />
                                       </button>
-                                      <button 
+                                      <button
                                         onClick={() => deleteDocument(doc.id, name)}
                                         className="p-1.5 text-zinc-450 hover:text-red-400 hover:bg-red-500/10 rounded transition-all"
                                         title="Delete file"
@@ -2378,7 +2375,7 @@ export default function Home() {
                           </tbody>
                         </table>
                       </div>
-                      
+
                       {/* Pagination */}
                       {totalPages > 1 && (
                         <div className="p-4 border-t border-white/[0.05] flex items-center justify-between bg-zinc-950/20">
@@ -2386,9 +2383,9 @@ export default function Home() {
                             Showing <span className="font-semibold text-zinc-350">{(dashboardPage - 1) * ITEMS_PER_PAGE + 1}</span> to <span className="font-semibold text-zinc-350">{Math.min(dashboardPage * ITEMS_PER_PAGE, filteredAndSortedDocs.length)}</span> of <span className="font-semibold text-zinc-350">{filteredAndSortedDocs.length}</span> files
                           </div>
                           <div className="flex items-center gap-1.5">
-                            <button onClick={() => setDashboardPage(p => Math.max(1, p - 1))} disabled={dashboardPage === 1} className="p-1.5 rounded-lg border border-white/5 hover:bg-white/5 disabled:opacity-30 disabled:hover:bg-transparent transition text-zinc-300"><ChevronLeft className="w-4 h-4"/></button>
+                            <button onClick={() => setDashboardPage(p => Math.max(1, p - 1))} disabled={dashboardPage === 1} className="p-1.5 rounded-lg border border-white/5 hover:bg-white/5 disabled:opacity-30 disabled:hover:bg-transparent transition text-zinc-300"><ChevronLeft className="w-4 h-4" /></button>
                             <span className="text-xs font-semibold text-zinc-450 px-2">Page {dashboardPage} of {totalPages}</span>
-                            <button onClick={() => setDashboardPage(p => Math.min(totalPages, p + 1))} disabled={dashboardPage === totalPages} className="p-1.5 rounded-lg border border-white/5 hover:bg-white/5 disabled:opacity-30 disabled:hover:bg-transparent transition text-zinc-300"><ChevronRight className="w-4 h-4"/></button>
+                            <button onClick={() => setDashboardPage(p => Math.min(totalPages, p + 1))} disabled={dashboardPage === totalPages} className="p-1.5 rounded-lg border border-white/5 hover:bg-white/5 disabled:opacity-30 disabled:hover:bg-transparent transition text-zinc-300"><ChevronRight className="w-4 h-4" /></button>
                           </div>
                         </div>
                       )}
@@ -2410,7 +2407,7 @@ export default function Home() {
               {messages.length === 0 ? (
                 <div className="flex flex-col items-center px-4 py-8 max-w-5xl mx-auto w-full">
                   <h1 className="text-3xl md:text-4xl font-normal text-zinc-100 text-center mb-8 tracking-tight">
-                    {activeChannelName 
+                    {activeChannelName
                       ? `Ask anything in ${activeChannelName}`
                       : activeProject?.name
                         ? `Ask anything about ${activeProject.name}`
@@ -2434,135 +2431,136 @@ export default function Home() {
                 <div className="flex-1 overflow-y-auto custom-scrollbar w-full px-4 sm:px-8 pt-2 pb-4">
                   <div className="max-w-5xl mx-auto space-y-6 w-full">
                     {messages.map((msg) => (
-                    <div key={msg.id} className={`flex gap-3 md:gap-5 animate-slide-up ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      {msg.role === 'assistant' && (
-                        <div className="w-10 h-10 rounded-md bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 shadow-sm mt-1">
-                          <Bot className="w-5 h-5 text-zinc-400" />
-                        </div>
-                      )}
-                      
-                      <div className={`max-w-[95%] md:max-w-[85%] rounded-lg border text-sm shadow-sm ${msg.role === 'user' ? 'bg-zinc-900 border-zinc-800 text-zinc-50' : 'bg-zinc-950 border-zinc-850 text-zinc-200'}`}>
-                        <div className="px-5 py-4">
-                          
-                          {/* Rich Loading Visualizer */}
-                          {msg.isLoading && !msg.text ? (
-                            <div className="py-2 min-w-[280px]">
-                              <div className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                                <Activity className="w-4 h-4 animate-pulse" /> Processing Query
-                              </div>
-                              <div className="space-y-6 relative">
-                                <div className="absolute left-[11px] top-3 bottom-3 w-px bg-zinc-800 z-0" />
-                                
-                                <div className="flex items-start gap-4 relative z-10">
-                                  <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 border-2 transition-colors duration-500 shadow-sm ${searchStep === 'hyde' ? 'bg-zinc-950 border-zinc-500 text-zinc-400' : searchStep !== 'idle' ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-zinc-950 border-zinc-800 text-zinc-600'}`}>
-                                    {searchStep === 'hyde' ? <span className="w-2 h-2 bg-zinc-400 rounded-full animate-pulse"/> : searchStep !== 'idle' ? <CheckCircle className="w-3.5 h-3.5"/> : <span className="text-[10px] font-bold">1</span>}
-                                  </div>
-                                  <div>
-                                    <div className={`text-sm font-semibold ${searchStep === 'hyde' ? 'text-zinc-50' : 'text-zinc-500'}`}>HyDE Expansion</div>
-                                    {searchStep === 'hyde' && <div className="text-xs text-zinc-450 mt-1">Generating semantic variations...</div>}
-                                  </div>
-                                </div>
+                      <div key={msg.id} className={`flex gap-3 md:gap-5 animate-slide-up ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        {msg.role === 'assistant' && (
+                          <div className="w-10 h-10 rounded-md bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 shadow-sm mt-1">
+                            <Bot className="w-5 h-5 text-zinc-400" />
+                          </div>
+                        )}
 
-                                <div className="flex items-start gap-4 relative z-10">
-                                  <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 border-2 transition-colors duration-500 shadow-sm ${searchStep === 'search' ? 'bg-zinc-950 border-zinc-500 text-zinc-400' : (searchStep === 'rrf' || searchStep === 'synth') ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-zinc-950 border-zinc-800 text-zinc-600'}`}>
-                                    {searchStep === 'search' ? <span className="w-2 h-2 bg-zinc-400 rounded-full animate-pulse"/> : (searchStep === 'rrf' || searchStep === 'synth') ? <CheckCircle className="w-3.5 h-3.5"/> : <span className="text-[10px] font-bold">2</span>}
-                                  </div>
-                                  <div>
-                                    <div className={`text-sm font-semibold ${searchStep === 'search' ? 'text-zinc-50' : 'text-zinc-500'}`}>Hybrid Search</div>
-                                    {searchStep === 'search' && <div className="text-xs text-zinc-450 mt-1">Scanning pgvector indexes...</div>}
-                                  </div>
-                                </div>
+                        <div className={`max-w-[95%] md:max-w-[85%] rounded-lg border text-sm shadow-sm ${msg.role === 'user' ? 'bg-zinc-900 border-zinc-800 text-zinc-50' : 'bg-zinc-950 border-zinc-850 text-zinc-200'}`}>
+                          <div className="px-5 py-4">
 
-                                <div className="flex items-start gap-4 relative z-10">
-                                  <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 border-2 transition-colors duration-500 shadow-sm ${searchStep === 'rrf' ? 'bg-zinc-950 border-zinc-500 text-zinc-400' : searchStep === 'synth' ? 'bg-zinc-900 border-zinc-800 text-zinc-450' : 'bg-zinc-950 border-zinc-800 text-zinc-600'}`}>
-                                    {searchStep === 'rrf' ? <span className="w-2 h-2 bg-zinc-400 rounded-full animate-pulse"/> : searchStep === 'synth' ? <CheckCircle className="w-3.5 h-3.5"/> : <span className="text-[10px] font-bold">3</span>}
-                                  </div>
-                                  <div>
-                                    <div className={`text-sm font-semibold ${searchStep === 'rrf' ? 'text-zinc-50' : 'text-zinc-500'}`}>Rank Fusion & Filtering</div>
-                                  </div>
+                            {/* Rich Loading Visualizer */}
+                            {msg.isLoading && !msg.text ? (
+                              <div className="py-2 min-w-[280px]">
+                                <div className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                  <Activity className="w-4 h-4 animate-pulse" /> Processing Query
                                 </div>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className={`leading-relaxed text-[14.5px] ${msg.role === 'assistant' ? 'prose-chat' : 'font-medium tracking-wide'}`}>
-                              {msg.role === 'assistant'
-                                ? renderMarkdown(msg.text)
-                                : <span className="text-zinc-100">{msg.text}</span>
-                              }
-                            </div>
-                          )}
-                          
-                          {/* Assistant Message Actions & Metadata */}
-                          {msg.role === 'assistant' && !msg.isLoading && (
-                            <div className="mt-6 pt-4 border-t border-zinc-850 flex flex-col gap-4">
-                              
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                  {msg.confidence && msg.confidence.level !== 'LOW' && (
-                                    <div className={`text-[10px] font-bold px-2.5 py-1 rounded-md border flex items-center gap-1.5 shadow-sm ${
-                                      msg.confidence.level === 'HIGH' ? 'bg-zinc-900 text-zinc-200 border-zinc-800' : 
-                                      msg.confidence.level === 'MEDIUM' ? 'bg-zinc-900 text-zinc-350 border-zinc-800' : 
-                                      'bg-red-955/20 text-red-400 border-red-900/30'
-                                    }`}>
-                                      {msg.confidence.level === 'HIGH' && <CheckCircle className="w-3 h-3" />}
-                                      {msg.confidence.level === 'MEDIUM' && <AlertCircle className="w-3 h-3" />}
-                                      {msg.confidence.level === 'LOW' && <XCircle className="w-3 h-3" />}
-                                      {msg.confidence.level} CONFIDENCE
+                                <div className="space-y-6 relative">
+                                  <div className="absolute left-[11px] top-3 bottom-3 w-px bg-zinc-800 z-0" />
+
+                                  <div className="flex items-start gap-4 relative z-10">
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 border-2 transition-colors duration-500 shadow-sm ${searchStep === 'hyde' ? 'bg-zinc-950 border-zinc-500 text-zinc-400' : searchStep !== 'idle' ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-zinc-950 border-zinc-800 text-zinc-600'}`}>
+                                      {searchStep === 'hyde' ? <span className="w-2 h-2 bg-zinc-400 rounded-full animate-pulse" /> : searchStep !== 'idle' ? <CheckCircle className="w-3.5 h-3.5" /> : <span className="text-[10px] font-bold">1</span>}
                                     </div>
-                                  )}
-                                </div>
-                                
-                                {/* AI Action Buttons */}
-                                <div className="flex items-center gap-2">
-                                  {isSearchLoading && activeMessageIdRef.current === msg.id && (
-                                    <button onClick={() => stop()} className="flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-955/20 hover:bg-red-900/30 border border-red-900/30 px-2 py-1 rounded-md transition-colors">
-                                      <Square className="w-3 h-3" /> STOP
-                                    </button>
-                                  )}
-                                  <button onClick={() => handleCopy(msg.id, msg.text)} className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-zinc-50 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 px-2 py-1 rounded-md transition-colors">
-                                    {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />} COPY
-                                  </button>
+                                    <div>
+                                      <div className={`text-sm font-semibold ${searchStep === 'hyde' ? 'text-zinc-50' : 'text-zinc-500'}`}>HyDE Expansion</div>
+                                      {searchStep === 'hyde' && <div className="text-xs text-zinc-450 mt-1">Generating semantic variations...</div>}
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-start gap-4 relative z-10">
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 border-2 transition-colors duration-500 shadow-sm ${searchStep === 'search' ? 'bg-zinc-950 border-zinc-500 text-zinc-400' : (searchStep === 'rrf' || searchStep === 'synth') ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-zinc-950 border-zinc-800 text-zinc-600'}`}>
+                                      {searchStep === 'search' ? <span className="w-2 h-2 bg-zinc-400 rounded-full animate-pulse" /> : (searchStep === 'rrf' || searchStep === 'synth') ? <CheckCircle className="w-3.5 h-3.5" /> : <span className="text-[10px] font-bold">2</span>}
+                                    </div>
+                                    <div>
+                                      <div className={`text-sm font-semibold ${searchStep === 'search' ? 'text-zinc-50' : 'text-zinc-500'}`}>Hybrid Search</div>
+                                      {searchStep === 'search' && <div className="text-xs text-zinc-450 mt-1">Scanning pgvector indexes...</div>}
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-start gap-4 relative z-10">
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 border-2 transition-colors duration-500 shadow-sm ${searchStep === 'rrf' ? 'bg-zinc-950 border-zinc-500 text-zinc-400' : searchStep === 'synth' ? 'bg-zinc-900 border-zinc-800 text-zinc-450' : 'bg-zinc-950 border-zinc-800 text-zinc-600'}`}>
+                                      {searchStep === 'rrf' ? <span className="w-2 h-2 bg-zinc-400 rounded-full animate-pulse" /> : searchStep === 'synth' ? <CheckCircle className="w-3.5 h-3.5" /> : <span className="text-[10px] font-bold">3</span>}
+                                    </div>
+                                    <div>
+                                      <div className={`text-sm font-semibold ${searchStep === 'rrf' ? 'text-zinc-50' : 'text-zinc-500'}`}>Rank Fusion & Filtering</div>
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
+                            ) : (
+                              <div className={`leading-relaxed text-[14.5px] ${msg.role === 'assistant' ? 'prose-chat' : 'font-medium tracking-wide'}`}>
+                                {msg.role === 'assistant'
+                                  ? renderMarkdown(msg.text)
+                                  : <span className="text-zinc-100">{msg.text}</span>
+                                }
+                              </div>
+                            )}
 
-                              {/* Source Citations with SaaS styling */}
-                              {msg.sources && msg.sources.length > 0 && (
-                                <div>
-                                  <div className="text-[9px] font-bold text-zinc-550 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                                    <LinkIcon className="w-3 h-3" /> Cited Sources
+                            {/* Assistant Message Actions & Metadata */}
+                            {msg.role === 'assistant' && !msg.isLoading && (
+                              <div className="mt-6 pt-4 border-t border-zinc-850 flex flex-col gap-4">
+
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    {/* CONFIDENCE TAG — temporarily hidden, re-enable when needed
+                                    {msg.confidence && msg.confidence.level !== 'LOW' && (
+                                      <div className={`text-[10px] font-bold px-2.5 py-1 rounded-md border flex items-center gap-1.5 shadow-sm ${msg.confidence.level === 'HIGH' ? 'bg-zinc-900 text-zinc-200 border-zinc-800' :
+                                          msg.confidence.level === 'MEDIUM' ? 'bg-zinc-900 text-zinc-350 border-zinc-800' :
+                                            'bg-red-955/20 text-red-400 border-red-900/30'
+                                        }`}>
+                                        {msg.confidence.level === 'HIGH' && <CheckCircle className="w-3 h-3" />}
+                                        {msg.confidence.level === 'MEDIUM' && <AlertCircle className="w-3 h-3" />}
+                                        {msg.confidence.level === 'LOW' && <XCircle className="w-3 h-3" />}
+                                        {msg.confidence.level} CONFIDENCE
+                                      </div>
+                                    )}
+                                    */}
                                   </div>
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    {msg.sources.map((src, idx) => {
-                                      const url = msg.sourceUrls?.[idx]
-                                      return (
-                                        <button 
-                                          key={idx} 
-                                          onClick={() => url ? setPreviewPdfUrl(url) : alert("Document preview not available in storage.")} 
-                                          className={`group relative overflow-hidden flex items-center gap-2 px-3 py-1.5 rounded-md border text-xs transition-all duration-200 ${url ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700 cursor-pointer hover:bg-zinc-855' : 'bg-transparent border-transparent text-zinc-650 cursor-not-allowed'}`}
-                                        >
-                                          <FileText className={`w-3.5 h-3.5 shrink-0 transition-colors ${url ? 'text-zinc-400 group-hover:text-zinc-300' : 'text-zinc-600'}`} /> 
-                                          <span className="truncate max-w-[180px] font-medium">{src}</span>
-                                          {url && <Eye className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 absolute right-3 text-zinc-450 transition-opacity" />}
-                                          {url && <span className="w-4 h-full bg-gradient-to-l from-zinc-900 group-hover:from-zinc-850 to-transparent absolute right-0" />}
-                                        </button>
-                                      )
-                                    })}
+
+                                  {/* AI Action Buttons */}
+                                  <div className="flex items-center gap-2">
+                                    {isSearchLoading && activeMessageIdRef.current === msg.id && (
+                                      <button onClick={() => stop()} className="flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-955/20 hover:bg-red-900/30 border border-red-900/30 px-2 py-1 rounded-md transition-colors">
+                                        <Square className="w-3 h-3" /> STOP
+                                      </button>
+                                    )}
+                                    <button onClick={() => handleCopy(msg.id, msg.text)} className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-zinc-50 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 px-2 py-1 rounded-md transition-colors">
+                                      {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />} COPY
+                                    </button>
                                   </div>
                                 </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
 
-                      {msg.role === 'user' && (
-                        <div className="w-10 h-10 rounded-md bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 shadow-sm mt-1">
-                          <User className="w-5 h-5 text-zinc-400" />
+                                {/* Source Citations with SaaS styling */}
+                                {msg.sources && msg.sources.length > 0 && (
+                                  <div>
+                                    <div className="text-[9px] font-bold text-zinc-550 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                      <LinkIcon className="w-3 h-3" /> Cited Sources
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      {msg.sources.map((src, idx) => {
+                                        const url = msg.sourceUrls?.[idx]
+                                        return (
+                                          <button
+                                            key={idx}
+                                            onClick={() => url ? setPreviewPdfUrl(url) : alert("Document preview not available in storage.")}
+                                            className={`group relative overflow-hidden flex items-center gap-2 px-3 py-1.5 rounded-md border text-xs transition-all duration-200 ${url ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700 cursor-pointer hover:bg-zinc-855' : 'bg-transparent border-transparent text-zinc-650 cursor-not-allowed'}`}
+                                          >
+                                            <FileText className={`w-3.5 h-3.5 shrink-0 transition-colors ${url ? 'text-zinc-400 group-hover:text-zinc-300' : 'text-zinc-600'}`} />
+                                            <span className="truncate max-w-[180px] font-medium">{src}</span>
+                                            {url && <Eye className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 absolute right-3 text-zinc-450 transition-opacity" />}
+                                            {url && <span className="w-4 h-full bg-gradient-to-l from-zinc-900 group-hover:from-zinc-850 to-transparent absolute right-0" />}
+                                          </button>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  ))}
-                  <div ref={chatEndRef} className="h-10" />
+
+                        {msg.role === 'user' && (
+                          <div className="w-10 h-10 rounded-md bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 shadow-sm mt-1">
+                            <User className="w-5 h-5 text-zinc-400" />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    <div ref={chatEndRef} className="h-10" />
                   </div>
                 </div>
               )}
@@ -2586,7 +2584,7 @@ export default function Home() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950">
               <div className="flex items-center gap-3 font-semibold text-zinc-200">
                 <div className="w-8 h-8 rounded-md bg-zinc-900 flex items-center justify-center border border-zinc-800">
-                  <Eye className="w-4 h-4 text-zinc-405"/>
+                  <Eye className="w-4 h-4 text-zinc-405" />
                 </div>
                 Document Viewer
               </div>
@@ -2595,7 +2593,7 @@ export default function Home() {
                   Open External
                 </a>
                 <button onClick={() => setPreviewPdfUrl(null)} className="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-zinc-550 bg-transparent hover:bg-zinc-900 rounded-md transition-colors border border-zinc-800">
-                  <X className="w-4 h-4"/>
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
@@ -2612,8 +2610,8 @@ export default function Home() {
                     </p>
                   </div>
                   <div className="pt-2">
-                    <a 
-                      href={previewPdfUrl} 
+                    <a
+                      href={previewPdfUrl}
                       download
                       className="inline-flex items-center gap-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 px-5 py-2.5 rounded-lg shadow transition-colors"
                     >
@@ -2643,13 +2641,13 @@ export default function Home() {
                 {confirmModal.message}
               </p>
               <div className="flex gap-2.5 justify-end">
-                <button 
+                <button
                   onClick={() => setConfirmModal(null)}
                   className="px-3.5 py-2 rounded-md text-xs font-medium border border-zinc-800 text-zinc-300 hover:bg-zinc-900 hover:text-zinc-50 transition-colors"
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   onClick={async () => {
                     await confirmModal.onConfirm()
                     setConfirmModal(null)
