@@ -407,6 +407,7 @@ export default function Home() {
     if (window.innerWidth >= 768) setSidebarExpanded(false)
   }, [])
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchProjects() }, [])
 
   useEffect(() => {
@@ -465,6 +466,7 @@ export default function Home() {
     }
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     checkApiHealth()
   }, [])
@@ -732,6 +734,7 @@ export default function Home() {
       setDashboardPage(1)
       setSelectedDocIds([])
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProjectId])
 
   const fetchLibrary = async () => {
