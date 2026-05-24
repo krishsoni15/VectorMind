@@ -2772,7 +2772,7 @@ export default function Home() {
                     How VectorMind Works
                   </h2>
                   <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
-                    Under the hood of VectorMind's premium hybrid Retrieval-Augmented Generation (RAG) architecture.
+                    {"Under the hood of VectorMind's premium hybrid Retrieval-Augmented Generation (RAG) architecture."}
                   </p>
                 </div>
                 
@@ -2812,7 +2812,7 @@ export default function Home() {
                   <div className="bg-zinc-900/30 p-3.5 rounded-xl border border-white/[0.02]">
                     <span className="text-xs font-bold text-blue-400 block mb-1">🧠 CAG (The alternative)</span>
                     <p className="text-[11px] text-zinc-450 leading-relaxed">
-                      <strong>Like memorizing the whole book:</strong> Feeding all documents into the AI's memory at once. It's simple, but gets extremely slow and expensive when you upload large books or many documents.
+                      <strong>Like memorizing the whole book:</strong> {"Feeding all documents into the AI's memory at once. It's simple, but gets extremely slow and expensive when you upload large books or many documents."}
                     </p>
                   </div>
                   <div className="bg-zinc-900/30 p-3.5 rounded-xl border border-white/[0.02]">
@@ -2906,7 +2906,7 @@ export default function Home() {
                             Plain English Meaning:
                           </span>
                           <p className="text-xs text-zinc-300 leading-relaxed italic">
-                            "{step.conceptExplain}"
+                            &ldquo;{step.conceptExplain}&rdquo;
                           </p>
                         </div>
 
@@ -2990,8 +2990,8 @@ export default function Home() {
                       <div>
                         <h4 className="text-xs font-bold text-zinc-150">Understanding Architectures: RAG vs CAG</h4>
                         <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
-                          <strong>Retrieval-Augmented Generation (RAG)</strong> indexes data into chunk vectors and fetches only the top-k matches for LLM context, offering infinite scalability and cost-efficiency. <br />
-                          <strong>Cache-Augmented Generation (CAG)</strong> loads the entire database directly into the context window of huge models (e.g. Gemini 1.5 Pro's 2M context), letting the model's self-attention solve retrieval in memory.
+                          <strong>Retrieval-Augmented Generation (RAG)</strong> {"indexes data into chunk vectors and fetches only the top-k matches for LLM context, offering infinite scalability and cost-efficiency."} <br />
+                          <strong>Cache-Augmented Generation (CAG)</strong> {"loads the entire database directly into the context window of huge models (e.g. Gemini 1.5 Pro's 2M context), letting the model's self-attention solve retrieval in memory."}
                         </p>
                       </div>
                     </div>
@@ -3065,7 +3065,7 @@ export default function Home() {
                               Large wikis, enterprise customer support portals, private source code repositories, dynamic databases.
                             </td>
                             <td className="px-5 py-4 border-l border-white/[0.03]">
-                              Summarizing single textbooks, exploring a codebase's themes, analyzing legal contracts under 500 pages.
+                              {"Summarizing single textbooks, exploring a codebase's themes, analyzing legal contracts under 500 pages."}
                             </td>
                           </tr>
 
@@ -3075,9 +3075,9 @@ export default function Home() {
                   </div>
 
                   <div className="bg-zinc-900/30 border border-white/[0.03] p-5 rounded-2xl">
-                    <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider mb-2">VectorMind's Stance</h4>
+                    <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider mb-2">{"VectorMind's Stance"}</h4>
                     <p className="text-xs text-zinc-400 leading-relaxed">
-                      VectorMind chooses **RAG** for workspace scaling. RAG scales efficiently to large document sizes. However, we augment this with **Semantic Caching** to achieve CAG-like speeds (&lt; 15ms) on repeated query vectors, representing the best of both architectures.
+                      {"VectorMind chooses RAG for workspace scaling. RAG scales efficiently to large document sizes. However, we augment this with Semantic Caching to achieve CAG-like speeds (< 15ms) on repeated query vectors, representing the best of both architectures."}
                     </p>
                   </div>
 
@@ -3132,7 +3132,7 @@ export default function Home() {
                   <div className="bg-zinc-900/30 border border-white/[0.04] p-5 rounded-2xl space-y-3">
                     <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider">Indexed Search Defense System</h4>
                     <p className="text-xs text-zinc-400 leading-relaxed">
-                      To optimize vector match queries across differing embedding providers (Gemini's 768-dim vs Cohere's 1024-dim), VectorMind avoids raw database dimension locks on `embedding` columns. Instead, it leaves the column dimensions dynamic and applies two partial HNSW indexes filtered by vector size:
+                      {"To optimize vector match queries across differing embedding providers (Gemini's 768-dim vs Cohere's 1024-dim), VectorMind avoids raw database dimension locks on `embedding` columns. Instead, it leaves the column dimensions dynamic and applies two partial HNSW indexes filtered by vector size:"}
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
                       <div className="bg-zinc-950 p-4 border border-white/[0.04] rounded-xl">
