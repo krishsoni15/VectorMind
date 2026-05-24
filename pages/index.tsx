@@ -1559,7 +1559,7 @@ export default function Home() {
           {navBtn('dashboard', <LayoutDashboard className="w-5 h-5" />, 'Dashboard')}
           {navBtn('chat', <MessageSquare className="w-5 h-5" />, 'Chat')}
           {navBtn('database', <Database className="w-5 h-5" />, 'Library')}
-          {navBtn('how-it-works', <Info className="w-5 h-5" />, 'How it Works')}
+          {/* {navBtn('how-it-works', <Info className="w-5 h-5" />, 'How it Works')} */}
           <div className="mt-auto flex flex-col items-center gap-2 pb-2">
             <button
               type="button"
