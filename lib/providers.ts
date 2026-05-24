@@ -562,12 +562,16 @@ export async function streamChatResponse(
       }
 
       await parseSSEStream(res.body as any, (line) => {
-        if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.slice(6))
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-            if (text) onChunk(text)
-          } catch {}
+        let raw = line.trim()
+        if (raw.startsWith('data:')) raw = raw.replace(/^data:\s*/, '').trim()
+        if (!raw || raw === '[DONE]') return
+        try {
+          const data = JSON.parse(raw)
+          if (data.error) throw new Error(data.error.message || JSON.stringify(data.error))
+          const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+          if (text) onChunk(text)
+        } catch (e: any) {
+          if (e.message && !e.message.includes('Unexpected')) throw e
         }
       })
       break
@@ -601,14 +605,18 @@ export async function streamChatResponse(
       if (!res.ok) throw new Error(`Cohere chat error: ${res.status}`)
 
       await parseSSEStream(res.body as any, (line) => {
-        if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.slice(6))
-            if (data.type === 'content-delta') {
-              const text = data.delta?.message?.content?.text
-              if (text) onChunk(text)
-            }
-          } catch {}
+        let raw = line.trim()
+        if (raw.startsWith('data:')) raw = raw.replace(/^data:\s*/, '').trim()
+        if (!raw || raw === '[DONE]') return
+        try {
+          const data = JSON.parse(raw)
+          if (data.error) throw new Error(data.error.message || JSON.stringify(data.error))
+          if (data.message) throw new Error(data.message)
+          if (data.type === 'content-delta') {
+            onChunk(data.delta?.message?.content?.text || '')
+          }
+        } catch (e: any) {
+          if (e.message && !e.message.includes('Unexpected')) throw e
         }
       })
       break
@@ -649,14 +657,16 @@ export async function streamChatResponse(
       }
 
       await parseSSEStream(res.body as any, (line) => {
-        if (line.startsWith('data: ')) {
-          const raw = line.slice(6).trim()
-          if (raw === '[DONE]') return
-          try {
-            const data = JSON.parse(raw)
-            const text = data.choices?.[0]?.delta?.content
-            if (text) onChunk(text)
-          } catch {}
+        let raw = line.trim()
+        if (raw.startsWith('data:')) raw = raw.replace(/^data:\s*/, '').trim()
+        if (!raw || raw === '[DONE]') return
+        try {
+          const data = JSON.parse(raw)
+          if (data.error) throw new Error(data.error.message || JSON.stringify(data.error))
+          const text = data.choices?.[0]?.delta?.content
+          if (text) onChunk(text)
+        } catch (e: any) {
+          if (e.message && !e.message.includes('Unexpected')) throw e
         }
       })
       break
@@ -696,14 +706,16 @@ export async function streamChatResponse(
       }
 
       await parseSSEStream(res.body as any, (line) => {
-        if (line.startsWith('data: ')) {
-          const raw = line.slice(6).trim()
-          if (raw === '[DONE]') return
-          try {
-            const data = JSON.parse(raw)
-            const text = data.choices?.[0]?.delta?.content
-            if (text) onChunk(text)
-          } catch {}
+        let raw = line.trim()
+        if (raw.startsWith('data:')) raw = raw.replace(/^data:\s*/, '').trim()
+        if (!raw || raw === '[DONE]') return
+        try {
+          const data = JSON.parse(raw)
+          if (data.error) throw new Error(data.error.message || JSON.stringify(data.error))
+          const text = data.choices?.[0]?.delta?.content
+          if (text) onChunk(text)
+        } catch (e: any) {
+          if (e.message && !e.message.includes('Unexpected')) throw e
         }
       })
       break

@@ -7,19 +7,33 @@ import {
   Folder, FolderPlus, Eye,
   LayoutDashboard, Copy, Square, Check, ChevronDown, BarChart3, Download,
   Link as LinkIcon, Filter, ArrowUpDown, ChevronLeft, ChevronRight,
-  ArrowRight, MoreVertical, Edit2, History, Paperclip
+  ArrowRight, MoreVertical, Edit2, History, Paperclip, AlertTriangle, Sun, Moon, ArrowDown,
+  ThumbsUp, ThumbsDown
 } from 'lucide-react'
 import { useCompletion } from 'ai/react'
 import { EMBEDDING_PROVIDER_OPTIONS, CHAT_PROVIDER_OPTIONS, EMBEDDING_PROVIDERS, CHAT_PROVIDERS, type ChatProviderId, type EmbeddingProviderId } from '../lib/providers'
 
 // ─── Markdown Renderer ───────────────────────────────────────────────────────
-function renderMarkdown(text: string): React.ReactNode[] {
-  const parseBold = (txt: string) =>
-    txt.replace(/\*\*(.*?)\*\*/g, '<strong class="text-zinc-50 font-semibold">$1</strong>')
+function renderMarkdown(text: string, onCitationClick?: (id: number) => void): React.ReactNode[] {
+  const parseInline = (txt: string) => {
+    const parts = txt.split(/(\[[\d,\s]+\]|\*\*.*?\*\*)/g)
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={i} className="text-zinc-50 font-semibold">{part.slice(2, -2)}</strong>
+      }
+      const citMatch = part.match(/^\[([\d,\s]+)\]$/)
+      if (citMatch) {
+        // User requested to hide inline citations: "i hate this type of thing on it"
+        return null
+      }
+      return <React.Fragment key={i}>{part}</React.Fragment>
+    })
+  }
   const lines = text.split('\n')
   const nodes: React.ReactNode[] = []
   let ulBuf: string[] = []
   let olBuf: { n: string; t: string }[] = []
+  let tableBuf: string[] = []
   let keyCounter = 0
   const nextKey = () => `md-${keyCounter++}`
 
@@ -28,11 +42,11 @@ function renderMarkdown(text: string): React.ReactNode[] {
     const captured = [...ulBuf]
     ulBuf = []
     nodes.push(
-      <ul key={nextKey()} className="my-3 ml-5 space-y-1.5 list-none">
+      <ul key={nextKey()} className="my-4 space-y-2.5 list-none bg-[#1a1a1f] rounded-xl p-5 border border-white/5 shadow-sm">
         {captured.map((t, i) => (
-          <li key={i} className="flex gap-2 text-zinc-300">
-            <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-emerald-500/60 shrink-0" />
-            <span dangerouslySetInnerHTML={{ __html: parseBold(t) }} />
+          <li key={i} className="flex gap-3 text-zinc-300 text-[14px]">
+            <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-emerald-500/80 shrink-0 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
+            <span className="leading-relaxed">{parseInline(t)}</span>
           </li>
         ))}
       </ul>
@@ -43,45 +57,90 @@ function renderMarkdown(text: string): React.ReactNode[] {
     const captured = [...olBuf]
     olBuf = []
     nodes.push(
-      <ol key={nextKey()} className="my-3 ml-5 space-y-1.5 list-none">
+      <div key={nextKey()} className="my-5 space-y-3">
         {captured.map((item, i) => (
-          <li key={i} className="flex gap-2.5 text-zinc-300">
-            <span className="shrink-0 w-5 h-5 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-[10px] font-bold text-zinc-400">
+          <div key={i} className="flex items-center gap-3.5 px-4 py-3 bg-gradient-to-r from-zinc-800/40 to-transparent border-l-2 border-emerald-500/50 rounded-r-xl">
+            <span className="shrink-0 w-6 h-6 rounded-md bg-zinc-900 border border-zinc-700/50 flex items-center justify-center text-[11px] font-black text-emerald-400 shadow-sm">
               {item.n}
             </span>
-            <span dangerouslySetInnerHTML={{ __html: parseBold(item.t) }} />
-          </li>
+            <span className="font-semibold text-zinc-100 tracking-wide text-[15px]">{parseInline(item.t)}</span>
+          </div>
         ))}
-      </ol>
+      </div>
+    )
+  }
+
+  const flushTable = () => {
+    if (!tableBuf.length) return
+    const captured = [...tableBuf]
+    tableBuf = []
+
+    const parseRow = (r: string) => {
+      let trimmed = r.trim()
+      if (trimmed.startsWith('|')) trimmed = trimmed.slice(1)
+      if (trimmed.endsWith('|')) trimmed = trimmed.slice(0, -1)
+      return trimmed.split('|').map(c => c.trim())
+    }
+
+    const headers = parseRow(captured[0])
+    let dataStart = 1
+    if (captured.length > 1 && captured[1].includes('---')) {
+      dataStart = 2
+    }
+    const rows = captured.slice(dataStart).map(parseRow)
+
+    nodes.push(
+      <div key={nextKey()} className="overflow-x-auto my-5 border border-zinc-800/60 rounded-xl bg-zinc-900/30 custom-scrollbar shadow-sm">
+        <table className="w-full text-left text-sm text-zinc-300">
+          <thead className="bg-zinc-800/50 text-zinc-100 font-semibold border-b border-zinc-700/50">
+            <tr>
+              {headers.map((h, i) => <th key={i} className="px-4 py-3 align-top whitespace-nowrap">{parseInline(h)}</th>)}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-800/50">
+            {rows.map((row, i) => (
+              <tr key={i} className="hover:bg-zinc-800/30 transition-colors">
+                {row.map((cell, j) => <td key={j} className="px-4 py-3 align-top">{parseInline(cell)}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     )
   }
 
   lines.forEach((line) => {
-    if (line.startsWith('### ')) {
+    if (line.trim().startsWith('|')) {
       flushUl(); flushOl()
-      nodes.push(<h3 key={nextKey()} className="font-bold text-zinc-100 mt-6 mb-2 text-base border-l-2 border-emerald-500/50 pl-3">{line.slice(4)}</h3>)
+      tableBuf.push(line)
+    } else if (line.startsWith('#### ')) {
+      flushUl(); flushOl(); flushTable()
+      nodes.push(<h4 key={nextKey()} className="font-bold text-zinc-300 mt-6 mb-2 text-sm uppercase tracking-wider">{parseInline(line.slice(5))}</h4>)
+    } else if (line.startsWith('### ')) {
+      flushUl(); flushOl(); flushTable()
+      nodes.push(<h3 key={nextKey()} className="font-bold text-zinc-200 mt-8 mb-3 text-[16px] flex items-center gap-2"><span className="w-1.5 h-4 bg-emerald-500/80 rounded-full" /> {parseInline(line.slice(4))}</h3>)
     } else if (line.startsWith('## ')) {
-      flushUl(); flushOl()
-      nodes.push(<h2 key={nextKey()} className="font-bold text-zinc-50 mt-7 mb-3 text-lg">{line.slice(3)}</h2>)
+      flushUl(); flushOl(); flushTable()
+      nodes.push(<h2 key={nextKey()} className="font-black text-white mt-10 mb-4 text-xl tracking-tight">{parseInline(line.slice(3))}</h2>)
     } else if (line.startsWith('# ')) {
-      flushUl(); flushOl()
-      nodes.push(<h1 key={nextKey()} className="font-bold text-zinc-50 mt-8 mb-4 text-xl">{line.slice(2)}</h1>)
+      flushUl(); flushOl(); flushTable()
+      nodes.push(<h1 key={nextKey()} className="font-black text-white mt-10 mb-6 text-2xl tracking-tight pb-2 border-b border-white/10">{parseInline(line.slice(2))}</h1>)
     } else if (/^(- |\* )/.test(line)) {
-      flushOl()
+      flushOl(); flushTable()
       ulBuf.push(line.slice(2))
-    } else if (/^\d+\.\s/.test(line)) {
-      flushUl()
-      const m = line.match(/^(\d+)\.\s(.*)$/)
+    } else if (/^(?:#{1,6}\s*)?\d+\.\s/.test(line)) {
+      flushUl(); flushTable()
+      const m = line.match(/^(?:#{1,6}\s*)?(\d+)\.\s(.*)$/)
       if (m) olBuf.push({ n: m[1], t: m[2] })
     } else if (line.trim() === '') {
-      flushUl(); flushOl()
-      nodes.push(<div key={nextKey()} className="h-3" />)
+      flushUl(); flushOl(); flushTable()
+      nodes.push(<div key={nextKey()} className="h-4" />)
     } else {
-      flushUl(); flushOl()
-      nodes.push(<p key={nextKey()} className="mb-2.5 text-zinc-300 leading-7" dangerouslySetInnerHTML={{ __html: parseBold(line) }} />)
+      flushUl(); flushOl(); flushTable()
+      nodes.push(<p key={nextKey()} className="mb-4 text-zinc-300 leading-relaxed text-[15px]">{parseInline(line)}</p>)
     }
   })
-  flushUl(); flushOl()
+  flushUl(); flushOl(); flushTable()
   return nodes
 }
 
@@ -142,8 +201,43 @@ function MiniSparkline({ value, color = '#1D9E75' }: { value: number; color?: st
 // --- Typing Indicator ---
 function TypingIndicator() {
   return (
-    <div className="typing-indicator flex items-center gap-1 py-2 px-1">
-      <span /><span /><span />
+    <div className="flex items-center gap-2 py-2 px-3 bg-zinc-900/50 border border-zinc-800/40 rounded-lg w-max text-xs text-zinc-400">
+      <span>VectorMind is thinking</span>
+      <div className="flex items-center gap-1">
+        <span className="w-1.5 h-1.5 bg-zinc-450 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+        <span className="w-1.5 h-1.5 bg-zinc-450 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+        <span className="w-1.5 h-1.5 bg-zinc-450 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+      </div>
+    </div>
+  )
+}
+
+// --- Grounding Badge ---
+function GroundingBadge({ grounding }: { grounding: { score: number; level: 'high' | 'medium' | 'low'; unsupported_claims: string[] } }) {
+  const [showTooltip, setShowTooltip] = useState(false)
+  const isHigh = grounding.level === 'high'
+  const isMed = grounding.level === 'medium'
+  const text = isHigh ? `Grounded ${grounding.score}%` : isMed ? `Check sources ${grounding.score}%` : `Low confidence ${grounding.score}%`
+  const colorClass = isHigh ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' :
+    isMed ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' :
+      'bg-red-500/10 text-red-500 border-red-500/20'
+  const icon = isHigh ? <CheckCircle className="w-3 h-3" /> : isMed ? <AlertTriangle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />
+
+  return (
+    <div className="relative inline-block" onMouseEnter={() => setShowTooltip(true)} onMouseLeave={() => setShowTooltip(false)}>
+      <div className={`cursor-help text-[10px] font-bold px-2.5 py-1 rounded-md border flex items-center gap-1.5 shadow-sm ${colorClass}`}>
+        {icon} {text}
+      </div>
+      {showTooltip && grounding.unsupported_claims && grounding.unsupported_claims.length > 0 && (
+        <div className="absolute bottom-full mb-2 left-0 w-64 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl p-3 z-50">
+          <div className="text-xs font-semibold text-zinc-300 mb-2">Unsupported Claims</div>
+          <ul className="text-[11px] text-zinc-400 space-y-1.5 list-disc pl-3">
+            {grounding.unsupported_claims.map((claim, i) => (
+              <li key={i}>{claim}</li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }
@@ -194,9 +288,20 @@ interface UploadFile {
   progress: number; stage: string; error?: string; chunks?: number;
   projectId?: string | null;
 }
+interface Citation {
+  id: number;
+  sourceName?: string;
+  chunk: string;
+  score: number;
+}
 interface Message {
   id: string; role: 'user' | 'assistant'; text: string; timestamp: Date;
   isLoading?: boolean; sources?: string[]; confidence?: { level: string; score: string }; sourceUrls?: string[];
+  citations?: Citation[];
+  error?: boolean;
+  cached?: boolean;
+  grounding?: { score: number; level: 'high' | 'medium' | 'low'; unsupported_claims: string[] };
+  suggestions?: string[];
 }
 interface ChatChannel {
   id: string; name: string; messages: Message[]; createdAt: string;
@@ -305,13 +410,47 @@ export default function Home() {
   const { containerRef: particleRef, burst: particleBurst } = useParticleBurst()
 
   // --- State ---
-  const [activeTab, setActiveTab] = useState<'chat' | 'dashboard' | 'database'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'chat' | 'dashboard' | 'database' | 'how-it-works'>('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarExpanded, setSidebarExpanded] = useState(false)
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false)
+  const [isStrictRAGMode, setIsStrictRAGMode] = useState(false)
   const toolsMenuRef = useRef<HTMLDivElement>(null)
+  const chatContainerRef = useRef<HTMLDivElement>(null)
+  const chatInputRef = useRef<HTMLTextAreaElement>(null)
+  const uploadAbortControllersRef = useRef<{ [id: string]: AbortController }>({})
+  const [showScrollBottom, setShowScrollBottom] = useState(false)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  // --- Theme State ---
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+    const stored = localStorage.getItem('vm-theme')
+    if (stored === 'light' || stored === 'dark') {
+      setTheme(stored)
+      document.documentElement.classList.toggle('light', stored === 'light')
+    } else {
+      const isSystemLight = window.matchMedia('(prefers-color-scheme: light)').matches
+      const defaultTheme = isSystemLight ? 'light' : 'dark'
+      setTheme(defaultTheme)
+      document.documentElement.classList.toggle('light', isSystemLight)
+    }
+  }, [])
+
+
+
+  const toggleTheme = () => {
+    setTheme(prev => {
+      const next = prev === 'dark' ? 'light' : 'dark'
+      localStorage.setItem('vm-theme', next)
+      document.documentElement.classList.toggle('light', next === 'light')
+      return next
+    })
+  }
 
   // Advanced File Management
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([])
@@ -343,12 +482,26 @@ export default function Home() {
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Auto-resize chat input
+  useEffect(() => {
+    if (chatInputRef.current) {
+      chatInputRef.current.style.height = '44px';
+      if (searchQuery) {
+        chatInputRef.current.style.height = `${Math.min(chatInputRef.current.scrollHeight, 120)}px`;
+      }
+    }
+  }, [searchQuery])
   const [messages, setMessages] = useState<Message[]>([])
   const activeMessageIdRef = useRef<string | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const [searchStep, setSearchStep] = useState<'idle' | 'hyde' | 'search' | 'rrf' | 'synth'>('idle')
   const [apiHealth, setApiHealth] = useState<'checking' | 'healthy' | 'error'>('checking')
   const [apiStats, setApiStats] = useState<any>(null)
+  const [activeCitation, setActiveCitation] = useState<Citation | null>(null)
+  const [isSearchLoading, setIsSearchLoading] = useState(false)
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const cancelledUploadsRef = useRef<Set<string>>(new Set())
 
   // Multi-Chat Channels
   const [chatChannels, setChatChannels] = useState<ChatChannel[]>([])
@@ -385,6 +538,14 @@ export default function Home() {
 
   // Custom Confirm Modal
   const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean, title: string, message: string, onConfirm: () => void } | null>(null)
+
+  useEffect(() => {
+    if (activeTab === 'chat' && activeProjectId) {
+      setTimeout(() => {
+        chatInputRef.current?.focus()
+      }, 50)
+    }
+  }, [activeChatId, activeProjectId, activeTab])
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -787,65 +948,15 @@ export default function Home() {
     setSortConfig({ key, direction })
   }
 
-  // --- Streaming Chat ---
-  const parseCompletion = (text: string) => {
-    let sources: string[] = []
-    let sourceUrls: string[] = []
-    let confidence: { level: string; score: string } | undefined
-    let remaining = text
-
-    if (remaining.startsWith('[SOURCES:')) {
-      const closingIndex = remaining.indexOf(']\n')
-      if (closingIndex !== -1) {
-        sources = JSON.parse(remaining.slice(9, closingIndex) || '[]')
-        remaining = remaining.slice(closingIndex + 2)
-      }
+  const stop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+      setIsSearchLoading(false)
+      setSearchStep('idle')
+      activeMessageIdRef.current = null
     }
-    if (remaining.startsWith('[CONFIDENCE:')) {
-      const closingIndex = remaining.indexOf(']\n')
-      if (closingIndex !== -1) {
-        const [level, score] = remaining.slice(12, closingIndex).split(':')
-        confidence = { level, score: score || '0' }
-        remaining = remaining.slice(closingIndex + 2)
-      }
-    }
-
-    sourceUrls = sources.map(src => {
-      const doc = documents.find(d => d.meta?.filename === src)
-      return doc?.meta?.storageUrl || ''
-    })
-    return { sources, sourceUrls, confidence, cleanText: remaining }
   }
-
-  const { complete, completion, isLoading: isSearchLoading, stop } = useCompletion({
-    api: '/api/vector-search',
-    onFinish: (prompt, result) => {
-      setSearchStep('idle')
-      const id = activeMessageIdRef.current
-      if (!id) return
-      const { sources, sourceUrls, confidence, cleanText } = parseCompletion(result)
-      setMessages(prev => prev.map(m => m.id === id ? { ...m, text: cleanText, sources, sourceUrls, confidence, isLoading: false } : m))
-      activeMessageIdRef.current = null
-    },
-    onError: (err) => {
-      setSearchStep('idle')
-      const id = activeMessageIdRef.current
-      if (!id) return
-      setMessages(prev => prev.map(m => m.id === id ? { ...m, text: `Error: ${err.message}`, isLoading: false } : m))
-      activeMessageIdRef.current = null
-    }
-  })
-
-  useEffect(() => {
-    if (completion && isSearchLoading && activeMessageIdRef.current) {
-      setSearchStep('synth')
-      const { sources, sourceUrls, confidence, cleanText } = parseCompletion(completion)
-      setMessages(prev => prev.map(m => m.id === activeMessageIdRef.current ? {
-        ...m, text: cleanText || '', sources, sourceUrls, confidence, isLoading: false
-      } : m))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [completion, isSearchLoading])
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
@@ -892,6 +1003,7 @@ export default function Home() {
     }
 
     setSearchQuery('')
+    setIsSearchLoading(true)
 
     const userMsg: Message = { id: Math.random().toString(), role: 'user', text: query, timestamp: new Date() }
     const activeId = Math.random().toString()
@@ -905,18 +1017,91 @@ export default function Home() {
     setTimeout(() => setSearchStep('rrf'), 2500)
 
     const chatHistory = messages.filter(m => !m.isLoading && m.text).slice(-6).map(m => ({ role: m.role, text: m.text }))
+    const conversationHistory = messages
+      .filter(m => !m.isLoading && m.text && !m.error)
+      .slice(-10) // last 5 turns
+      .map(m => ({
+        role: m.role === 'user' ? 'user' as const : 'assistant' as const,
+        content: m.text
+      }))
+    abortControllerRef.current = new AbortController()
+
     try {
-      await complete(query, {
-        body: {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: query,
           chatHistory,
+          conversationHistory,
           projectId: activeProjectId,
           chatProvider: activeProject?.chat_provider || 'groq',
           embeddingProvider: activeProject?.embedding_provider || 'cohere',
-          selectedFileIds
-        }
+          selectedFileIds,
+          strictMode: isStrictRAGMode
+        }),
+        signal: abortControllerRef.current.signal
       })
-    } catch (err) {
-      console.error(err)
+
+      if (!res.ok) throw new Error(await res.text())
+
+      const reader = res.body?.getReader()
+      if (!reader) throw new Error('No stream response')
+
+      const decoder = new TextDecoder()
+      let fullText = ''
+
+      setSearchStep('synth')
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = decoder.decode(value, { stream: true })
+        const lines = chunk.split('\n')
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+              if (data.error) {
+                throw new Error(data.error)
+              }
+              if (data.token) {
+                fullText += data.token
+                setMessages(prev => prev.map(m => m.id === activeId ? { ...m, text: fullText } : m))
+              }
+              if (data.text_done) {
+                setMessages(prev => prev.map(m => m.id === activeId ? { ...m, isLoading: false } : m))
+              }
+              if (data.done) {
+                setMessages(prev => prev.map(m => m.id === activeId ? {
+                  ...m,
+                  isLoading: false,
+                  text: m.text || data.debugAnswer || "The AI generated an empty response. This might be due to a strict system prompt or an API format change.",
+                  citations: data.citations,
+                  cached: data.cached,
+                  grounding: data.grounding,
+                  suggestions: data.suggestions
+                } : m))
+              }
+
+            } catch (err) {
+              console.error('SSE Parse Error:', err)
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        setMessages(prev => prev.map(m => m.id === activeId ? { ...m, isLoading: false } : m))
+      } else {
+        setMessages(prev => prev.map(m => m.id === activeId ? { ...m, text: `Error: ${err.message}`, isLoading: false, error: true } : m))
+      }
+    } finally {
+      setIsSearchLoading(false)
+      setSearchStep('idle')
+      activeMessageIdRef.current = null
+      abortControllerRef.current = null
     }
   }
 
@@ -926,6 +1111,25 @@ export default function Home() {
     setTimeout(() => setCopiedId(null), 2000)
   }
 
+  const stopUpload = async (id: string, filename: string, projectId?: string | null) => {
+    cancelledUploadsRef.current.add(id)
+    if (uploadAbortControllersRef.current[id]) {
+      uploadAbortControllersRef.current[id].abort()
+      delete uploadAbortControllersRef.current[id]
+    }
+    
+    // Eagerly remove from UI so it doesn't get stuck if DB is slow
+    setUploadQueue(prev => prev.filter(q => q.id !== id))
+    
+    if (!projectId) return
+    
+    try {
+      await fetch(`/api/documents?filename=${encodeURIComponent(filename)}&projectId=${projectId}`, { method: 'DELETE' })
+      fetchLibrary()
+    } catch (e) {
+      console.error('Failed to clean up aborted upload:', e)
+    }
+  }
 
   const removeQueueItem = (id: string) => {
     setUploadQueue(prev => prev.filter(item => item.id !== id))
@@ -951,6 +1155,8 @@ export default function Home() {
     setIsUploading(true)
     const queueToProcess = (overrideQueue || uploadQueue).filter(item => item.projectId === activeProjectId)
     for (const item of queueToProcess.filter(q => q.status === 'idle')) {
+      if (cancelledUploadsRef.current.has(item.id)) continue;
+      
       setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'uploading', progress: 5, stage: 'Uploading & chunking...' } : q))
       try {
         const reader = new FileReader()
@@ -960,8 +1166,12 @@ export default function Home() {
           reader.readAsDataURL(item.file)
         })
 
+        const controller = new AbortController()
+        uploadAbortControllersRef.current[item.id] = controller
+
         const res = await fetch('/api/upload', {
           method: 'POST',
+          signal: controller.signal,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             filename: item.file.name,
@@ -994,7 +1204,9 @@ export default function Home() {
             if (!line.trim()) continue
             try {
               const data = JSON.parse(line)
-              if (data.status === 'started') {
+              if (data.status === 'info') {
+                setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, stage: data.message } : q))
+              } else if (data.status === 'started') {
                 setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, progress: 10, stage: `Chunking into ${data.chunksTotal} units...` } : q))
               } else if (data.status === 'warning') {
                 setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, stage: `⚠️ ${data.message}` } : q))
@@ -1006,9 +1218,13 @@ export default function Home() {
               } else if (data.status === 'success') {
                 successResult = data
               } else if (data.status === 'error') {
-                throw new Error(data.error)
+                // Return early from the stream processing so the outer block throws it
+                throw new Error(`SERVER_ERROR:${data.error}`)
               }
             } catch (e: any) {
+              if (e.message && e.message.startsWith('SERVER_ERROR:')) {
+                throw new Error(e.message.replace('SERVER_ERROR:', ''))
+              }
               console.error('SSE JSON error:', e)
             }
           }
@@ -1018,8 +1234,12 @@ export default function Home() {
           try {
             const data = JSON.parse(buffer)
             if (data.status === 'success') successResult = data
-            if (data.status === 'error') throw new Error(data.error)
-          } catch (e) { }
+            if (data.status === 'error') throw new Error(`SERVER_ERROR:${data.error}`)
+          } catch (e: any) { 
+            if (e.message && e.message.startsWith('SERVER_ERROR:')) {
+              throw new Error(e.message.replace('SERVER_ERROR:', ''))
+            }
+          }
         }
 
         if (!successResult) {
@@ -1028,7 +1248,13 @@ export default function Home() {
 
         setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'success', progress: 100, stage: 'Indexed successfully!', chunks: successResult.chunksIndexed } : q))
       } catch (err: any) {
-        setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'error', progress: 0, stage: 'Failed Ingestion', error: err.message || 'Error occurred' } : q))
+        if (err.name === 'AbortError') {
+          setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'error', error: 'Upload cancelled', stage: 'Cancelled' } : q))
+        } else {
+          setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'error', progress: 0, stage: 'Failed Ingestion', error: err.message || 'Error occurred' } : q))
+        }
+      } finally {
+        delete uploadAbortControllersRef.current[item.id]
       }
     }
     setIsUploading(false)
@@ -1141,8 +1367,8 @@ export default function Home() {
           <button type="button" onClick={() => setSelectedFileIds([])} className="text-[11px] text-zinc-500 hover:text-zinc-300 px-2">Clear</button>
         </div>
       )}
-      <form onSubmit={handleSearchSubmit} className="vm-pill-input flex items-center gap-1 pl-1.5 pr-2 py-1.5 w-full">
-        <div ref={toolsMenuRef} className="relative shrink-0">
+      <form onSubmit={handleSearchSubmit} className="vm-pill-input flex items-end gap-1 pl-1.5 pr-2 py-1.5 w-full">
+        <div ref={toolsMenuRef} className="relative shrink-0 mb-[2px]">
           <button type="button" onClick={() => setToolsMenuOpen(!toolsMenuOpen)} className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-400 hover:bg-white/5 hover:text-zinc-100" aria-label="More options">
             <PlusCircle className="w-5 h-5" />
           </button>
@@ -1154,22 +1380,57 @@ export default function Home() {
               <button type="button" className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-zinc-200 hover:bg-white/5 flex items-center gap-2" onClick={() => { setFileSelectorOpen(!fileSelectorOpen); setToolsMenuOpen(false) }}>
                 <Paperclip className="w-4 h-4 text-emerald-400" /> Search specific files
               </button>
+              <button type="button" className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-zinc-200 hover:bg-white/5 flex items-center justify-between" onClick={() => { setIsStrictRAGMode(!isStrictRAGMode); setToolsMenuOpen(false) }}>
+                <div className="flex items-center gap-2">
+                  <Database className="w-4 h-4 text-emerald-400" /> Only use my DB
+                </div>
+                {isStrictRAGMode && <Check className="w-4 h-4 text-emerald-400" />}
+              </button>
               <button type="button" className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-zinc-200 hover:bg-white/5 flex items-center gap-2" onClick={() => { startNewChat(); setToolsMenuOpen(false) }}>
                 <MessageSquare className="w-4 h-4 text-emerald-400" /> New chat
               </button>
             </div>
           )}
         </div>
-        <input type="text" disabled={!activeProjectId} placeholder={!activeProjectId ? 'Create a workspace in the sidebar…' : 'Ask your documents anything…'} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="flex-1 min-w-0 bg-transparent py-2.5 px-1 outline-none text-zinc-100 placeholder:text-zinc-500 text-[15px] disabled:opacity-50" />
-        <div className="hidden sm:block w-28 shrink-0">
+        <div className="flex-1 min-w-0 flex flex-col justify-center">
+          <textarea 
+            ref={chatInputRef} 
+            disabled={!activeProjectId} 
+            placeholder={!activeProjectId ? 'Create a workspace in the sidebar…' : 'Ask your documents anything…'} 
+            value={searchQuery} 
+            rows={1}
+            onChange={e => {
+              setSearchQuery(e.target.value);
+              e.target.style.height = '44px';
+              e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (searchQuery.trim()) {
+                  handleSearchSubmit(e as any);
+                  // Reset height after submission
+                  setTimeout(() => {
+                    if (chatInputRef.current) {
+                      chatInputRef.current.style.height = '44px';
+                    }
+                  }, 10);
+                }
+              }
+            }}
+            className="w-full bg-transparent py-2.5 px-1 outline-none text-zinc-100 placeholder:text-zinc-500 text-[15px] disabled:opacity-50 resize-none overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-words leading-relaxed custom-scrollbar block" 
+            style={{ minHeight: '44px', maxHeight: '120px' }}
+          />
+        </div>
+        <div className="hidden sm:block w-28 shrink-0 mb-1">
           <CustomSelect value={activeProject?.chat_provider || 'groq'} onChange={handleUpdateChatProvider} options={CHAT_PROVIDER_OPTIONS} containerClassName="w-full" buttonClassName="flex h-9 w-full items-center justify-between rounded-full bg-white/5 px-3 text-xs text-zinc-300 hover:bg-white/10 border-0" dropdownPosition="bottom-full mb-2 left-0 right-0 z-[200] origin-bottom" />
         </div>
         {isSearchLoading ? (
-          <button type="button" onClick={() => stop()} className="w-9 h-9 shrink-0 rounded-full bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-all flex items-center justify-center shadow-lg shadow-red-500/5 animate-pulse" aria-label="Stop">
+          <button type="button" onClick={() => stop()} className="w-9 h-9 shrink-0 rounded-full bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-all flex items-center justify-center shadow-lg shadow-red-500/5 animate-pulse mb-1" aria-label="Stop">
             <Square className="w-3.5 h-3.5 fill-current" />
           </button>
         ) : (
-          <button type="submit" disabled={!searchQuery.trim() || !activeProjectId} className="w-9 h-9 shrink-0 rounded-full bg-emerald-500 text-[#0a0a0c] hover:bg-emerald-450 hover:scale-105 active:scale-95 disabled:opacity-30 disabled:hover:scale-100 disabled:active:scale-100 transition-all flex items-center justify-center shadow-lg shadow-emerald-500/10" aria-label="Search">
+          <button type="submit" disabled={!searchQuery.trim() || !activeProjectId} className="w-9 h-9 shrink-0 rounded-full bg-emerald-500 text-[#0a0a0c] hover:bg-emerald-450 hover:scale-105 active:scale-95 disabled:opacity-30 disabled:hover:scale-100 disabled:active:scale-100 transition-all flex items-center justify-center shadow-lg shadow-emerald-500/10 mb-1" aria-label="Search">
             <ArrowRight className="w-4 h-4 stroke-[2.5]" />
           </button>
         )}
@@ -1246,7 +1507,7 @@ export default function Home() {
     </>
   )
 
-  function navBtn(tab: 'chat' | 'dashboard' | 'database', icon: React.ReactNode, label: string) {
+  function navBtn(tab: 'chat' | 'dashboard' | 'database' | 'how-it-works', icon: React.ReactNode, label: string) {
     return (
       <button
         type="button"
@@ -1279,8 +1540,8 @@ export default function Home() {
       {/* Unified Left Sidebar */}
       <div
         className={`fixed md:relative inset-y-0 left-0 z-50 flex shrink-0 border-r border-white/[0.06] bg-[#1a1a1c] transition-[width] duration-300 ease-out overflow-hidden ${showExpandedSidebar
-            ? 'w-[min(100vw,332px)] md:w-[332px]'
-            : 'w-0 md:w-[52px] border-r-0 md:border-r'
+          ? 'w-[min(100vw,332px)] md:w-[332px]'
+          : 'w-0 md:w-[52px] border-r-0 md:border-r'
           }`}
       >
         {/* Leftmost Rail: Icons Only (Always visible on desktop) */}
@@ -1289,15 +1550,15 @@ export default function Home() {
             type="button"
             onClick={toggleSidebarPanel}
             title={showExpandedSidebar ? "Collapse panel" : "Expand panel"}
-            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/5 mb-2 group relative transition-all duration-200"
+            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/5 mb-2 group transition-all duration-200"
           >
-            <Zap className={`w-5 h-5 text-emerald-400 absolute transition-all duration-200 ${showExpandedSidebar ? 'opacity-0 scale-75 rotate-45' : 'group-hover:opacity-0 group-hover:scale-75 group-hover:rotate-45'}`} />
-            <SidebarToggleIcon className={`w-5 h-5 text-zinc-400 absolute transition-all duration-200 ${showExpandedSidebar ? 'opacity-100 scale-100 rotate-0' : 'opacity-0 scale-75 rotate-45 group-hover:opacity-100 group-hover:scale-100 group-hover:rotate-0'}`} />
+            <SidebarToggleIcon className="w-5 h-5 text-zinc-400 group-hover:text-zinc-200 transition-colors" />
           </button>
           <div className="w-8 border-t border-white/[0.06] my-1" />
           {navBtn('dashboard', <LayoutDashboard className="w-5 h-5" />, 'Dashboard')}
           {navBtn('chat', <MessageSquare className="w-5 h-5" />, 'Chat')}
           {navBtn('database', <Database className="w-5 h-5" />, 'Library')}
+          {navBtn('how-it-works', <Info className="w-5 h-5" />, 'How it Works')}
           <div className="mt-auto flex flex-col items-center gap-2 pb-2">
             <button
               type="button"
@@ -1697,11 +1958,11 @@ export default function Home() {
       <div className="flex-1 flex flex-col min-h-0 relative z-10">
         <div className="h-14 border-b border-white/[0.06] bg-[#131314]/90 backdrop-blur-xl flex items-center justify-between px-4 shrink-0 sticky top-0 z-30">
           <div className="flex items-center gap-3 min-w-0">
-            <button type="button" onClick={() => setSidebarOpen(true)} className="md:hidden p-2 rounded-full hover:bg-white/5 text-zinc-400 shrink-0"><Menu className="w-5 h-5" /></button>
+            <button type="button" onClick={() => setSidebarOpen(true)} className="md:hidden p-2 rounded-full hover:bg-white/5 text-zinc-400 hover:text-zinc-200 transition-colors shrink-0"><SidebarToggleIcon className="w-5 h-5" /></button>
 
             {/* Active Tab Badge */}
             <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md shrink-0 select-none">
-              {activeTab === 'dashboard' ? 'Dashboard' : activeTab === 'chat' ? 'Chat' : 'Library'}
+              {activeTab === 'dashboard' ? 'Dashboard' : activeTab === 'chat' ? 'Chat' : activeTab === 'database' ? 'Library' : 'How it Works'}
             </span>
 
             <span className="text-zinc-700 text-xs shrink-0 select-none">/</span>            {/* Workspace Indicator Selector Dropdown */}
@@ -1747,8 +2008,8 @@ export default function Home() {
                               setNavbarDropdownOpen(false)
                             }}
                             className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition flex items-center gap-2 ${activeProjectId === p.id
-                                ? 'bg-[#1D9E75]/10 text-emerald-400 font-semibold'
-                                : 'text-zinc-300 hover:bg-white/5'
+                              ? 'bg-[#1D9E75]/10 text-emerald-400 font-semibold'
+                              : 'text-zinc-300 hover:bg-white/5'
                               }`}
                           >
                             <Folder className={`w-3.5 h-3.5 shrink-0 ${activeProjectId === p.id ? 'text-emerald-400' : 'text-zinc-500'}`} />
@@ -1819,6 +2080,15 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
+            {mounted && (
+              <button
+                onClick={toggleTheme}
+                title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+                className="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-emerald-400 border border-white/[0.04] transition-all no-invert"
+              >
+                {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
+            )}
             {isLibraryLoading && <Loader2 className="w-4 h-4 animate-spin text-zinc-550" />}
             {activeTab === 'chat' && activeProjectId && (
               <button
@@ -2126,8 +2396,8 @@ export default function Home() {
                         }}
                         onClick={() => dbFileInputRef.current?.click()}
                         className={`group/drop relative overflow-hidden rounded-xl p-8 text-center cursor-pointer transition-all duration-300 border border-dashed flex-1 flex flex-col justify-center min-h-[160px] ${dbDragActive
-                            ? 'border-emerald-500 bg-emerald-500/5 shadow-[0_0_15px_rgba(16,185,129,0.1)]'
-                            : 'border-white/[0.08] hover:border-emerald-500/40 bg-zinc-950/40 hover:bg-zinc-900/10'
+                          ? 'border-emerald-500 bg-emerald-500/5 shadow-[0_0_15px_rgba(16,185,129,0.1)]'
+                          : 'border-white/[0.08] hover:border-emerald-500/40 bg-zinc-950/40 hover:bg-zinc-900/10'
                           }`}
                       >
                         <input ref={dbFileInputRef} type="file" multiple className="hidden" accept=".pdf,.md,.txt,.json,.docx" onChange={(e) => { if (e.target.files) addFilesToQueue(Array.from(e.target.files)) }} />
@@ -2197,8 +2467,17 @@ export default function Home() {
                                         <span className="text-[10px] font-mono font-bold text-emerald-400">{item.progress}%</span>
                                       )}
 
-                                      {/* Remove from queue button */}
-                                      {item.status !== 'uploading' && (
+                                      {/* Remove or Stop button */}
+                                      {item.status === 'uploading' ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => stopUpload(item.id, item.file.name, item.projectId)}
+                                          className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-all ml-1 shrink-0"
+                                          title="Stop and delete upload"
+                                        >
+                                          <XCircle className="w-4 h-4" />
+                                        </button>
+                                      ) : (
                                         <button
                                           type="button"
                                           onClick={() => removeQueueItem(item.id)}
@@ -2397,6 +2676,166 @@ export default function Home() {
           </div>
         )}
 
+        {/* --- View: How it Works (Architecture) --- */}
+        {activeTab === 'how-it-works' && (
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8 custom-scrollbar bg-[#131314]">
+            <div className="max-w-5xl mx-auto animate-page-load space-y-8 pb-12">
+              <div className="flex flex-col items-start gap-4 border-b border-white/[0.06] pb-6">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
+                  <Zap className="w-6 h-6 text-emerald-400" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-zinc-100 tracking-tight">System Architecture & Flow</h2>
+                  <p className="text-sm text-zinc-400 mt-2 leading-relaxed">
+                    A deep dive into VectorMind&apos;s proprietary RAG architecture. This section breaks down the entire lifecycle of a document, the retrieval algorithms, and the multi-LLM orchestration pipeline.
+                  </p>
+                </div>
+              </div>
+
+              {/* Flowchart Section */}
+              <div className="bg-zinc-950/80 border border-white/[0.06] p-6 md:p-8 rounded-2xl overflow-hidden relative">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 blur-[80px] -mr-20 -mt-20 pointer-events-none" />
+                <h3 className="text-lg font-bold text-zinc-100 mb-6 flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-emerald-400" />
+                  End-to-End Execution Flow
+                </h3>
+
+                <div className="flex flex-col gap-2 font-mono text-xs md:text-sm">
+                  {/* Step 1 */}
+                  <div className="flex items-center gap-4">
+                    <div className="w-24 text-right text-emerald-400/80 shrink-0">Upload</div>
+                    <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded p-3 text-zinc-300 relative">
+                      <div className="absolute left-[-17px] top-1/2 -translate-y-1/2 w-4 h-[2px] bg-emerald-500/30" />
+                      Frontend extracts raw file (PDF/MD/TXT) → encodes to Base64 → sends to <code>/api/upload</code>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4"><div className="w-24 shrink-0" /><div className="w-px h-6 bg-zinc-800 ml-4" /></div>
+
+                  {/* Step 2 */}
+                  <div className="flex items-center gap-4">
+                    <div className="w-24 text-right text-blue-400/80 shrink-0">Processing</div>
+                    <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded p-3 text-zinc-300 relative">
+                      <div className="absolute left-[-17px] top-1/2 -translate-y-1/2 w-4 h-[2px] bg-blue-500/30" />
+                      PDF parsed via <code>pdf-parse</code> / <code>unpdf</code> → text sanitized (null bytes stripped) → hierarchical sliding-window chunking
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4"><div className="w-24 shrink-0" /><div className="w-px h-6 bg-zinc-800 ml-4" /></div>
+
+                  {/* Step 3 */}
+                  <div className="flex items-center gap-4">
+                    <div className="w-24 text-right text-purple-400/80 shrink-0">Embedding</div>
+                    <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded p-3 text-zinc-300 relative">
+                      <div className="absolute left-[-17px] top-1/2 -translate-y-1/2 w-4 h-[2px] bg-purple-500/30" />
+                      Batch embedding generation (Gemini: 768-dim, Cohere: 1024-dim, OpenAI: 1536-dim)
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4"><div className="w-24 shrink-0" /><div className="w-px h-6 bg-zinc-800 ml-4" /></div>
+
+                  {/* Step 4 */}
+                  <div className="flex items-center gap-4">
+                    <div className="w-24 text-right text-amber-400/80 shrink-0">Storage</div>
+                    <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded p-3 text-zinc-300 relative">
+                      <div className="absolute left-[-17px] top-1/2 -translate-y-1/2 w-4 h-[2px] bg-amber-500/30" />
+                      Supabase pgvector indexing. Original files cached securely.
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4"><div className="w-24 shrink-0" /><div className="w-px h-6 bg-zinc-800 ml-4" /></div>
+
+                  {/* Step 5 */}
+                  <div className="flex items-center gap-4">
+                    <div className="w-24 text-right text-rose-400/80 shrink-0">Retrieval</div>
+                    <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded p-3 text-zinc-300 relative">
+                      <div className="absolute left-[-17px] top-1/2 -translate-y-1/2 w-4 h-[2px] bg-rose-500/30" />
+                      HyDE Query Expansion → pgvector <code>&lt;#&gt;</code> match → MMR + RRF Re-ranking → LLM Context Injection
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Tech & Libraries */}
+                <div className="bg-zinc-950/50 border border-white/[0.04] p-6 rounded-2xl relative overflow-hidden group hover:border-emerald-500/20 transition-colors">
+                  <Database className="w-6 h-6 text-emerald-400 mb-4" />
+                  <h3 className="text-lg font-bold text-zinc-100 mb-4">Tech Stack & Libraries</h3>
+                  <div className="space-y-4 text-sm text-zinc-400">
+                    <div>
+                      <div className="text-zinc-200 font-semibold mb-1">Core Framework</div>
+                      <p>Next.js 13 (Pages Router) for full-stack API routes & React frontend. Styled with Tailwind CSS & Lucide icons.</p>
+                    </div>
+                    <div>
+                      <div className="text-zinc-200 font-semibold mb-1">Database & Vectors</div>
+                      <p>Supabase PostgreSQL with the <code>pgvector</code> extension. Utilizes custom RPC functions for high-speed similarity search.</p>
+                    </div>
+                    <div>
+                      <div className="text-zinc-200 font-semibold mb-1">Document Parsing</div>
+                      <p><code>pdf-parse</code> and <code>unpdf</code> for binary PDF streams. Native extraction for DOCX, MD, and code files.</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* AI Models & Limits */}
+                <div className="bg-zinc-950/50 border border-white/[0.04] p-6 rounded-2xl relative overflow-hidden group hover:border-blue-500/20 transition-colors">
+                  <Bot className="w-6 h-6 text-blue-400 mb-4" />
+                  <h3 className="text-lg font-bold text-zinc-100 mb-4">Models & Configurations</h3>
+                  <div className="space-y-4 text-sm text-zinc-400">
+                    <div>
+                      <div className="flex justify-between font-semibold mb-1"><span className="text-zinc-200">Google Gemini</span><span className="text-emerald-400 text-xs">Default</span></div>
+                      <p>Embeddings: <code>gemini-embedding-2</code> (768-dim)<br />Chat: <code>gemini-2.0-flash</code> (15 RPM limit on free tier)</p>
+                    </div>
+                    <div>
+                      <div className="flex justify-between font-semibold mb-1"><span className="text-zinc-200">Cohere</span><span className="text-blue-400 text-xs">High-dim</span></div>
+                      <p>Embeddings: <code>embed-english-v3.0</code> (1024-dim)<br />Chat: <code>command-a-03-2025</code> (1000 calls/mo limit)</p>
+                    </div>
+                    <div>
+                      <div className="flex justify-between font-semibold mb-1"><span className="text-zinc-200">Groq (Llama 3.3)</span><span className="text-purple-400 text-xs">Ultra-fast</span></div>
+                      <p>Chat: <code>llama-3.3-70b-versatile</code> (1000 RPD free). Groq provides sub-second inference speeds.</p>
+                    </div>
+                    <div>
+                      <div className="flex justify-between font-semibold mb-1"><span className="text-zinc-200">OpenAI</span><span className="text-amber-400 text-xs">Premium</span></div>
+                      <p>Embeddings: <code>text-embedding-3-small</code> (1536-dim)<br />Chat: <code>gpt-4o-mini</code> (Pay-as-you-go limits)</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Search & Algorithms */}
+                <div className="bg-zinc-950/50 border border-white/[0.04] p-6 rounded-2xl relative overflow-hidden group hover:border-purple-500/20 transition-colors">
+                  <Search className="w-6 h-6 text-purple-400 mb-4" />
+                  <h3 className="text-lg font-bold text-zinc-100 mb-4">Search & Ranking Algorithms</h3>
+                  <div className="space-y-4 text-sm text-zinc-400">
+                    <div>
+                      <div className="text-zinc-200 font-semibold mb-1">Negative Dot Product (<code>&lt;#&gt;</code>)</div>
+                      <p>Instead of cosine similarity, Postgres uses <code>embedding &lt;#&gt; query * -1</code>. Because LLM embeddings are L2 normalized, dot product gives identical results to cosine similarity but skips the CPU-expensive square root math.</p>
+                    </div>
+                    <div>
+                      <div className="text-zinc-200 font-semibold mb-1">HyDE (Hypothetical Doc Embeddings)</div>
+                      <p>When you ask a question, an LLM first guesses the answer. The system then embeds the <em>guess</em> along with your query to find much more semantically accurate matches.</p>
+                    </div>
+                    <div>
+                      <div className="text-zinc-200 font-semibold mb-1">MMR & RRF</div>
+                      <p>Maximal Marginal Relevance filters out redundant chunks. Reciprocal Rank Fusion combines the scores of multiple parallel vector queries into one master rank.</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Security & System */}
+                <div className="bg-zinc-950/50 border border-white/[0.04] p-6 rounded-2xl relative overflow-hidden group hover:border-rose-500/20 transition-colors">
+                  <span className="w-6 h-6 text-rose-400 mb-4 block"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg></span>
+                  <h3 className="text-lg font-bold text-zinc-100 mb-4">Security & Processing Defenses</h3>
+                  <ul className="space-y-3 text-sm text-zinc-400">
+                    <li className="flex gap-2.5"><span className="text-rose-500 mt-0.5">•</span> <strong>Null Byte Stripping:</strong> Postgres crashes if a text string contains <code>\u0000</code>. The ingestion pipeline strictly regex-sanitizes all extracted text.</li>
+                    <li className="flex gap-2.5"><span className="text-rose-500 mt-0.5">•</span> <strong>Cascade Deletion:</strong> Deleting a workspace or document automatically triggers a database cascade, securely destroying all vector embeddings.</li>
+                    <li className="flex gap-2.5"><span className="text-rose-500 mt-0.5">•</span> <strong>API Route Protection:</strong> Payload size limits are enforced (<code>50mb</code> max) and rate limiting delays are injected directly into the embedding API retry loop.</li>
+                    <li className="flex gap-2.5"><span className="text-rose-500 mt-0.5">•</span> <strong>Server-Side Only:</strong> No API keys are leaked to the client. All Supabase, OpenAI, Gemini, and Cohere requests happen purely on Next.js backend edge routes.</li>
+                  </ul>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )}
+
         {/* --- Chat (Gemini-style) --- */}
         {activeTab === 'chat' && (
           <div className="flex-1 min-h-0 flex flex-col relative overflow-hidden">
@@ -2407,11 +2846,9 @@ export default function Home() {
               {messages.length === 0 ? (
                 <div className="flex flex-col items-center px-4 py-8 max-w-5xl mx-auto w-full">
                   <h1 className="text-3xl md:text-4xl font-normal text-zinc-100 text-center mb-8 tracking-tight">
-                    {activeChannelName
-                      ? `Ask anything in ${activeChannelName}`
-                      : activeProject?.name
-                        ? `Ask anything about ${activeProject.name}`
-                        : 'What would you like to know?'}
+                    {activeProject?.name
+                      ? `Ask anything about ${activeProject.name}`
+                      : 'What would you like to know?'}
                   </h1>
                   {documents.length === 0 && activeProjectId && (
                     <p className="text-xs text-zinc-500 text-center mb-6 max-w-md font-medium leading-relaxed">
@@ -2428,7 +2865,14 @@ export default function Home() {
                   <div className="w-full mt-6">{chatComposerBlock}</div>
                 </div>
               ) : (
-                <div className="flex-1 overflow-y-auto custom-scrollbar w-full px-4 sm:px-8 pt-2 pb-4">
+                <div
+                  ref={chatContainerRef}
+                  className="flex-1 overflow-y-auto custom-scrollbar w-full px-4 sm:px-8 pt-2 pb-4 relative"
+                  onScroll={(e) => {
+                    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget
+                    setShowScrollBottom(scrollHeight - scrollTop - clientHeight > 150)
+                  }}
+                >
                   <div className="max-w-5xl mx-auto space-y-6 w-full">
                     {messages.map((msg) => (
                       <div key={msg.id} className={`flex gap-3 md:gap-5 animate-slide-up ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -2483,7 +2927,13 @@ export default function Home() {
                             ) : (
                               <div className={`leading-relaxed text-[14.5px] ${msg.role === 'assistant' ? 'prose-chat' : 'font-medium tracking-wide'}`}>
                                 {msg.role === 'assistant'
-                                  ? renderMarkdown(msg.text)
+                                  ? <>
+                                    {renderMarkdown(msg.text, (citationId) => {
+                                      const citation = msg.citations?.find(c => c.id === citationId)
+                                      if (citation) setActiveCitation(citation)
+                                    })}
+                                    {msg.isLoading && <TypingIndicator />}
+                                  </>
                                   : <span className="text-zinc-100">{msg.text}</span>
                                 }
                               </div>
@@ -2491,10 +2941,14 @@ export default function Home() {
 
                             {/* Assistant Message Actions & Metadata */}
                             {msg.role === 'assistant' && !msg.isLoading && (
-                              <div className="mt-6 pt-4 border-t border-zinc-850 flex flex-col gap-4">
-
+                              <div className="mt-2 flex flex-col gap-4">
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-3">
+                                    {msg.cached && (
+                                      <div className="text-[10px] font-bold px-2.5 py-1 rounded-md border flex items-center gap-1.5 shadow-sm bg-yellow-500/10 text-yellow-500 border-yellow-500/20" title="Served from semantic cache">
+                                        <Zap className="w-3 h-3" /> CACHED
+                                      </div>
+                                    )}
                                     {/* CONFIDENCE TAG — temporarily hidden, re-enable when needed
                                     {msg.confidence && msg.confidence.level !== 'LOW' && (
                                       <div className={`text-[10px] font-bold px-2.5 py-1 rounded-md border flex items-center gap-1.5 shadow-sm ${msg.confidence.level === 'HIGH' ? 'bg-zinc-900 text-zinc-200 border-zinc-800' :
@@ -2511,40 +2965,61 @@ export default function Home() {
                                   </div>
 
                                   {/* AI Action Buttons */}
-                                  <div className="flex items-center gap-2">
-                                    {isSearchLoading && activeMessageIdRef.current === msg.id && (
-                                      <button onClick={() => stop()} className="flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-955/20 hover:bg-red-900/30 border border-red-900/30 px-2 py-1 rounded-md transition-colors">
-                                        <Square className="w-3 h-3" /> STOP
+                                  <div className="flex items-center gap-1.5 mt-1 -ml-1">
+                                    <button onClick={() => handleCopy(msg.id, msg.text)} className="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-white/5 rounded-md transition-colors" title="Copy response">
+                                      {copiedId === msg.id ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                                    </button>
+
+                                    {isSearchLoading && activeMessageIdRef.current === msg.id ? (
+                                      <button onClick={() => stop()} className="p-1.5 text-red-400 hover:text-red-300 hover:bg-white/5 rounded-md transition-colors" title="Stop generating">
+                                        <Square className="w-4 h-4" />
+                                      </button>
+                                    ) : (
+                                      <button onClick={() => handleSearchSubmit(undefined, messages.filter(m => m.role === 'user').pop()?.text)} className={`p-1.5 transition-colors rounded-md ${msg.error ? 'text-amber-400 hover:text-amber-300 hover:bg-amber-400/10' : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'}`} title="Regenerate response">
+                                        <RefreshCw className="w-4 h-4" />
                                       </button>
                                     )}
-                                    <button onClick={() => handleCopy(msg.id, msg.text)} className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-zinc-50 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 px-2 py-1 rounded-md transition-colors">
-                                      {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />} COPY
-                                    </button>
                                   </div>
                                 </div>
 
                                 {/* Source Citations with SaaS styling */}
-                                {msg.sources && msg.sources.length > 0 && (
+                                {msg.citations && msg.citations.length > 0 && /\[\d+(?:,\s*\d+)*\]/.test(msg.text) && (
                                   <div>
                                     <div className="text-[9px] font-bold text-zinc-550 uppercase tracking-widest mb-2 flex items-center gap-1.5">
                                       <LinkIcon className="w-3 h-3" /> Cited Sources
                                     </div>
                                     <div className="flex flex-wrap items-center gap-2">
-                                      {msg.sources.map((src, idx) => {
-                                        const url = msg.sourceUrls?.[idx]
-                                        return (
-                                          <button
-                                            key={idx}
-                                            onClick={() => url ? setPreviewPdfUrl(url) : alert("Document preview not available in storage.")}
-                                            className={`group relative overflow-hidden flex items-center gap-2 px-3 py-1.5 rounded-md border text-xs transition-all duration-200 ${url ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700 cursor-pointer hover:bg-zinc-855' : 'bg-transparent border-transparent text-zinc-650 cursor-not-allowed'}`}
-                                          >
-                                            <FileText className={`w-3.5 h-3.5 shrink-0 transition-colors ${url ? 'text-zinc-400 group-hover:text-zinc-300' : 'text-zinc-600'}`} />
-                                            <span className="truncate max-w-[180px] font-medium">{src}</span>
-                                            {url && <Eye className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 absolute right-3 text-zinc-450 transition-opacity" />}
-                                            {url && <span className="w-4 h-full bg-gradient-to-l from-zinc-900 group-hover:from-zinc-850 to-transparent absolute right-0" />}
-                                          </button>
-                                        )
-                                      })}
+                                      {Array.from(new Map(msg.citations.map(c => [c.sourceName, c])).values()).map((cit, idx) => (
+                                        <button
+                                          key={idx}
+                                          onClick={() => setActiveCitation(cit as any)}
+                                          className="group relative overflow-hidden flex items-center gap-2 px-3 py-1.5 rounded-md border text-xs transition-all duration-200 bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700 cursor-pointer hover:bg-zinc-855"
+                                        >
+                                          <FileText className="w-3.5 h-3.5 shrink-0 text-zinc-400 group-hover:text-zinc-300" />
+                                          <span className="truncate max-w-[180px] font-medium">{(cit as any).sourceName || `Source ${(cit as any).id}`}</span>
+                                          <Eye className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 absolute right-3 text-zinc-450 transition-opacity" />
+                                          <span className="w-4 h-full bg-gradient-to-l from-zinc-900 group-hover:from-zinc-850 to-transparent absolute right-0" />
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Follow-up Suggestions */}
+                                {msg.suggestions && msg.suggestions.length > 0 && (
+                                  <div className="mt-4 pt-4 border-t border-zinc-850/50 flex flex-col gap-2.5 animate-fade-in">
+                                    <div className="text-[10px] font-bold text-zinc-550 uppercase tracking-widest">Suggested Follow-ups</div>
+                                    <div className="flex flex-wrap gap-2">
+                                      {msg.suggestions.map((suggestion, idx) => (
+                                        <button
+                                          key={idx}
+                                          type="button"
+                                          onClick={() => setSearchQuery(suggestion)}
+                                          className="text-[13px] text-zinc-350 hover:text-zinc-50 bg-zinc-900/60 hover:bg-zinc-850/80 border border-zinc-800/80 hover:border-zinc-700/80 px-3.5 py-1.5 rounded-full transition-all duration-200 active:scale-95 shadow-sm"
+                                        >
+                                          {suggestion}
+                                        </button>
+                                      ))}
                                     </div>
                                   </div>
                                 )}
@@ -2568,13 +3043,80 @@ export default function Home() {
 
             {messages.length > 0 && (
               <div className="relative z-20 shrink-0 w-full px-4 sm:px-8 pb-6 pt-3 bg-gradient-to-t from-[#131314] via-[#131314] to-transparent">
-                <div className="max-w-5xl mx-auto">{chatComposerBlock}</div>
+                <div className="max-w-5xl mx-auto relative">
+                  {showScrollBottom && (
+                    <button
+                      onClick={() => chatContainerRef.current?.scrollTo({ top: chatContainerRef.current.scrollHeight, behavior: 'smooth' })}
+                      className="absolute -top-14 left-1/2 -translate-x-1/2 p-2 bg-[#1A1A1F] hover:bg-[#222228] border border-white/10 text-zinc-300 hover:text-white rounded-full shadow-2xl transition-all animate-fade-in z-[100] flex items-center justify-center group"
+                    >
+                      <ArrowDown className="w-4 h-4 group-hover:text-emerald-400" />
+                    </button>
+                  )}
+                  {messages.filter(m => !m.isLoading && m.text && !m.error).length > 0 && (
+                    <div className="flex items-center gap-1.5 justify-center mb-2.5 text-[10px] text-emerald-400 font-bold uppercase tracking-wider animate-pulse">
+                      <Zap className="w-3 h-3 fill-current" /> Conversation context active
+                    </div>
+                  )}
+                  {chatComposerBlock}
+                </div>
               </div>
             )}
           </div>
         )}
 
       </div>
+
+      {/* --- Citation Popover Modal --- */}
+      {activeCitation && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 animate-fade-in" onClick={() => setActiveCitation(null)}>
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+          <div className="bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl w-full max-w-7xl h-[90vh] flex flex-col relative z-10 animate-scale-in overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-md bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                  <FileText className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-zinc-100 font-bold text-sm tracking-wide">{activeCitation.sourceName || `Citation [${activeCitation.id}]`}</span>
+                  <span className="text-[10px] text-zinc-400 font-medium flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3 text-emerald-500" /> Semantic Match Score: {(activeCitation.score * 100).toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+              <button onClick={() => setActiveCitation(null)} className="p-1.5 text-zinc-400 hover:text-zinc-200 bg-transparent hover:bg-zinc-900 rounded-md transition-colors border border-transparent hover:border-zinc-800">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 flex overflow-hidden">
+              {/* Left Side: PDF Preview */}
+              <div className="flex-1 border-r border-zinc-800 bg-zinc-950/50">
+                {activeCitation.sourceName && (activeCitation.sourceName.toLowerCase().endsWith('.pdf') || activeCitation.sourceName.toLowerCase().endsWith('.txt') || activeCitation.sourceName.toLowerCase().endsWith('.md')) ? (
+                  <iframe src={`/api/preview/${encodeURIComponent(activeCitation.sourceName)}`} className="w-full h-full" />
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center text-zinc-500 gap-4">
+                    <FileText className="w-12 h-12 opacity-50" />
+                    <p className="text-sm font-medium">Document preview unavailable</p>
+                  </div>
+                )}
+              </div>
+              {/* Right Side: Extracted Chunk */}
+              <div className="w-full sm:w-[350px] lg:w-[400px] flex-shrink-0 bg-zinc-950 flex flex-col">
+                <div className="px-5 py-4 border-b border-zinc-800">
+                  <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
+                    <Zap className="w-3.5 h-3.5 text-emerald-400" /> Extracted Context
+                  </h3>
+                  <p className="text-[10px] text-zinc-500 mt-1">This is the exact snippet retrieved from the document used to generate the answer.</p>
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
+                  <div className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap font-medium font-mono text-[13px] bg-black/40 rounded-lg border border-white/5 p-4">
+                    {activeCitation.chunk}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- Premium PDF Preview Modal --- */}
       {previewPdfUrl && (

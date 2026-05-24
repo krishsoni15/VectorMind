@@ -138,24 +138,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.end()
     }
 
-    // Hybrid search
-    const allResultLists: any[][] = []
-    for (let i = 0; i < queryEmbeddings.length; i++) {
+    // Hybrid search (Concurrent)
+    const searchPromises = queryEmbeddings.map(async (embedding, i) => {
       const { data, error } = await supabase.rpc('hybrid_search', {
-        query_embedding: queryEmbeddings[i],
+        query_embedding: embedding,
         query_text: allQueries[i] || sanitizedQuery,
         p_project_id: projectId,
         match_count: 20,
         similarity_threshold: 0.1,
       })
-      if (error) { console.error(`[VectorMind] Search error ${i}:`, error); continue }
+      if (error) { console.error(`[VectorMind] Search error ${i}:`, error); return [] }
       
       let filteredData = data || []
       if (selectedFileIds && selectedFileIds.length > 0) {
         filteredData = filteredData.filter((item: any) => selectedFileIds.includes(String(item.page_id)))
       }
-      if (filteredData.length > 0) allResultLists.push(filteredData)
-    }
+      return filteredData
+    })
+
+    const resultsArray = await Promise.all(searchPromises)
+    const allResultLists = resultsArray.filter(list => list.length > 0)
 
     // RRF + MMR + Confidence
     const fusedResults = rrfFusion(allResultLists)

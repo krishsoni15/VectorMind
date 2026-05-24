@@ -39,6 +39,20 @@ html, body {
   font-size: 14px;
 }
 
+html {
+  transition: filter 0.5s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.5s;
+}
+
+html.light {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+html.light img,
+html.light video,
+html.light .no-invert {
+  filter: invert(1) hue-rotate(180deg);
+}
+
 .gemini-glow {
   pointer-events: none;
   position: absolute;
@@ -76,7 +90,7 @@ html, body {
 .vm-pill-input {
   background: var(--vm-surface-input);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 9999px;
+  border-radius: 24px;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 .vm-pill-input:focus-within {

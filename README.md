@@ -1,139 +1,198 @@
-# 🧠 VectorMind — System Architecture & RAG Documentation
+<div align="center">
+  <img src="https://raw.githubusercontent.com/krishsoni15/VectorMind/main/public/logo.png" alt="VectorMind Logo" width="120" />
+  <h1>VectorMind</h1>
+  <p><strong>Premium, Professional-Grade RAG & Autonomous AI Analysis Platform</strong></p>
 
-VectorMind is a premium, professional-grade **Retrieval-Augmented Generation (RAG)** platform designed to enable high-performance, context-aware semantic search and chatbot assistance over custom user document vaults. 
-
-Built using a state-of-the-art serverless architecture, VectorMind integrates **Next.js 13**, **Google Gemini**, and **Supabase (PostgreSQL + pgvector)** to offer sub-second document indexing, instant semantic search, and streaming, fully-cited AI completions.
-
----
-
-## 🏛️ System Architecture Overview
-
-The platform operates on two separate, optimized pipelines:
-1. **The Ingestion Pipeline (Write-path)**: Extracts, sanitizes, chunks, embeds, and indexes document files.
-2. **The RAG Query Loop (Read-path)**: Converts the user's query into an embedding, performs high-speed vector similarity matching in PostgreSQL, injects matching sections as context, and streams the answer from Gemini.
-
-### 🔄 System Flowchart
-
-```mermaid
-flowchart TD
-    subgraph Ingestion Pipeline [1. Ingestion & Indexing Pipeline]
-        A[User Uploads Files] -->|Up to 100 Files| B[Next.js Client UI]
-        B -->|Base64 Payload| C[API Endpoint: /api/upload]
-        C -->|Raw File Save| CA[(Local Directory: public/uploads)]
-        C -->|File Type check| D{Is PDF?}
-        D -->|Yes| E[pdf-parse Extraction]
-        D -->|No| F[UTF-8 Text Decode]
-        E --> G[Sanitation: Null Bytes Stripped]
-        F --> G
-        G --> H[Sliding-Window Chunking: 1000 char size, 200 overlap]
-        H --> I[Gemini: gemini-embedding-2]
-        I -->|768-Dim Vector| J[(Supabase PostgreSQL: pgvector)]
-    end
-
-    subgraph Query Loop [2. Retrieval-Augmented Generation Query Loop]
-        K[User Query] -->|Ask chatbot| L[API Endpoint: /api/vector-search]
-        L --> M[Gemini: gemini-embedding-2]
-        M -->|768-Dim Query Vector| N[Supabase RPC: match_page_sections]
-        N -->|Fast Negated Dot Product| O[Top 10 Relevant Sections]
-        O --> P[Filter & Format Context Chunks]
-        P --> Q[Assemble RAG System Prompt]
-        Q --> R[Gemini: gemini-2.5-flash]
-        R -->|Server-Sent Events SSE| S[Next.js Client Chatbot UI]
-    end
-```
+  <p>
+    <a href="#features">Features</a> •
+    <a href="#architecture">Architecture</a> •
+    <a href="#setup">Setup</a> •
+    <a href="#advanced-rag-prompt">AI Auto-Analysis Prompt</a>
+  </p>
+</div>
 
 ---
 
-## 🛠️ Deep-Dive Algorithmic Workflow
+## 🧠 System Architecture Overview
 
-### 1. Document Extraction & Sanitation
-When a file is uploaded, the frontend reads the content into a Base64 string to prevent transmission corruption across API request boundaries.
-* **PDF Processing**: Utilizes `pdf-parse` to extract clean text streams from binary PDF files page-by-page.
-* **Text Processing**: Handles other text-based formats (Markdown, Code, TXT, JSON) as standard UTF-8 strings.
-* **Sanitation**: PostgreSQL does not support null bytes (`\u0000`) or escaped null representations in string columns. The backend actively strips these strings (`content.replace(/\u0000/g, '').replace(/\\u0000/g, '')`) before writing to the database to prevent query failure.
-* **Local Caching**: Persists a copy of the file inside `public/uploads/` to enable fast, seamless in-app document previews.
+VectorMind is a highly-optimized **Retrieval-Augmented Generation (RAG)** platform designed to enable context-aware semantic search, document analysis, and autonomous AI orchestration over custom knowledge vaults.
 
-### 2. Sliding-Window Chunking
-Large documents exceed LLM token limits and dilute search relevance. The platform splits text into chunks using a sliding window:
-* **Chunk Size**: `1000` characters.
-* **Overlap**: `200` characters (ensures sentence-level context remains intact across chunk boundaries).
-* **Word Alignment**: Avoids splitting words in half by scanning for the last space character in the overlap zone (`lastIndexOf(' ', end)`) and adjusting the split boundary dynamically.
-* **SHA-256 Checksums**: A checksum of the clean content is computed and verified against existing database records to skip processing duplicate uploads.
+Built with a state-of-the-art serverless stack, VectorMind integrates **Next.js**, **Google Gemini**, **Cohere**, **Groq**, and **Supabase (PostgreSQL + pgvector)** to offer sub-second document indexing and fully-cited AI streaming.
 
-### 3. Gemini Vector Embeddings
-To represent the semantic "meaning" of a text chunk, VectorMind maps it to high-dimensional coordinate spaces using **Google Gemini**:
-* **Embedding Model**: `models/gemini-embedding-2` (via Gemini Embedding API).
-* **Task Types**:
-  * **Document Indexing**: Uses `taskType: "RETRIEVAL_DOCUMENT"`, which formats and optimizes the vector representation for database storage.
-  * **User Searching**: Uses `taskType: "RETRIEVAL_QUERY"`, which formats the search vector to match document vectors.
-* **Dimensionality**: `768` dimensions (highly compact and accurate).
+### 🔄 Dual-Pipeline Architecture
 
-### 4. Vector DB Similarity Matching (Supabase + pgvector)
-When a user asks a question, the query is converted into a 768-dimensional vector. The system queries Supabase using the `match_page_sections` database RPC function:
+1. **Ingestion Pipeline (Write-Path):** Extracts text (PDFs, Markdown, DOCX, Code), sanitizes null bytes, dynamically chunks via sliding-window, embeds using 768-dim/1024-dim models, and indexes via `pgvector`.
+2. **Query Loop (Read-Path):** Converts user queries to embeddings via HyDE (Hypothetical Document Embeddings), performs fast negative-dot-product similarity matching, applies MMR (Maximal Marginal Relevance) + RRF (Reciprocal Rank Fusion), and streams answers via LLM.
 
-```sql
-create or replace function match_page_sections(
-  embedding vector(768),
-  match_threshold float,
-  match_count int,
-  min_content_length int
-)
-returns table (
-  id bigint,
-  page_id bigint,
-  slug text,
-  heading text,
-  content text,
-  similarity float
-)
-language plpgsql
-as $$
-#variable_conflict use_variable
-begin
-  return query
-  select
-    nods_page_section.id,
-    nods_page_section.page_id,
-    nods_page_section.slug,
-    nods_page_section.heading,
-    nods_page_section.content,
-    (nods_page_section.embedding <#> embedding) * -1 as similarity
-  from nods_page_section
-  where length(nods_page_section.content) >= min_content_length
-    and (nods_page_section.embedding <#> embedding) * -1 > match_threshold
-  order by nods_page_section.embedding <#> embedding
-  limit match_count;
-end;
-$$;
+---
+
+## 💎 Premium Features
+
+* **Multi-LLM Orchestration:** Switch between Google Gemini 2.5 Flash, Cohere Command-R, Groq Llama 3, and OpenAI ChatGPT dynamically.
+* **Hybrid Search & Reranking:** Context compression, sliding-window token chunking, and intelligent reranking for zero-hallucination responses.
+* **Enterprise-Grade UI:** Glassmorphism, smooth micro-animations, customizable dark mode, and an intuitive sliding sidebar workspace.
+* **Multi-Format Ingestion:** Supports `.pdf`, `.docx`, `.md`, `.json`, `.ts`, `.csv`, `.py`, `.txt`, and more.
+* **Instant Workspace Sync:** Real-time updates, local storage cache layers, and immediate Supabase synchronization.
+
+---
+
+## 🛠️ Advanced RAG Auto-Analysis System Prompt
+
+Are you looking to deeply analyze, optimize, and refactor an entire RAG project (including VectorMind itself)? Use this massive system prompt in **Cursor AI**, **Windsurf**, **Claude**, or **OpenAI Platform**.
+
+<details>
+<summary><b>Click to expand the Advanced RAG Project Auto-Analysis Prompt</b></summary>
+
+```text
+# Advanced RAG Project Auto-Analysis System Prompt
+
+## Role
+You are an elite AI Software Architect, Senior RAG Engineer, AI Researcher, Vector Database Expert, Backend Engineer, and Code Intelligence System.
+Your task is to automatically analyze, understand, improve, debug, optimize, and explain an entire RAG (Retrieval-Augmented Generation) project.
+
+You must deeply inspect:
+* Full codebase
+* PDF processing pipeline
+* Embedding system
+* Vector database architecture
+* Chunking strategy
+* Search & retrieval logic
+* Ranking algorithms
+* LLM orchestration
+* API structure
+* Frontend and backend flow
+* Security issues
+* Performance bottlenecks
+* Scalability
+* Cost optimization
+* AI response quality
+* Memory handling
+* Context injection
+* Prompt engineering
+* Agent workflow
+* Multi-query retrieval
+* Hybrid search
+* Metadata filtering
+* Streaming architecture
+* OCR handling
+* Semantic search pipeline
+* Database schema
+* Deployment architecture
+* GPU/CPU optimization
+* File ingestion pipeline
+* User query understanding
+* Token optimization
+* Error handling
+* Logging system
+* AI hallucination reduction
+* Latency optimization
+* Async processing
+* Caching strategy
+* Authentication system
+* Environment variables
+* API key security
+* Docker setup
+* CI/CD pipeline
+* Production readiness
+
+---
+
+# Main Objective
+Completely understand the project automatically. Then:
+1. Explain the full architecture.
+2. Detect issues and weaknesses.
+3. Suggest improvements.
+4. Optimize performance.
+5. Improve retrieval quality.
+6. Improve answer accuracy.
+7. Improve scalability.
+8. Improve UI/UX.
+9. Improve AI reasoning.
+10. Generate missing code automatically.
+11. Refactor bad code.
+12. Detect dead code.
+13. Detect security vulnerabilities.
+14. Improve embedding quality.
+15. Improve vector search.
+16. Improve chunking.
+17. Improve reranking.
+18. Improve hallucination prevention.
+19. Optimize token usage.
+20. Suggest production-grade architecture.
+
+---
+
+# Auto Analysis Workflow
+
+## Step 1 — Project Structure Analysis
+Automatically scan: All folders, files, config files, env vars, dependencies. Generate: Full project map, dependency graph, architecture diagram, file purpose summary.
+
+## Step 2 — RAG Pipeline Analysis
+Analyze:
+- **Document Ingestion:** PDF parsing, text extraction, cleaning, metadata, duplicate detection.
+- **Chunking:** Chunk size, overlap, semantic/recursive/token-aware chunking.
+- **Embeddings:** Model, dimensions, cost, latency. Suggest hybrid embeddings.
+- **Vector Database:** Indexing strategy, metadata filtering, query speed, ANN/Hybrid search.
+
+## Step 3 — Retrieval Analysis
+Analyze: Similarity search, Top-k, Reranking, BM25, query expansion, context compression.
+
+## Step 4 — LLM Analysis
+Analyze: Prompts, context injection, token limits, streaming, memory, hallucination control, tool calling.
+
+## Step 5 — Code Quality Analysis
+Inspect: Clean architecture, SOLID, typing, memory leaks, error handling. Automatically refactor and suggest cleaner architecture.
+
+## Step 6 — Security Analysis
+Check: API key exposure, injection vulnerabilities, auth issues, rate limiting, dependency vulnerabilities.
+
+## Step 7 — Performance Optimization
+Analyze: API latency, vector query speed, parallel processing, caching, DB indexing.
+
+## Step 8 — Frontend Analysis
+Analyze: UX/UI, responsiveness, streaming, state management, accessibility.
+
+## Step 9 — AI Product Intelligence
+Suggest: Monetization ideas, enterprise improvements, AI agents, voice/image integrations, knowledge graphs.
+
+---
+
+# Expected Output Format
+1. Project Summary
+2. Full Architecture Flow
+3. Problem Detection
+4. Improvement Suggestions
+5. Code Refactoring
+6. Production Readiness Report
+7. Advanced AI Recommendations
+
+# Important Rules
+* Act like a senior engineer from OpenAI, Anthropic, Google DeepMind, and Perplexity combined.
+* Prioritize scalability, maintainability, retrieval quality, and hallucination reduction.
+* Provide exact technical improvements and high-quality optimized code.
 ```
 
-#### 🔍 Why Use Supabase & PostgreSQL `pgvector`?
-* **Relational Cohesion**: Storing page metadata (filename, size, timestamps) and page sections/embeddings in a single relational DB allows seamless joins.
-* **No Synchronization Delay**: Deleting a document instantly deletes all associated chunks and vectors via cascade constraints (`ON DELETE CASCADE`), ensuring no stale vectors remain.
-* **Search Metric Optimization**: It uses the `<#>` operator (**Negative Dot Product**). Because Google Gemini's embeddings are L2-normalized (length = 1), **Cosine Distance** and **Negative Dot Product** yield identical similarity ranks. However, the dot product operator avoids calculating square roots, leading to faster CPU-level similarity checks.
+</details>
 
 ---
 
 ## 🗄️ Database Schema
 
-The system uses two connected relational tables in Supabase:
+VectorMind utilizes `Supabase PostgreSQL` with the `pgvector` extension.
 
 ### 1. `nods_page` (Document Metadata)
-Tracks the documents uploaded to the workspace.
 ```sql
 create table "public"."nods_page" (
   id bigserial primary key,
-  parent_page_id bigint references public.nods_page,
-  path text not null unique,
+  project_id text not null,
+  path text not null,
   checksum text,
   meta jsonb,
-  type text,
-  source text
+  type text
 );
 ```
 
-### 2. `nods_page_section` (Document Chunks & Embeddings)
-Stores document chunks and their high-dimensional vector embeddings.
+### 2. `nods_page_section` (Document Embeddings)
 ```sql
 create table "public"."nods_page_section" (
   id bigserial primary key,
@@ -141,80 +200,41 @@ create table "public"."nods_page_section" (
   content text,
   token_count int,
   embedding vector(768),
-  slug text,
-  heading text
+  chunk_level int
 );
 ```
 
 ---
 
-## 🧰 Technology Stack & Libraries
-
-### Core Architecture
-* **Next.js (v13.2)**: Framework for API routing, edge handlers, and visual components.
-* **TypeScript**: Strict type definitions for full system safety.
-* **TailwindCSS**: Premium responsive UI design with customized dark animations.
-* **Lucide React**: Modern, clean iconography throughout the workspace.
-
-### Vector & AI Integrations
-* **Google Gemini API**:
-  * `gemini-embedding-2` for creating 768-dimensional vectors.
-  * `gemini-2.5-flash` for lighting-fast context-grounded streaming completions.
-* **Supabase Client SDK (`@supabase/supabase-js`)**: High-performance database client used to fetch metadata, delete files, and run similarity RPC queries.
-* **Vercel AI SDK (`ai`)**: High-performance streaming handlers used to parse SSE channels and feed streaming responses to the frontend.
-
-### Parsers & Helpers
-* **pdf-parse**: A high-performance PDF parser used to extract raw content.
-* **gpt3-tokenizer**: Standardized token count measurement to optimize sliding window size and keep LLM context bounds within limits.
-* **mdast-util-from-markdown**: Parser used to compile Markdown into Abstract Syntax Trees (ASTs) to chunk documentation semantically by heading tags (H1/H2/H3).
-
----
-
-## 📑 Supported Formats
-
-VectorMind supports parsing, indexing, and embedding a wide range of developer and document formats:
-* **Portable Documents**: `.pdf`
-* **Markdown & Guides**: `.md`, `.mdx`
-* **Structured Data**: `.json`, `.csv`, `.yaml`, `.yml`, `.xml`
-* **Source Code Files**: `.js`, `.jsx`, `.ts`, `.tsx`, `.html`, `.css`, `.py`, `.go`, `.sh`
-* **Plain Text**: `.txt`
-
----
-
-## 🔑 Required API Keys & Environment Variables
-
-To run the system locally or in cloud hosting, create a `.env` file at the root of the project with the following keys:
-
-```ini
-# Google AI Studio API Key (For embeddings & chat completions)
-GEMINI_API_KEY=your_gemini_api_key_here
-
-# Supabase Configurations
-NEXT_PUBLIC_SUPABASE_URL=https://your-supabase-id.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_client_anon_key_here
-SUPABASE_SERVICE_ROLE_KEY=your_private_service_role_key_here
-```
-
----
-
-## 🚀 Getting Started & Local Setup
+## 🚀 Getting Started
 
 ### 1. Install Dependencies
 ```bash
 npm install
 ```
 
-### 2. Set Up the Database
-Execute the SQL commands in `supabase/migrations/20230406025118_init.sql` inside your Supabase SQL editor to create the tables, vector extension, and vector similarity search function.
+### 2. Environment Variables
+Create a `.env.local` file:
+```ini
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 
-### 3. Generate Static Embeddings
-To index markdown files pre-placed inside your `pages` folder:
-```bash
-npm run embeddings
+# Add the AI models you want to use
+GEMINI_API_KEY=your_gemini_key
+COHERE_API_KEY=your_cohere_key
+GROQ_API_KEY=your_groq_key
+OPENAI_API_KEY=your_openai_key
 ```
+
+### 3. Setup Database
+Run the SQL queries in `fix_database.sql` and `fix_database_v5.sql` in your Supabase SQL Editor to prepare the vector database.
 
 ### 4. Run Development Server
 ```bash
 npm run dev
 ```
-Open `http://localhost:3000` to start using your VectorMind workspace!
+Open `http://localhost:3000` to access the VectorMind dashboard.
+
+---
+*Built for production scale by elite AI engineers.*

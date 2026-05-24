@@ -47,40 +47,60 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'DELETE') {
-      const { id } = req.query
+      const { id, filename, projectId } = req.query
 
-      if (!id || typeof id !== 'string') {
-        return res.status(400).json({ error: 'Document ID is required', step: 'validation' })
+      if (id && typeof id === 'string') {
+        const ids = id.split(',')
+
+        // First get documents to find storage URLs
+        const { data: pages } = await supabase
+          .from('nods_page')
+          .select('meta')
+          .in('id', ids)
+        
+        const storagePaths = (pages || [])
+          .map((p: any) => p.meta?.storagePath)
+          .filter(Boolean)
+
+        if (storagePaths.length > 0) {
+          // Attempt to delete from storage bucket
+          await supabase.storage.from('documents').remove(storagePaths)
+        }
+
+        // Delete the records (cascades to nods_page_section via ON DELETE CASCADE)
+        const { error } = await supabase
+          .from('nods_page')
+          .delete()
+          .in('id', ids)
+
+        if (error) throw error
+
+        return res.status(200).json({ success: true })
+      } else if (filename && projectId && typeof filename === 'string' && typeof projectId === 'string') {
+        const { data: pages } = await supabase
+          .from('nods_page')
+          .select('id, meta')
+          .eq('project_id', projectId)
+          .eq('path', filename)
+          
+        const ids = (pages || []).map(p => p.id)
+        const storagePaths = (pages || [])
+          .map((p: any) => p.meta?.storagePath)
+          .filter(Boolean)
+
+        if (storagePaths.length > 0) {
+          await supabase.storage.from('documents').remove(storagePaths)
+        }
+
+        if (ids.length > 0) {
+          const { error } = await supabase.from('nods_page').delete().in('id', ids)
+          if (error) throw error
+        }
+
+        return res.status(200).json({ success: true, deleted: ids.length })
+      } else {
+        return res.status(400).json({ error: 'Document ID or filename+projectId is required', step: 'validation' })
       }
-
-      const ids = id.split(',')
-
-      // First get documents to find storage URLs
-      const { data: pages } = await supabase
-        .from('nods_page')
-        .select('meta')
-        .in('id', ids)
-      
-      const storagePaths = (pages || [])
-        .map((p: any) => p.meta?.storagePath)
-        .filter(Boolean)
-
-      if (storagePaths.length > 0) {
-        // Attempt to delete from storage bucket
-        await supabase.storage.from('documents').remove(storagePaths)
-      }
-
-      // Delete the records (cascades to nods_page_section via ON DELETE CASCADE)
-      const { error } = await supabase
-        .from('nods_page')
-        .delete()
-        .in('id', ids)
-
-      if (error) {
-        throw error
-      }
-
-      return res.status(200).json({ success: true })
     }
 
     res.setHeader('Allow', ['GET', 'DELETE'])
