@@ -412,6 +412,8 @@ export default function Home() {
 
   // --- State ---
   const [activeTab, setActiveTab] = useState<'chat' | 'dashboard' | 'database' | 'how-it-works'>('dashboard')
+  const [activeHowItWorksTab, setActiveHowItWorksTab] = useState<'pipeline' | 'rag-vs-cag' | 'schema'>('pipeline')
+  const [selectedPipelineStep, setSelectedPipelineStep] = useState<number>(0)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarExpanded, setSidebarExpanded] = useState(false)
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false)
@@ -423,6 +425,51 @@ export default function Home() {
   const [showScrollBottom, setShowScrollBottom] = useState(false)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  // --- PWA Installation State & Hooks ---
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
+  const [showInstallBtn, setShowInstallBtn] = useState(false)
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // Register Service Worker
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then((reg) => console.log('SW Registered', reg.scope))
+            .catch((err) => console.warn('SW Registration failed', err))
+        })
+      }
+
+      // Capture browser installation prompt
+      const handleBeforeInstallPrompt = (e: any) => {
+        e.preventDefault()
+        setDeferredPrompt(e)
+        setShowInstallBtn(true)
+      }
+
+      window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+
+      // Hide if already in standalone app mode
+      if (window.matchMedia('(display-mode: standalone)').matches) {
+        setShowInstallBtn(false)
+      }
+
+      return () => {
+        window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+      }
+    }
+  }, [])
+
+  const handleInstallPWA = async () => {
+    if (!deferredPrompt) return
+    deferredPrompt.prompt()
+    const { outcome } = await deferredPrompt.userChoice
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null)
+      setShowInstallBtn(false)
+    }
+  }
 
   // --- Theme State ---
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
@@ -1436,11 +1483,21 @@ export default function Home() {
           </button>
         )}
       </form>
-      <p className="text-center text-[10px] text-zinc-650 mt-2">
-        {selectedFileIds.length === 0
-          ? (documents.length === 1 ? 'Searches 1 workspace file' : `Searches all ${documents.length} workspace files`)
-          : `Searching ${selectedFileIds.length} selected file(s)`
-        } · Embed: <span className="text-emerald-400/80 font-medium">{embedProvider?.name || 'Cohere'}</span> + Chat: <span className="text-emerald-400/80 font-medium">{chatProviderLabel}</span>
+      <p className="flex flex-wrap justify-center text-center text-[10px] text-zinc-650 mt-2 px-4 gap-x-1.5 gap-y-0.5">
+        <span>
+          {selectedFileIds.length === 0
+            ? (documents.length === 1 ? 'Searches 1 workspace file' : `Searches all ${documents.length} workspace files`)
+            : `Searching ${selectedFileIds.length} selected file(s)`
+          }
+        </span>
+        <span className="hidden xs:inline text-zinc-800">·</span>
+        <span>
+          Embed: <span className="text-emerald-400/80 font-medium">{embedProvider?.name || 'Cohere'}</span>
+        </span>
+        <span className="text-zinc-850">+</span>
+        <span>
+          Chat: <span className="text-emerald-400/80 font-medium">{chatProviderLabel}</span>
+        </span>
       </p>
       {fileSelectorOpen && (
         <div ref={fileSelectorRef} className="mt-2 rounded-xl border border-white/10 bg-[#1e1f20] p-3 max-h-68 overflow-y-auto custom-scrollbar space-y-2.5">
@@ -1528,6 +1585,11 @@ export default function Home() {
       <Head>
         <title>VectorMind</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#10b981" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <link rel="apple-touch-icon" href="/vectormind-icon.svg" />
       </Head>
 
       {/* Particle Burst Container */}
@@ -1561,6 +1623,16 @@ export default function Home() {
           {navBtn('database', <Database className="w-5 h-5" />, 'Library')}
           {/* {navBtn('how-it-works', <Info className="w-5 h-5" />, 'How it Works')} */}
           <div className="mt-auto flex flex-col items-center gap-2 pb-2">
+            {showInstallBtn && (
+              <button
+                type="button"
+                onClick={handleInstallPWA}
+                title="Install VectorMind App"
+                className="w-10 h-10 rounded-full flex items-center justify-center bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/25 shadow-lg shadow-emerald-500/5 animate-pulse transition-all duration-200 active:scale-95"
+              >
+                <Download className="w-5 h-5" />
+              </button>
+            )}
             <button
               type="button"
               onClick={checkApiHealth}
@@ -1573,7 +1645,7 @@ export default function Home() {
         </aside>
 
         {/* Right side of sidebar: Panel content, width 280px */}
-        <div className={`flex flex-col h-full w-[280px] shrink-0 transition-opacity duration-200 ${showExpandedSidebar ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+        <div className={`flex flex-col h-full w-[calc(100vw-52px)] max-w-[280px] md:w-[280px] shrink-0 transition-opacity duration-200 ${showExpandedSidebar ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
           <div className="h-14 px-4 flex items-center justify-between shrink-0 border-b border-white/[0.06]">
             <button
               type="button"
@@ -1868,9 +1940,9 @@ export default function Home() {
                           <div className="min-w-0 flex-1">
                             <div className={`text-sm truncate font-medium ${activeProjectId === p.id ? 'text-zinc-100' : 'text-zinc-300'}`}>{p.name}</div>
                             <div className="text-[10px] text-zinc-550 truncate uppercase tracking-wider font-bold text-[8px] flex items-center gap-1.5 mt-0.5">
-                              <span>Embed:</span> <span className="text-emerald-400 font-semibold">{p.embedding_provider || 'cohere'}</span>
+                              <span className="hidden min-[380px]:inline">Embed:</span> <span className="text-emerald-400 font-semibold">{p.embedding_provider || 'cohere'}</span>
                               <span className="text-zinc-700">·</span>
-                              <span>Chat:</span> <span className="text-zinc-400">{p.chat_provider || 'groq'}</span>
+                              <span className="hidden min-[380px]:inline">Chat:</span> <span className="text-zinc-400">{p.chat_provider || 'groq'}</span>
                             </div>
                           </div>
                         </button>
@@ -1950,23 +2022,34 @@ export default function Home() {
                   </button>
                 )}
               </div>
+
+              {showInstallBtn && (
+                <div className="px-4 pb-4 animate-fade-in shrink-0">
+                  <button
+                    onClick={handleInstallPWA}
+                    className="w-full flex items-center justify-center gap-2 text-xs font-bold text-emerald-400 hover:text-emerald-350 py-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 transition-all shadow-md active:scale-98"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Install App
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-h-0 relative z-10">
+      <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden relative z-10">
         <div className="h-14 border-b border-white/[0.06] bg-[#131314]/90 backdrop-blur-xl flex items-center justify-between px-4 shrink-0 sticky top-0 z-30">
           <div className="flex items-center gap-3 min-w-0">
             <button type="button" onClick={() => setSidebarOpen(true)} className="md:hidden p-2 rounded-full hover:bg-white/5 text-zinc-400 hover:text-zinc-200 transition-colors shrink-0"><SidebarToggleIcon className="w-5 h-5" /></button>
 
             {/* Active Tab Badge */}
-            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md shrink-0 select-none">
+            <span className="hidden min-[450px]:inline-block text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md shrink-0 select-none">
               {activeTab === 'dashboard' ? 'Dashboard' : activeTab === 'chat' ? 'Chat' : activeTab === 'database' ? 'Library' : 'How it Works'}
             </span>
 
-            <span className="text-zinc-700 text-xs shrink-0 select-none">/</span>            {/* Workspace Indicator Selector Dropdown */}
+            <span className="hidden min-[450px]:inline text-zinc-700 text-xs shrink-0 select-none">/</span>            {/* Workspace Indicator Selector Dropdown */}
             <div className="relative">
               <button
                 type="button"
@@ -1974,7 +2057,7 @@ export default function Home() {
                 className="text-xs font-semibold text-zinc-300 hover:text-zinc-100 flex items-center gap-1.5 min-w-0 bg-white/5 hover:bg-white/10 px-2.5 py-1.5 rounded-lg border border-white/[0.04] transition-all cursor-pointer select-none"
               >
                 <Folder className="w-3.5 h-3.5 text-emerald-450 shrink-0" />
-                <span className="truncate max-w-[120px] sm:max-w-[200px]" title={activeProject?.name || 'No Workspace'}>
+                <span className="truncate max-w-[70px] min-[450px]:max-w-[120px] sm:max-w-[200px]" title={activeProject?.name || 'No Workspace'}>
                   {activeProject?.name || 'Select Workspace'}
                 </span>
                 <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" />
@@ -2072,7 +2155,7 @@ export default function Home() {
             {activeTab === 'chat' && activeChannelName && (
               <>
                 <span className="text-zinc-700 text-xs shrink-0 select-none">/</span>
-                <div className="flex items-center gap-1 bg-[#1D9E75]/10 text-emerald-400 px-2.5 py-1.5 rounded-lg border border-[#1D9E75]/20 text-xs font-semibold max-w-[100px] sm:max-w-[150px] truncate select-none shadow-sm shadow-[#1D9E75]/5">
+                <div className="flex items-center gap-1 bg-[#1D9E75]/10 text-emerald-400 px-2 py-1 rounded-lg border border-[#1D9E75]/20 text-xs font-semibold max-w-[65px] xs:max-w-[100px] sm:max-w-[150px] truncate select-none shadow-sm shadow-[#1D9E75]/5">
                   <MessageSquare className="w-3.5 h-3.5 text-emerald-450 shrink-0" />
                   <span className="truncate">{activeChannelName}</span>
                 </div>
@@ -2113,7 +2196,7 @@ export default function Home() {
 
         {/* --- View: Dashboard (Project DB) --- */}
         {activeTab === 'dashboard' && (
-          <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8 custom-scrollbar bg-[#131314]">
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 xs:p-4 md:p-8 custom-scrollbar bg-[#131314]">
             <div className="max-w-6xl mx-auto animate-page-load space-y-8">
 
               <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -2121,13 +2204,13 @@ export default function Home() {
                   <div className="flex items-center gap-2 text-zinc-400 font-bold text-sm tracking-widest uppercase mb-1">
                     <BarChart3 className="w-4 h-4 text-zinc-500" /> Enterprise Analytics
                   </div>
-                  <h2 className="text-3xl md:text-4xl font-bold text-zinc-100">{activeProject?.name || 'Workspace'}</h2>
+                  <h2 className="text-xl xs:text-2xl sm:text-3xl md:text-4xl font-bold text-zinc-100">{activeProject?.name || 'Workspace'}</h2>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={() => setActiveTab('database')} className="flex items-center gap-2 px-3.5 py-2 border border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-50 rounded-md text-xs font-semibold transition-colors">
+                <div className="flex flex-wrap gap-2 w-full sm:w-auto shrink-0">
+                  <button onClick={() => setActiveTab('database')} className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-2 border border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-50 rounded-md text-xs font-semibold transition-colors">
                     <Database className="w-4 h-4 text-emerald-450" /> View Library
                   </button>
-                  <button onClick={() => setActiveTab('chat')} className="flex items-center gap-2 px-3.5 py-2 border border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-50 rounded-md text-xs font-semibold transition-colors">
+                  <button onClick={() => setActiveTab('chat')} className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-2 border border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-50 rounded-md text-xs font-semibold transition-colors">
                     <MessageSquare className="w-4 h-4 text-zinc-400" /> Chat
                   </button>
                 </div>
@@ -2348,7 +2431,7 @@ export default function Home() {
         )}
         {/* --- View: Database (Repository & Library) --- */}
         {activeTab === 'database' && (
-          <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8 custom-scrollbar bg-[#131314]">
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 xs:p-4 md:p-8 custom-scrollbar bg-[#131314]">
             <div className="max-w-6xl mx-auto animate-page-load space-y-8">
 
               <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -2356,13 +2439,13 @@ export default function Home() {
                   <div className="flex items-center gap-2 text-zinc-450 font-bold text-xs tracking-widest uppercase mb-1.5">
                     <Database className="w-3.5 h-3.5 text-zinc-500" /> Workspace Library
                   </div>
-                  <h2 className="text-3xl md:text-4xl font-black text-zinc-150 tracking-tight">{activeProject?.name || 'Workspace'} Files</h2>
+                  <h2 className="text-xl xs:text-2xl sm:text-3xl md:text-4xl font-black text-zinc-150 tracking-tight">{activeProject?.name || 'Workspace'} Files</h2>
                 </div>
-                <div className="flex gap-2.5">
-                  <button onClick={() => setActiveTab('dashboard')} className="flex-1 md:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 border border-white/10 bg-transparent text-zinc-300 hover:bg-white/5 hover:text-zinc-100 rounded-xl text-xs font-semibold transition-all" title="View dashboard">
+                <div className="flex flex-wrap gap-2 w-full sm:w-auto shrink-0">
+                  <button onClick={() => setActiveTab('dashboard')} className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 border border-white/10 bg-transparent text-zinc-300 hover:bg-white/5 hover:text-zinc-100 rounded-xl text-xs font-semibold transition-all" title="View dashboard">
                     <LayoutDashboard className="w-3.5 h-3.5 text-emerald-450" /> Dashboard
                   </button>
-                  <button onClick={() => setActiveTab('chat')} className="flex-1 md:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-zinc-900 border border-white/5 text-zinc-300 hover:bg-zinc-850 hover:text-zinc-100 rounded-xl text-xs font-semibold transition-all" title="Open chat session">
+                  <button onClick={() => setActiveTab('chat')} className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-zinc-900 border border-white/5 text-zinc-300 hover:bg-zinc-850 hover:text-zinc-100 rounded-xl text-xs font-semibold transition-all" title="Open chat session">
                     <MessageSquare className="w-3.5 h-3.5 text-blue-400" /> Chat
                   </button>
                 </div>
@@ -2372,7 +2455,7 @@ export default function Home() {
               <div className="flex flex-col gap-6 md:gap-8">
 
                 {/* Top: Ingestion Hub (Full Width Card with Horizontal Split on desktop) */}
-                <div className="bg-zinc-950/60 backdrop-blur-md border border-white/[0.05] rounded-2xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.3)] relative overflow-hidden group">
+                <div className="bg-zinc-950/60 backdrop-blur-md border border-white/[0.05] rounded-2xl p-3.5 sm:p-6 shadow-[0_8px_30px_rgb(0,0,0,0.3)] relative overflow-hidden group">
                   <div className="absolute top-0 right-0 w-24 h-24 bg-[#1D9E75]/5 rounded-full blur-2xl group-hover:bg-[#1D9E75]/10 transition-all duration-300 pointer-events-none" />
 
                   <div className="flex flex-col lg:flex-row gap-6 items-stretch">
@@ -2396,7 +2479,7 @@ export default function Home() {
                           }
                         }}
                         onClick={() => dbFileInputRef.current?.click()}
-                        className={`group/drop relative overflow-hidden rounded-xl p-8 text-center cursor-pointer transition-all duration-300 border border-dashed flex-1 flex flex-col justify-center min-h-[160px] ${dbDragActive
+                        className={`group/drop relative overflow-hidden rounded-xl p-4 sm:p-8 text-center cursor-pointer transition-all duration-300 border border-dashed flex-1 flex flex-col justify-center min-h-[160px] ${dbDragActive
                           ? 'border-emerald-500 bg-emerald-500/5 shadow-[0_0_15px_rgba(16,185,129,0.1)]'
                           : 'border-white/[0.08] hover:border-emerald-500/40 bg-zinc-950/40 hover:bg-zinc-900/10'
                           }`}
@@ -2418,7 +2501,7 @@ export default function Home() {
                     </div>
 
                     {/* Right half: Upload queue */}
-                    <div className="flex-1 w-full border-t lg:border-t-0 lg:border-l border-white/[0.06] pt-6 lg:pt-0 lg:pl-6 flex flex-col justify-between min-h-[220px]">
+                    <div className="flex-1 min-w-0 w-full border-t lg:border-t-0 lg:border-l border-white/[0.06] pt-6 lg:pt-0 lg:pl-6 flex flex-col justify-between min-h-[220px]">
                       {uploadQueue.filter(item => item.projectId === activeProjectId).length === 0 ? (
                         <div className="flex-1 flex flex-col items-center justify-center text-center py-6">
                           <FileText className="w-10 h-10 text-zinc-800 mb-2" />
@@ -2617,7 +2700,7 @@ export default function Home() {
                                       {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
                                     </div>
                                   </td>
-                                  <td className="px-3 sm:px-6 py-3.5 font-medium text-zinc-200 max-w-xs md:max-w-md truncate">
+                                  <td className="px-3 sm:px-6 py-3.5 font-medium text-zinc-200 max-w-[100px] xs:max-w-[140px] sm:max-w-xs md:max-w-md truncate">
                                     <div className="flex items-center gap-2.5">
                                       {extension === '.pdf' ? <FileText className="w-4 h-4 text-rose-400 shrink-0" /> :
                                         extension === '.md' ? <FileText className="w-4 h-4 text-sky-400 shrink-0" /> :
@@ -2679,159 +2762,394 @@ export default function Home() {
 
         {/* --- View: How it Works (Architecture) --- */}
         {activeTab === 'how-it-works' && (
-          <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8 custom-scrollbar bg-[#131314]">
-            <div className="max-w-5xl mx-auto animate-page-load space-y-8 pb-12">
-              <div className="flex flex-col items-start gap-4 border-b border-white/[0.06] pb-6">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
-                  <Zap className="w-6 h-6 text-emerald-400" />
-                </div>
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 xs:p-4 md:p-8 custom-scrollbar bg-[#131314]">
+            <div className="max-w-6xl mx-auto animate-page-load space-y-6 pb-12">
+              
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/[0.06] pb-6">
                 <div>
-                  <h2 className="text-2xl font-bold text-zinc-100 tracking-tight">System Architecture & Flow</h2>
-                  <p className="text-sm text-zinc-400 mt-2 leading-relaxed">
-                    A deep dive into VectorMind&apos;s proprietary RAG architecture. This section breaks down the entire lifecycle of a document, the retrieval algorithms, and the multi-LLM orchestration pipeline.
+                  <h2 className="text-xl font-bold text-zinc-150 tracking-tight flex items-center gap-2.5">
+                    <Zap className="w-5 h-5 text-emerald-400 step-badge-glow rounded-md" />
+                    How VectorMind Works
+                  </h2>
+                  <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                    Under the hood of VectorMind's premium hybrid Retrieval-Augmented Generation (RAG) architecture.
                   </p>
                 </div>
+                
+                <div className="flex p-0.5 bg-zinc-950/80 border border-white/[0.05] rounded-xl self-start md:self-auto shrink-0 shadow-inner overflow-x-auto custom-scrollbar flex-nowrap max-w-full whitespace-nowrap">
+                  {(['pipeline', 'rag-vs-cag', 'schema'] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => setActiveHowItWorksTab(tab)}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 shrink-0 ${
+                        activeHowItWorksTab === tab
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-[0_0_12px_rgba(16,185,129,0.05)] font-bold'
+                          : 'text-zinc-400 hover:text-zinc-200 border border-transparent'
+                      }`}
+                    >
+                      {tab === 'pipeline' && '10-Step RAG Pipeline'}
+                      {tab === 'rag-vs-cag' && 'RAG vs CAG'}
+                      {tab === 'schema' && 'Database Schema'}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {/* Flowchart Section */}
-              <div className="bg-zinc-950/80 border border-white/[0.06] p-6 md:p-8 rounded-2xl overflow-hidden relative">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 blur-[80px] -mr-20 -mt-20 pointer-events-none" />
-                <h3 className="text-lg font-bold text-zinc-100 mb-6 flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-emerald-400" />
-                  End-to-End Execution Flow
+              {/* Beginner-friendly Concept Guide */}
+              <div className="bg-zinc-950/50 border border-white/[0.04] p-5 rounded-2xl relative overflow-hidden shadow-lg">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/[0.02] blur-xl pointer-events-none" />
+                <h3 className="text-xs font-bold text-zinc-200 flex items-center gap-2 mb-3">
+                  <Info className="w-4 h-4 text-emerald-400 shrink-0" />
+                  New to AI Search? Start Here (Simple Analogies)
                 </h3>
-
-                <div className="flex flex-col gap-2 font-mono text-xs md:text-sm">
-                  {/* Step 1 */}
-                  <div className="flex items-center gap-4">
-                    <div className="w-24 text-right text-emerald-400/80 shrink-0">Upload</div>
-                    <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded p-3 text-zinc-300 relative">
-                      <div className="absolute left-[-17px] top-1/2 -translate-y-1/2 w-4 h-[2px] bg-emerald-500/30" />
-                      Frontend extracts raw file (PDF/MD/TXT) → encodes to Base64 → sends to <code>/api/upload</code>
-                    </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-zinc-900/30 p-3.5 rounded-xl border border-white/[0.02]">
+                    <span className="text-xs font-bold text-emerald-400 block mb-1">📖 RAG (What we use)</span>
+                    <p className="text-[11px] text-zinc-450 leading-relaxed">
+                      <strong>Like an open-book exam:</strong> Instead of memorizing your files, VectorMind searches the database for the exact pages containing the answer, pulls them out, and feeds them to the AI to draft a response. Scales to millions of pages cheaply.
+                    </p>
                   </div>
-                  <div className="flex items-center gap-4"><div className="w-24 shrink-0" /><div className="w-px h-6 bg-zinc-800 ml-4" /></div>
-
-                  {/* Step 2 */}
-                  <div className="flex items-center gap-4">
-                    <div className="w-24 text-right text-blue-400/80 shrink-0">Processing</div>
-                    <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded p-3 text-zinc-300 relative">
-                      <div className="absolute left-[-17px] top-1/2 -translate-y-1/2 w-4 h-[2px] bg-blue-500/30" />
-                      PDF parsed via <code>pdf-parse</code> / <code>unpdf</code> → text sanitized (null bytes stripped) → hierarchical sliding-window chunking
-                    </div>
+                  <div className="bg-zinc-900/30 p-3.5 rounded-xl border border-white/[0.02]">
+                    <span className="text-xs font-bold text-blue-400 block mb-1">🧠 CAG (The alternative)</span>
+                    <p className="text-[11px] text-zinc-450 leading-relaxed">
+                      <strong>Like memorizing the whole book:</strong> Feeding all documents into the AI's memory at once. It's simple, but gets extremely slow and expensive when you upload large books or many documents.
+                    </p>
                   </div>
-                  <div className="flex items-center gap-4"><div className="w-24 shrink-0" /><div className="w-px h-6 bg-zinc-800 ml-4" /></div>
-
-                  {/* Step 3 */}
-                  <div className="flex items-center gap-4">
-                    <div className="w-24 text-right text-purple-400/80 shrink-0">Embedding</div>
-                    <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded p-3 text-zinc-300 relative">
-                      <div className="absolute left-[-17px] top-1/2 -translate-y-1/2 w-4 h-[2px] bg-purple-500/30" />
-                      Batch embedding generation (Gemini: 768-dim, Cohere: 1024-dim, OpenAI: 1536-dim)
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4"><div className="w-24 shrink-0" /><div className="w-px h-6 bg-zinc-800 ml-4" /></div>
-
-                  {/* Step 4 */}
-                  <div className="flex items-center gap-4">
-                    <div className="w-24 text-right text-amber-400/80 shrink-0">Storage</div>
-                    <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded p-3 text-zinc-300 relative">
-                      <div className="absolute left-[-17px] top-1/2 -translate-y-1/2 w-4 h-[2px] bg-amber-500/30" />
-                      Supabase pgvector indexing. Original files cached securely.
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4"><div className="w-24 shrink-0" /><div className="w-px h-6 bg-zinc-800 ml-4" /></div>
-
-                  {/* Step 5 */}
-                  <div className="flex items-center gap-4">
-                    <div className="w-24 text-right text-rose-400/80 shrink-0">Retrieval</div>
-                    <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded p-3 text-zinc-300 relative">
-                      <div className="absolute left-[-17px] top-1/2 -translate-y-1/2 w-4 h-[2px] bg-rose-500/30" />
-                      HyDE Query Expansion → pgvector <code>&lt;#&gt;</code> match → MMR + RRF Re-ranking → LLM Context Injection
-                    </div>
+                  <div className="bg-zinc-900/30 p-3.5 rounded-xl border border-white/[0.02]">
+                    <span className="text-xs font-bold text-purple-400 block mb-1">⚡ Semantic Cache (Both)</span>
+                    <p className="text-[11px] text-zinc-450 leading-relaxed">
+                      <strong>Like a cheat sheet:</strong> VectorMind remembers previous questions. If you ask something similar, it skips the book search and gives you the cached answer instantly (&lt;15ms) without querying the AI again.
+                    </p>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Tech & Libraries */}
-                <div className="bg-zinc-950/50 border border-white/[0.04] p-6 rounded-2xl relative overflow-hidden group hover:border-emerald-500/20 transition-colors">
-                  <Database className="w-6 h-6 text-emerald-400 mb-4" />
-                  <h3 className="text-lg font-bold text-zinc-100 mb-4">Tech Stack & Libraries</h3>
-                  <div className="space-y-4 text-sm text-zinc-400">
-                    <div>
-                      <div className="text-zinc-200 font-semibold mb-1">Core Framework</div>
-                      <p>Next.js 13 (Pages Router) for full-stack API routes & React frontend. Styled with Tailwind CSS & Lucide icons.</p>
+              {activeHowItWorksTab === 'pipeline' && (
+                <div className="how-it-works-grid">
+                  
+                  {/* Left Column: Interactive Steps Timeline List */}
+                  <div className="flex flex-col gap-2 bg-zinc-950/20 p-2.5 rounded-2xl border border-white/[0.03] max-h-[700px] overflow-y-auto custom-scrollbar">
+                    <div className="text-[10px] font-bold text-zinc-500 px-3 py-1 uppercase tracking-wider">
+                      Execution Pipeline
                     </div>
-                    <div>
-                      <div className="text-zinc-200 font-semibold mb-1">Database & Vectors</div>
-                      <p>Supabase PostgreSQL with the <code>pgvector</code> extension. Utilizes custom RPC functions for high-speed similarity search.</p>
-                    </div>
-                    <div>
-                      <div className="text-zinc-200 font-semibold mb-1">Document Parsing</div>
-                      <p><code>pdf-parse</code> and <code>unpdf</code> for binary PDF streams. Native extraction for DOCX, MD, and code files.</p>
+                    {PIPELINE_STEPS.map((step, idx) => {
+                      const isActive = selectedPipelineStep === idx;
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => setSelectedPipelineStep(idx)}
+                          className={`step-item-btn flex items-center gap-3.5 px-4 py-3 rounded-xl border text-left transition ${
+                            isActive
+                              ? 'bg-gradient-to-r from-emerald-500/10 to-emerald-500/[0.02] border-emerald-500/20 text-white font-bold'
+                              : 'bg-zinc-900/30 border-white/[0.02] text-zinc-450 hover:bg-zinc-900/60 hover:text-zinc-200'
+                          }`}
+                        >
+                          <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                            isActive 
+                              ? 'bg-emerald-500/25 border border-emerald-500/40 text-emerald-400 step-badge-glow' 
+                              : 'bg-zinc-900 border border-zinc-800 text-zinc-400'
+                          }`}>
+                            {idx + 1}
+                          </span>
+                          <div className="truncate">
+                            <div className="text-xs font-semibold truncate leading-none mb-1">
+                              {step.title.replace(/^\d+\.\s+/, '')}
+                            </div>
+                            <span className="text-[10px] text-zinc-500 font-mono tracking-wide uppercase">
+                              {step.badge}
+                            </span>
+                          </div>
+                          {isActive && (
+                            <div className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-400 step-badge-glow animate-pulse" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Right Column: Step Technical details card */}
+                  {(() => {
+                    const step = PIPELINE_STEPS[selectedPipelineStep];
+                    return (
+                      <div className="flex flex-col gap-5 bg-zinc-950/80 border border-white/[0.05] p-6 rounded-2xl relative overflow-hidden animate-page-load min-h-[500px]">
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 blur-[80px] -mr-20 -mt-20 pointer-events-none" />
+                        
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold font-mono tracking-widest uppercase bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mb-2 shadow-[0_0_8px_rgba(16,185,129,0.05)]">
+                              {step.badge}
+                            </span>
+                            <h3 className="text-base font-bold text-zinc-150 tracking-tight leading-snug">
+                              {step.title}
+                            </h3>
+                          </div>
+                          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-zinc-800 to-zinc-900 border border-white/[0.06] flex items-center justify-center shrink-0">
+                            {selectedPipelineStep === 0 && <UploadCloud className="w-5 h-5 text-emerald-400" />}
+                            {selectedPipelineStep === 1 && <FileText className="w-5 h-5 text-emerald-400" />}
+                            {selectedPipelineStep === 2 && <Activity className="w-5 h-5 text-emerald-400" />}
+                            {selectedPipelineStep === 3 && <Database className="w-5 h-5 text-emerald-400" />}
+                            {selectedPipelineStep === 4 && <Zap className="w-5 h-5 text-emerald-400" />}
+                            {selectedPipelineStep === 5 && <Bot className="w-5 h-5 text-emerald-400" />}
+                            {selectedPipelineStep === 6 && <Search className="w-5 h-5 text-emerald-400" />}
+                            {selectedPipelineStep === 7 && <Filter className="w-5 h-5 text-emerald-400" />}
+                            {selectedPipelineStep === 8 && <Bot className="w-5 h-5 text-emerald-400" />}
+                            {selectedPipelineStep === 9 && <CheckCircle className="w-5 h-5 text-emerald-400" />}
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-zinc-400 leading-relaxed">
+                          {step.longDesc}
+                        </p>
+
+                        <div className="bg-gradient-to-r from-emerald-500/[0.06] to-transparent border-l-2 border-emerald-400 p-3.5 rounded-r-xl">
+                          <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block mb-1">
+                            Plain English Meaning:
+                          </span>
+                          <p className="text-xs text-zinc-300 leading-relaxed italic">
+                            "{step.conceptExplain}"
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          
+                          <div className="bg-zinc-900/40 border border-white/[0.03] p-4 rounded-xl">
+                            <h4 className="text-[10px] font-bold text-zinc-450 uppercase tracking-wider mb-2.5">
+                              Technical Parameters
+                            </h4>
+                            <div className="divide-y divide-white/[0.03] space-y-2">
+                              {step.metrics.map((m, i) => (
+                                <div key={i} className="flex justify-between text-xs py-1.5">
+                                  <span className="text-zinc-500">{m.label}</span>
+                                  <span className="font-semibold text-zinc-300 text-right">{m.value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {step.formula ? (
+                            <div className="math-card p-4 rounded-xl flex flex-col justify-center">
+                              <h4 className="text-[10px] font-bold text-zinc-450 uppercase tracking-wider mb-3">
+                                Mathematical representation
+                              </h4>
+                              <div className="bg-black/40 border border-white/[0.04] p-3 rounded-lg flex items-center justify-center font-serif text-zinc-200 text-xs tracking-wide overflow-x-auto text-center italic shadow-inner">
+                                {step.formula}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="bg-zinc-900/10 border border-dashed border-white/[0.04] rounded-xl flex items-center justify-center p-4 text-center">
+                              <span className="text-[11px] text-zinc-500 italic">No formal math needed for this stage</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-col bg-zinc-950 border border-white/[0.05] rounded-xl overflow-hidden shadow-2xl code-container-glow">
+                          <div className="flex items-center justify-between px-4 py-2 border-b border-white/[0.04] bg-zinc-900/40">
+                            <span className="text-[10px] font-bold font-mono text-zinc-500 tracking-wide">
+                              {selectedPipelineStep === 3 ? 'SQL SCHEMA' : 'CODE IMPLEMENTATION'}
+                            </span>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(step.code);
+                                setCopiedId(`step-${selectedPipelineStep}`);
+                                setTimeout(() => setCopiedId(null), 1500);
+                              }}
+                              className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-400 hover:text-white transition"
+                            >
+                              {copiedId === `step-${selectedPipelineStep}` ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                  <span className="text-emerald-400">Copied!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3.5 h-3.5" />
+                                  <span>Copy snippet</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                          <pre className="p-4 overflow-x-auto text-xs text-teal-350 font-mono leading-relaxed max-h-[350px] custom-scrollbar text-left bg-black/40 whitespace-pre">
+                            <code>{step.code}</code>
+                          </pre>
+                        </div>
+                        
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {activeHowItWorksTab === 'rag-vs-cag' && (
+                <div className="space-y-6 animate-page-load">
+                  
+                  <div className="bg-gradient-to-r from-emerald-500/10 to-teal-500/[0.01] border border-emerald-500/25 p-5 rounded-2xl relative overflow-hidden">
+                    <div className="flex gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center shrink-0">
+                        <Bot className="w-5 h-5 text-emerald-400" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-zinc-150">Understanding Architectures: RAG vs CAG</h4>
+                        <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                          <strong>Retrieval-Augmented Generation (RAG)</strong> indexes data into chunk vectors and fetches only the top-k matches for LLM context, offering infinite scalability and cost-efficiency. <br />
+                          <strong>Cache-Augmented Generation (CAG)</strong> loads the entire database directly into the context window of huge models (e.g. Gemini 1.5 Pro's 2M context), letting the model's self-attention solve retrieval in memory.
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {/* AI Models & Limits */}
-                <div className="bg-zinc-950/50 border border-white/[0.04] p-6 rounded-2xl relative overflow-hidden group hover:border-blue-500/20 transition-colors">
-                  <Bot className="w-6 h-6 text-blue-400 mb-4" />
-                  <h3 className="text-lg font-bold text-zinc-100 mb-4">Models & Configurations</h3>
-                  <div className="space-y-4 text-sm text-zinc-400">
-                    <div>
-                      <div className="flex justify-between font-semibold mb-1"><span className="text-zinc-200">Google Gemini</span><span className="text-emerald-400 text-xs">Default</span></div>
-                      <p>Embeddings: <code>gemini-embedding-2</code> (768-dim)<br />Chat: <code>gemini-2.0-flash</code> (15 RPM limit on free tier)</p>
-                    </div>
-                    <div>
-                      <div className="flex justify-between font-semibold mb-1"><span className="text-zinc-200">Cohere</span><span className="text-blue-400 text-xs">High-dim</span></div>
-                      <p>Embeddings: <code>embed-english-v3.0</code> (1024-dim)<br />Chat: <code>command-a-03-2025</code> (1000 calls/mo limit)</p>
-                    </div>
-                    <div>
-                      <div className="flex justify-between font-semibold mb-1"><span className="text-zinc-200">Groq (Llama 3.3)</span><span className="text-purple-400 text-xs">Ultra-fast</span></div>
-                      <p>Chat: <code>llama-3.3-70b-versatile</code> (1000 RPD free). Groq provides sub-second inference speeds.</p>
-                    </div>
-                    <div>
-                      <div className="flex justify-between font-semibold mb-1"><span className="text-zinc-200">OpenAI</span><span className="text-amber-400 text-xs">Premium</span></div>
-                      <p>Embeddings: <code>text-embedding-3-small</code> (1536-dim)<br />Chat: <code>gpt-4o-mini</code> (Pay-as-you-go limits)</p>
+                  <div className="border border-white/[0.05] rounded-2xl overflow-hidden bg-zinc-950/60 shadow-xl">
+                    <div className="overflow-x-auto custom-scrollbar">
+                      <table className="w-full text-left text-xs text-zinc-300 border-collapse">
+                        <thead>
+                          <tr className="bg-zinc-900 border-b border-white/[0.05] font-semibold text-zinc-100">
+                            <th className="px-5 py-3.5 font-bold">Feature</th>
+                            <th className="px-5 py-3.5 text-emerald-400 border-l border-white/[0.03] font-bold">RAG (Retrieval-Augmented)</th>
+                            <th className="px-5 py-3.5 text-zinc-400 border-l border-white/[0.03] font-bold">CAG (Cache-Augmented)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/[0.03]">
+                          
+                          <tr>
+                            <td className="px-5 py-4 font-semibold text-zinc-200">Scaling Limit</td>
+                            <td className="px-5 py-4 border-l border-white/[0.03]">
+                              <span className="font-bold text-emerald-400">Infinite.</span> Easily scales to billions of pages. Vector indexing retrieves slices of data in milliseconds.
+                            </td>
+                            <td className="px-5 py-4 border-l border-white/[0.03]">
+                              <span className="font-semibold text-red-400">Strictly limited</span> by LLM context window (~2,000 pages for 1M context models).
+                            </td>
+                          </tr>
+
+                          <tr>
+                            <td className="px-5 py-4 font-semibold text-zinc-200">Token Cost per Query</td>
+                            <td className="px-5 py-4 border-l border-white/[0.03]">
+                              <span className="font-bold text-emerald-400">Very Low & Predictable.</span> Only feeds retrieved target chunks (~10k tokens).
+                            </td>
+                            <td className="px-5 py-4 border-l border-white/[0.03]">
+                              <span className="font-semibold text-red-400">Exponentially High.</span> Feeds the entire database on every request (millions of tokens).
+                            </td>
+                          </tr>
+
+                          <tr>
+                            <td className="px-5 py-4 font-semibold text-zinc-200">Real-Time Data Support</td>
+                            <td className="px-5 py-4 border-l border-white/[0.03]">
+                              <span className="font-bold text-emerald-400">Instant.</span> Modifying or deleting a document alters only its matching vector chunks in the database.
+                            </td>
+                            <td className="px-5 py-4 border-l border-white/[0.03]">
+                              <span className="font-semibold text-amber-500">Requires Reload.</span> Modifying databases forces a reload of the entire cache context array.
+                            </td>
+                          </tr>
+
+                          <tr>
+                            <td className="px-5 py-4 font-semibold text-zinc-200">Infrastructure Setup</td>
+                            <td className="px-5 py-4 border-l border-white/[0.03]">
+                              <span className="text-amber-500">Complex.</span> Requires chunkers, embedding models, vector search indexing, and a vector database.
+                            </td>
+                            <td className="px-5 py-4 border-l border-white/[0.03]">
+                              <span className="font-bold text-emerald-400">Zero.</span> Simple file dump straight to context or system prompt.
+                            </td>
+                          </tr>
+
+                          <tr>
+                            <td className="px-5 py-4 font-semibold text-zinc-200">Inference Latency</td>
+                            <td className="px-5 py-4 border-l border-white/[0.03]">
+                              <span className="font-semibold text-zinc-300">Fast (Sub-second).</span> Modern HNSW indexing retrieves vectors in &lt; 20ms, LLM runs on tiny prompt.
+                            </td>
+                            <td className="px-5 py-4 border-l border-white/[0.03]">
+                              <span className="text-zinc-500">Slow (Multi-second).</span> Large context inputs cause noticeable time-to-first-token delay on LLM.
+                            </td>
+                          </tr>
+
+                          <tr>
+                            <td className="px-5 py-4 font-semibold text-zinc-200">Ideal Use Case</td>
+                            <td className="px-5 py-4 border-l border-white/[0.03] bg-emerald-500/[0.01]">
+                              Large wikis, enterprise customer support portals, private source code repositories, dynamic databases.
+                            </td>
+                            <td className="px-5 py-4 border-l border-white/[0.03]">
+                              Summarizing single textbooks, exploring a codebase's themes, analyzing legal contracts under 500 pages.
+                            </td>
+                          </tr>
+
+                        </tbody>
+                      </table>
                     </div>
                   </div>
-                </div>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Search & Algorithms */}
-                <div className="bg-zinc-950/50 border border-white/[0.04] p-6 rounded-2xl relative overflow-hidden group hover:border-purple-500/20 transition-colors">
-                  <Search className="w-6 h-6 text-purple-400 mb-4" />
-                  <h3 className="text-lg font-bold text-zinc-100 mb-4">Search & Ranking Algorithms</h3>
-                  <div className="space-y-4 text-sm text-zinc-400">
-                    <div>
-                      <div className="text-zinc-200 font-semibold mb-1">Negative Dot Product (<code>&lt;#&gt;</code>)</div>
-                      <p>Instead of cosine similarity, Postgres uses <code>embedding &lt;#&gt; query * -1</code>. Because LLM embeddings are L2 normalized, dot product gives identical results to cosine similarity but skips the CPU-expensive square root math.</p>
+                  <div className="bg-zinc-900/30 border border-white/[0.03] p-5 rounded-2xl">
+                    <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider mb-2">VectorMind's Stance</h4>
+                    <p className="text-xs text-zinc-400 leading-relaxed">
+                      VectorMind chooses **RAG** for workspace scaling. RAG scales efficiently to large document sizes. However, we augment this with **Semantic Caching** to achieve CAG-like speeds (&lt; 15ms) on repeated query vectors, representing the best of both architectures.
+                    </p>
+                  </div>
+
+                </div>
+              )}
+
+              {activeHowItWorksTab === 'schema' && (
+                <div className="space-y-6 animate-page-load">
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    
+                    <div className="bg-zinc-950/80 border border-white/[0.05] p-5 rounded-2xl shadow-lg relative">
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/[0.02] blur-xl pointer-events-none" />
+                      <h4 className="font-mono text-xs font-bold text-blue-400 mb-1">nods_project</h4>
+                      <p className="text-[10px] text-zinc-500 mb-3">Workspace level definitions</p>
+                      <ul className="text-xs font-mono divide-y divide-white/[0.02] space-y-1.5">
+                        <li className="flex justify-between py-1"><span className="text-zinc-450">id</span> <span className="text-zinc-500">uuid (PK)</span></li>
+                        <li className="flex justify-between py-1"><span className="text-zinc-450">name</span> <span className="text-zinc-500">text</span></li>
+                        <li className="flex justify-between py-1"><span className="text-zinc-450">embedding_provider</span> <span className="text-zinc-500">text</span></li>
+                        <li className="flex justify-between py-1"><span className="text-zinc-450">chat_provider</span> <span className="text-zinc-500">text</span></li>
+                      </ul>
                     </div>
-                    <div>
-                      <div className="text-zinc-200 font-semibold mb-1">HyDE (Hypothetical Doc Embeddings)</div>
-                      <p>When you ask a question, an LLM first guesses the answer. The system then embeds the <em>guess</em> along with your query to find much more semantically accurate matches.</p>
+
+                    <div className="bg-zinc-950/80 border border-white/[0.05] p-5 rounded-2xl shadow-lg relative">
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/[0.02] blur-xl pointer-events-none" />
+                      <h4 className="font-mono text-xs font-bold text-emerald-400 mb-1">nods_page</h4>
+                      <p className="text-[10px] text-zinc-500 mb-3">Uploaded document records</p>
+                      <ul className="text-xs font-mono divide-y divide-white/[0.02] space-y-1.5">
+                        <li className="flex justify-between py-1"><span className="text-zinc-450">id</span> <span className="text-zinc-500">bigint (PK)</span></li>
+                        <li className="flex justify-between py-1"><span className="text-zinc-450">project_id</span> <span className="text-zinc-500">uuid (FK)</span></li>
+                        <li className="flex justify-between py-1"><span className="text-zinc-450">path</span> <span className="text-zinc-500">text</span></li>
+                        <li className="flex justify-between py-1"><span className="text-zinc-450">checksum</span> <span className="text-zinc-500">text</span></li>
+                        <li className="flex justify-between py-1"><span className="text-zinc-450">meta</span> <span className="text-zinc-500">jsonb</span></li>
+                      </ul>
                     </div>
-                    <div>
-                      <div className="text-zinc-200 font-semibold mb-1">MMR & RRF</div>
-                      <p>Maximal Marginal Relevance filters out redundant chunks. Reciprocal Rank Fusion combines the scores of multiple parallel vector queries into one master rank.</p>
+
+                    <div className="bg-zinc-950/80 border border-white/[0.05] p-5 rounded-2xl shadow-lg relative">
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/[0.02] blur-xl pointer-events-none" />
+                      <h4 className="font-mono text-xs font-bold text-purple-400 mb-1">nods_page_section</h4>
+                      <p className="text-[10px] text-zinc-500 mb-3">Chunk contents and vectors</p>
+                      <ul className="text-xs font-mono divide-y divide-white/[0.02] space-y-1.5">
+                        <li className="flex justify-between py-1"><span className="text-zinc-450">id</span> <span className="text-zinc-500">bigint (PK)</span></li>
+                        <li className="flex justify-between py-1"><span className="text-zinc-450">page_id</span> <span className="text-zinc-500">bigint (FK)</span></li>
+                        <li className="flex justify-between py-1"><span className="text-zinc-450">content</span> <span className="text-zinc-500">text</span></li>
+                        <li className="flex justify-between py-1"><span className="text-zinc-450">embedding</span> <span className="text-purple-400">vector</span></li>
+                        <li className="flex justify-between py-1"><span className="text-zinc-450">fts</span> <span className="text-blue-400">tsvector</span></li>
+                      </ul>
+                    </div>
+
+                  </div>
+
+                  <div className="bg-zinc-900/30 border border-white/[0.04] p-5 rounded-2xl space-y-3">
+                    <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider">Indexed Search Defense System</h4>
+                    <p className="text-xs text-zinc-400 leading-relaxed">
+                      To optimize vector match queries across differing embedding providers (Gemini's 768-dim vs Cohere's 1024-dim), VectorMind avoids raw database dimension locks on `embedding` columns. Instead, it leaves the column dimensions dynamic and applies two partial HNSW indexes filtered by vector size:
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+                      <div className="bg-zinc-950 p-4 border border-white/[0.04] rounded-xl">
+                        <span className="text-emerald-400 font-bold block mb-1">768-Dim Gemini Index</span>
+                        <span className="text-zinc-500 text-[10px]">Filter: WHERE vector_dims(embedding) = 768</span>
+                        <div className="text-[10px] text-zinc-400 mt-2">Speeds up similarity search for text-embedding-004 chunks.</div>
+                      </div>
+                      <div className="bg-zinc-950 p-4 border border-white/[0.04] rounded-xl">
+                        <span className="text-blue-400 font-bold block mb-1">1024-Dim Cohere Index</span>
+                        <span className="text-zinc-500 text-[10px]">Filter: WHERE vector_dims(embedding) = 1024</span>
+                        <div className="text-[10px] text-zinc-400 mt-2">Speeds up similarity search for embed-english-v3.0 chunks.</div>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Security & System */}
-                <div className="bg-zinc-950/50 border border-white/[0.04] p-6 rounded-2xl relative overflow-hidden group hover:border-rose-500/20 transition-colors">
-                  <span className="w-6 h-6 text-rose-400 mb-4 block"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg></span>
-                  <h3 className="text-lg font-bold text-zinc-100 mb-4">Security & Processing Defenses</h3>
-                  <ul className="space-y-3 text-sm text-zinc-400">
-                    <li className="flex gap-2.5"><span className="text-rose-500 mt-0.5">•</span> <strong>Null Byte Stripping:</strong> Postgres crashes if a text string contains <code>\u0000</code>. The ingestion pipeline strictly regex-sanitizes all extracted text.</li>
-                    <li className="flex gap-2.5"><span className="text-rose-500 mt-0.5">•</span> <strong>Cascade Deletion:</strong> Deleting a workspace or document automatically triggers a database cascade, securely destroying all vector embeddings.</li>
-                    <li className="flex gap-2.5"><span className="text-rose-500 mt-0.5">•</span> <strong>API Route Protection:</strong> Payload size limits are enforced (<code>50mb</code> max) and rate limiting delays are injected directly into the embedding API retry loop.</li>
-                    <li className="flex gap-2.5"><span className="text-rose-500 mt-0.5">•</span> <strong>Server-Side Only:</strong> No API keys are leaked to the client. All Supabase, OpenAI, Gemini, and Cohere requests happen purely on Next.js backend edge routes.</li>
-                  </ul>
                 </div>
-              </div>
+              )}
 
             </div>
           </div>
@@ -2840,7 +3158,7 @@ export default function Home() {
         {/* --- Chat (Gemini-style) --- */}
         {activeTab === 'chat' && (
           <div className="flex-1 min-h-0 flex flex-col relative overflow-hidden">
-            <div className="gemini-glow" aria-hidden />
+            <div className={`gemini-glow transition-all duration-1000 ${messages.length > 0 ? '!opacity-0 !animate-none pointer-events-none' : ''}`} aria-hidden />
 
 
             <div className={`flex-1 min-h-0 flex flex-col relative z-10 ${messages.length === 0 ? 'justify-center' : ''}`}>
@@ -2876,15 +3194,20 @@ export default function Home() {
                 >
                   <div className="max-w-5xl mx-auto space-y-6 w-full">
                     {messages.map((msg) => (
-                      <div key={msg.id} className={`flex gap-3 md:gap-5 animate-slide-up ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      <div key={msg.id} className={`flex gap-3 md:gap-4 animate-slide-up ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                         {msg.role === 'assistant' && (
-                          <div className="w-10 h-10 rounded-md bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 shadow-sm mt-1">
-                            <Bot className="w-5 h-5 text-zinc-400" />
+                          <div className="hidden sm:flex w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-450 items-center justify-center shrink-0 shadow-sm mt-0.5 select-none animate-fade-in">
+                            <Bot className="w-4.5 h-4.5 text-emerald-400" />
                           </div>
                         )}
 
-                        <div className={`max-w-[95%] md:max-w-[85%] rounded-lg border text-sm shadow-sm ${msg.role === 'user' ? 'bg-zinc-900 border-zinc-800 text-zinc-50' : 'bg-zinc-950 border-zinc-850 text-zinc-200'}`}>
-                          <div className="px-5 py-4">
+                        {msg.role === 'user' ? (
+                          <div className="bg-[#2f2f32]/90 border border-white/[0.03] text-zinc-100 px-4 py-2.5 rounded-2xl rounded-tr-sm max-w-[85%] text-[14.5px] leading-relaxed shadow-md select-text break-words">
+                            {msg.text}
+                          </div>
+                        ) : (
+                          <div className="flex-1 min-w-0 max-w-[calc(100vw-32px)] sm:max-w-[calc(100vw-85px)] md:max-w-[85%] text-sm text-zinc-200">
+                            <div className="px-1 py-1">
 
                             {/* Rich Loading Visualizer */}
                             {msg.isLoading && !msg.text ? (
@@ -2997,7 +3320,7 @@ export default function Home() {
                                           className="group relative overflow-hidden flex items-center gap-2 px-3 py-1.5 rounded-md border text-xs transition-all duration-200 bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700 cursor-pointer hover:bg-zinc-855"
                                         >
                                           <FileText className="w-3.5 h-3.5 shrink-0 text-zinc-400 group-hover:text-zinc-300" />
-                                          <span className="truncate max-w-[180px] font-medium">{(cit as any).sourceName || `Source ${(cit as any).id}`}</span>
+                                          <span className="truncate max-w-[100px] xs:max-w-[140px] sm:max-w-[180px] font-medium">{(cit as any).sourceName || `Source ${(cit as any).id}`}</span>
                                           <Eye className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 absolute right-3 text-zinc-450 transition-opacity" />
                                           <span className="w-4 h-full bg-gradient-to-l from-zinc-900 group-hover:from-zinc-850 to-transparent absolute right-0" />
                                         </button>
@@ -3016,7 +3339,7 @@ export default function Home() {
                                           key={idx}
                                           type="button"
                                           onClick={() => setSearchQuery(suggestion)}
-                                          className="text-[13px] text-zinc-350 hover:text-zinc-50 bg-zinc-900/60 hover:bg-zinc-850/80 border border-zinc-800/80 hover:border-zinc-700/80 px-3.5 py-1.5 rounded-full transition-all duration-200 active:scale-95 shadow-sm"
+                                          className="text-[13px] text-zinc-350 hover:text-zinc-50 bg-zinc-900/60 hover:bg-zinc-850/80 border border-zinc-800/80 hover:border-zinc-700/80 px-3.5 py-1.5 rounded-full transition-all duration-200 active:scale-95 shadow-sm text-left break-words whitespace-normal max-w-full"
                                         >
                                           {suggestion}
                                         </button>
@@ -3028,13 +3351,8 @@ export default function Home() {
                             )}
                           </div>
                         </div>
-
-                        {msg.role === 'user' && (
-                          <div className="w-10 h-10 rounded-md bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 shadow-sm mt-1">
-                            <User className="w-5 h-5 text-zinc-400" />
-                          </div>
-                        )}
-                      </div>
+                      )}
+                    </div>
                     ))}
                     <div ref={chatEndRef} className="h-10" />
                   </div>
@@ -3207,3 +3525,238 @@ export default function Home() {
     </div>
   )
 }
+
+// ─── Pipeline Step Definition for System Architecture ────────────────────────
+const PIPELINE_STEPS: {
+  title: string;
+  shortDesc: string;
+  longDesc: string;
+  conceptExplain: string;
+  badge: 'Ingestion' | 'Processing' | 'Embeddings' | 'Storage' | 'Retrieval' | 'Generation';
+  metrics: { label: string; value: string }[];
+  formula?: string;
+  code: string;
+}[] = [
+  {
+    title: "1. File Parsing & Sanitization",
+    shortDesc: "Supports PDF, DOCX, TXT, MD. Strips null bytes to defend against database crashes.",
+    longDesc: "When a user uploads a document, the client extracts the raw file and streams it as Base64 to /api/upload. The server decodes it and routes it by extension. PDF files are parsed using unpdf (a WASM wrapper around PDF.js), DOCX files are extracted via XML zip parsing, and code/text files are read directly. The text is sanitized using regex patterns to strip out null characters (\\u0000) which would otherwise crash Postgres.",
+    conceptExplain: "Reads uploaded files and cleans them of hidden formatting or characters that would crash our database.",
+    badge: "Ingestion",
+    metrics: [
+      { label: "Max File Limit", value: "50 MB" },
+      { label: "Formats Supported", value: "PDF, DOCX, TXT, MD, PY, TS, JS, JSON" },
+      { label: "WASM Parser", value: "unpdf (highly optimized, runs in edge)" }
+    ],
+    code: `// Strips binary anomalies and null bytes to prevent database ingestion errors
+function sanitizeText(raw: string): string {
+  return raw
+    .replace(/\\u0000/g, '')
+    .replace(/\\x00/g, '')
+    .replace(/[\\x01-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]/g, '')
+    .replace(/\\n{3,}/g, '\\n\\n')
+    .trim()
+}`
+  },
+  {
+    title: "2. Recursive Character Chunking",
+    shortDesc: "Splits text using a sliding window to maintain semantic paragraphs.",
+    longDesc: "Documents are split into chunks using a hierarchical character-based chunking strategy. The chunker first attempts to split on paragraph breaks (\\n\\n). If the resulting chunk exceeds the maximum size, it recursively splits on sentences (.\\s), then on spaces (\\s), and finally on single characters. This keeps full words, sentences, and paragraphs together, preserving context for the vector search.",
+    conceptExplain: "Chops long articles or documents into bite-sized segments so that searching is precise and the AI doesn't get overwhelmed.",
+    badge: "Processing",
+    metrics: [
+      { label: "Max Chunk Size", value: "400 characters" },
+      { label: "Chunk Overlap", value: "80 characters" },
+      { label: "Context Protection", value: "Sliding window with boundary fallback" }
+    ],
+    code: `// lib/chunker.ts
+export function recursiveCharacterChunker(text: string, maxSize = 400, overlap = 80) {
+  // 1. Split by paragraphs (\\n\\n)
+  // 2. If block > maxSize, split by sentences (. )
+  // 3. If still too large, split by spaces
+  // 4. Return chunks with boundary overlap to ensure no lost context
+}`
+  },
+  {
+    title: "3. Vector Embedding Generation",
+    shortDesc: "Converts text blocks into high-dimensional vectors with auto-fallback.",
+    longDesc: "To perform semantic search, text chunks must be converted into numerical vectors. VectorMind supports multiple embedding providers (Gemini, Cohere, OpenAI). To optimize upload speed, chunks are embedded in high-performance parallel batches. If Gemini rate limits are hit or the API keys fail, the pipeline automatically redirects the chunk requests to Cohere's English v3.0 model as a self-healing fallback.",
+    conceptExplain: "Translates text chunks into a series of numbers (a vector) representing the meaning, just like mapping latitude and longitude for a place.",
+    badge: "Embeddings",
+    metrics: [
+      { label: "Google Gemini", value: "text-embedding-004 (768 dimensions)" },
+      { label: "Cohere", value: "embed-english-v3.0 (1024 dimensions)" },
+      { label: "OpenAI", value: "text-embedding-3-small (1536 dimensions)" }
+    ],
+    code: `// Batch embedding with rate limiting and automated self-healing fallback
+export async function generateEmbeddingsBatch(texts, provider, taskType) {
+  try {
+    if (provider === 'gemini') {
+      // Fetch batchEmbedContents from Google AI API
+      // If error (status 403 or 429), fallback to Cohere:
+      return generateEmbeddingsBatch(texts, 'cohere', taskType);
+    }
+    // ...
+  } catch (e) {
+    // Retry with exponential backoff
+  }
+}`
+  },
+  {
+    title: "4. Vector Storage & HNSW Indexing",
+    shortDesc: "Supabase pgvector database with partial HNSW indexing.",
+    longDesc: "Embeddings are stored in Supabase PostgreSQL using the 'pgvector' extension. Because users can mix embedding models in different workspaces, VectorMind implements partial HNSW (Hierarchical Navigable Small World) indexes. These indexes are created separately for 768-dimensional and 1024-dimensional vectors. This dynamic segregation avoids mixing dimensions, preventing Postgres queries from failing.",
+    conceptExplain: "Stores the meaning vectors in the Supabase database and indexes them using a high-speed search map (HNSW) to look them up instantly.",
+    badge: "Storage",
+    metrics: [
+      { label: "Vector Extension", value: "pgvector on PostgreSQL" },
+      { label: "Index Algorithm", value: "HNSW (Hierarchical Navigable Small World)" },
+      { label: "HNSW Parameters", value: "m=16, ef_construction=64" }
+    ],
+    formula: "Cosine Similarity = 1 - (u <=> v)",
+    code: `-- Dual partial HNSW indexes to handle mixed vector sizes dynamically
+CREATE INDEX nods_page_section_embedding_hnsw_768_idx 
+ON nods_page_section USING hnsw ((embedding::vector(768)) vector_ip_ops)
+WHERE vector_dims(embedding) = 768;
+
+CREATE INDEX nods_page_section_embedding_hnsw_1024_idx 
+ON nods_page_section USING hnsw ((embedding::vector(1024)) vector_ip_ops)
+WHERE vector_dims(embedding) = 1024;`
+  },
+  {
+    title: "5. Semantic Caching",
+    shortDesc: "Intercepts incoming queries for sub-millisecond cached responses.",
+    longDesc: "Before executing expensive database vector searches or LLM API calls, VectorMind calculates the embedding of the user's raw query and compares it against a semantic cache table in Supabase. If a previously answered query is found with a cosine similarity matching or exceeding 0.92, the system immediately returns the cached answer, bypasses the LLM, and avoids token usage entirely.",
+    conceptExplain: "A smart memory bank that saves previous answers so that if someone asks the exact same question again, it replies instantly without wasting AI tokens.",
+    badge: "Retrieval",
+    metrics: [
+      { label: "Lookup Method", value: "Cosine similarity vector comparison" },
+      { label: "Match Threshold", value: "0.92 (near-exact semantic match)" },
+      { label: "Average Latency", value: "< 15ms (Bypasses LLM)" }
+    ],
+    code: `// lib/semanticCache.ts
+export async function getCachedAnswer(queryEmbedding: number[], projectId: string) {
+  const { data } = await supabase.rpc('match_semantic_cache', {
+    query_vector: queryEmbedding,
+    project_id: projectId,
+    similarity_threshold: 0.92
+  });
+  return data && data.length > 0 ? data[0] : null;
+}`
+  },
+  {
+    title: "6. HyDE Query Expansion",
+    shortDesc: "Generates alternative hypothetical queries to capture semantic angles.",
+    longDesc: "Raw queries written by users are often short and mismatch the technical terms in indexed documents. VectorMind applies HyDE (Hypothetical Document Embeddings) to expand the query. The system queries an LLM in the background to generate 3 alternative ways of asking the question. All 4 queries (original + 3 variations) are embedded and searched in parallel, pulling context that single queries would miss.",
+    conceptExplain: "Asks the AI to guess what a good answer might look like first, helping the search engine find the right paragraphs even if the words are slightly different.",
+    badge: "Retrieval",
+    metrics: [
+      { label: "Query Multiplication", value: "1 user query -> 4 search queries" },
+      { label: "Expansion LLM", value: "Llama-3.3-70b-versatile or Gemini 2.0 Flash" },
+      { label: "Target Temperature", value: "0.3 (deterministic variations)" }
+    ],
+    code: `// lib/providers.ts (HyDE Query Expansion)
+export async function expandQueryHyDE(query: string, chatProvider: ChatProviderId): Promise<string[]> {
+  const prompt = \`Generate exactly 3 alternative search queries for: "\\\${query}"\\\\nReturn ONLY a JSON array of 3 strings.\`;
+  const response = await callLLM(prompt, chatProvider);
+  return [query, ...JSON.parse(response)];
+}`
+  },
+  {
+    title: "7. Hybrid Search & Reciprocal Rank Fusion",
+    shortDesc: "Fuses vector similarity scores with PostgreSQL full-text keyword matching.",
+    longDesc: "For each of the query variations, VectorMind executes a hybrid search inside Supabase. This query runs a vector semantic match (using cosine distance) and a classic Full-Text keyword Search (FTS) using Postgres text search vectors (FTS). The rankings from both methods are merged using Reciprocal Rank Fusion (RRF). RRF scores candidates based on their ranks, yielding a high-quality list that balances semantic intent and exact phrase matching.",
+    conceptExplain: "Matches text in two ways: matching exact keywords (traditional search) and matching semantic meanings (vector search), then fuses them for the best results.",
+    badge: "Retrieval",
+    metrics: [
+      { label: "Candidate Limit", value: "Top 60 Semantic + Top 60 Keyword" },
+      { label: "RRF Rank Constant", value: "k = 60" },
+      { label: "RPC Function", value: "hybrid_search" }
+    ],
+    formula: "RRF_Score(d) = 1 / (60 + Rank_Semantic(d)) + 1 / (60 + Rank_Keyword(d))",
+    code: `-- hybrid_search RPC rank merging in Supabase PostgreSQL
+rrf AS (
+  SELECT COALESCE(se.id, kw.id) as id,
+         COALESCE(1.0/(60 + se.rank), 0) + COALESCE(1.0/(60 + kw.rank), 0) AS rrf_score,
+         COALESCE(se.sim, 0) AS similarity
+  FROM semantic se FULL OUTER JOIN keyword kw ON se.id = kw.id
+)
+SELECT id, content, heading_context, similarity, page_id
+FROM rrf ORDER BY rrf_score DESC LIMIT match_count;`
+  },
+  {
+    title: "8. MMR Diversification & Re-ranking",
+    shortDesc: "Filters redundant chunks to maximize context window utility.",
+    longDesc: "When retrieving sections, similarity search often returns paragraphs that are highly similar to each other, wasting valuable space in the LLM's context window. VectorMind applies Maximal Marginal Relevance (MMR) re-ranking. MMR scores items by balancing their similarity to the query against their similarity to already selected chunks, filtering out redundancy and maximizing context diversity.",
+    conceptExplain: "Cleans the search results by removing copycat or repetitive paragraphs, ensuring the AI gets a broad set of fresh facts to learn from.",
+    badge: "Retrieval",
+    metrics: [
+      { label: "Diversity Parameter", value: "lambda = 0.7" },
+      { label: "Target Count", value: "20 diverse sections" },
+      { label: "Deduplication Area", value: "Cross-document and intra-document" }
+    ],
+    formula: "MMR = max [ lambda * Sim(di, q) - (1-lambda) * max Sim(di, dj) ]",
+    code: `// pages/api/chat.ts
+function mmrFilter(items: any[], lambda = 0.7, k = 20): any[] {
+  if (items.length === 0) return []
+  const selected = [items[0]]
+  const remaining = items.slice(1)
+  while (selected.length < k && remaining.length > 0) {
+    let bestIdx = 0, bestScore = -Infinity
+    remaining.forEach((item, i) => {
+      const relevance = item.similarity || 0
+      const maxSim = Math.max(...selected.map(s => s.page_id === item.page_id ? 0.8 : 0.1))
+      const score = lambda * relevance - (1 - lambda) * maxSim
+      if (score > bestScore) { bestScore = score; bestIdx = i }
+    })
+    selected.push(remaining[bestIdx])
+    remaining.splice(bestIdx, 1)
+  }
+  return selected
+}`
+  },
+  {
+    title: "9. LLM Context Packing & Streaming",
+    shortDesc: "Compresses history and streams answers via Server-Sent Events.",
+    longDesc: "The diversified context chunks are formatted and token-packed up to a limit of 15,000 tokens using a GPT-3 BPE tokenizer. If chat history is long, it is summarized in the background using Llama-3.3-70b-versatile on Groq to preserve token limits. The query and context are fed into the LLM system prompt. The model streams back response tokens to the frontend in real time using Server-Sent Events (SSE).",
+    conceptExplain: "Assembles the top selected facts into a compact prompt and streams the AI's answer word-by-word onto your screen.",
+    badge: "Generation",
+    metrics: [
+      { label: "Token Limit", value: "15,000 context tokens max" },
+      { label: "History Summarizer", value: "Groq Llama 3.3 (triggered at > 1,000 tokens)" },
+      { label: "Protocol", value: "Server-Sent Events (SSE) stream" }
+    ],
+    code: `// Packing context segments using BPE tokenizer
+function packContext(citations: any[], maxTokens = 15000): string {
+  const tokenizer = new GPT3Tokenizer({ type: 'gpt3' })
+  let context = '', total = 0
+  for (const item of citations) {
+    const chunk = \`[\${item.id}] (Source: \${item.sourceName})\\n\${item.chunk}\\n\\n\`
+    const tokenCount = tokenizer.encode(chunk).bpe.length
+    if (total + tokenCount > maxTokens) break
+    context += chunk
+    total += tokenCount
+  }
+  return context
+}`
+  },
+  {
+    title: "10. Grounding Verification & Suggestions",
+    shortDesc: "Calculates factual grounding score and generates suggest bubbles.",
+    longDesc: "Once the streaming completes, the server executes post-generation verification. It computes a grounding score by cross-referencing sentences in the generated answer against the source citations using semantic overlap and Groq validation. It flags unsupported claims and visualizes the confidence level (HIGH / MEDIUM / LOW). In parallel, it queries the LLM to generate 3 short follow-up questions relevant to the answer content.",
+    conceptExplain: "Cross-checks every claim the AI makes against your original documents to make sure it is telling the truth and not making things up.",
+    badge: "Generation",
+    metrics: [
+      { label: "Safety Check", value: "Semantic sentence overlap validation" },
+      { label: "Confidence Levels", value: "HIGH (>=0.75), MEDIUM (>=0.35), LOW" },
+      { label: "Follow-up Suggesters", value: "3 short contextual questions" }
+    ],
+    code: `// After response stream ends, evaluate facts and suggest questions
+const [grounding, suggestions] = await Promise.all([
+  calculateGroundingScore(fullAnswer, citations),
+  getFollowUpSuggestions(sanitizedQuery, fullAnswer)
+]);
+sendEvent({ done: true, citations, grounding, suggestions });`
+  }
+];
+

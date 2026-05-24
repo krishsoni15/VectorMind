@@ -526,3 +526,116 @@ button:active:not(:disabled) {
     transition: none !important;
   }
 }
+
+/* ─── How it Works Dashboard Styles ─── */
+.how-it-works-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+}
+@media (min-width: 1024px) {
+  .how-it-works-grid {
+    grid-template-columns: 320px 1fr;
+  }
+}
+
+.step-item-btn {
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.step-item-btn:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.step-item-btn.active {
+  background: rgba(29, 158, 117, 0.08);
+  border-color: rgba(29, 158, 117, 0.25);
+  color: #fff;
+}
+
+.step-badge-glow {
+  box-shadow: 0 0 12px rgba(29, 158, 117, 0.2);
+}
+
+.math-card {
+  background: rgba(9, 9, 11, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.code-container-glow {
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.6);
+}
+
+.flow-connector {
+  position: relative;
+}
+
+.flow-connector::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(29, 158, 117, 0.3) 0px,
+    rgba(29, 158, 117, 0.3) 8px,
+    transparent 8px,
+    transparent 16px
+  );
+  transform: translateX(-50%);
+}
+
+.flow-connector-active::before {
+  background: linear-gradient(180deg, var(--vm-accent) 0%, rgba(29, 158, 117, 0.6) 50%, rgba(29, 158, 117, 0.1) 100%);
+}
+
+/* Responsive Table & Layout Polish down to 290px */
+@media (max-width: 640px) {
+  /* Dynamic cell padding compression for tables */
+  .how-it-works-grid table th,
+  .how-it-works-grid table td,
+  table th,
+  table td {
+    padding-left: 0.625rem !important;
+    padding-right: 0.625rem !important;
+    padding-top: 0.75rem !important;
+    padding-bottom: 0.75rem !important;
+    font-size: 0.75rem !important;
+  }
+  
+  /* Prevent math equation overflow in dashboard view */
+  .math-card div {
+    font-size: 0.75rem !important;
+    padding: 0.5rem !important;
+    word-break: break-all;
+    white-space: normal !important;
+  }
+
+  /* Prevent code container horizontal spillover */
+  .prose-chat pre, pre {
+    padding: 0.5rem 0.75rem !important;
+    font-size: 0.7rem !important;
+    border-radius: 6px !important;
+    overflow-x: auto !important;
+  }
+
+  /* Allow interactive RAG steps to flex stack instead of forcing tall fixed heights */
+  .how-it-works-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    max-height: none !important;
+  }
+
+  .how-it-works-grid > div:first-child {
+    max-height: 280px !important;
+  }
+
+  .how-it-works-grid > div:last-child {
+    min-height: auto !important;
+  }
+}
+
+

@@ -1,47 +1,166 @@
+# ⚡ VectorMind
+
 <div align="center">
-  <img src="https://raw.githubusercontent.com/krishsoni15/VectorMind/main/public/logo.png" alt="VectorMind Logo" width="120" />
-  <h1>VectorMind</h1>
-  <p><strong>Premium, Professional-Grade RAG & Autonomous AI Analysis Platform</strong></p>
+  <img src="https://raw.githubusercontent.com/krishsoni15/VectorMind/main/public/vectormind-icon.svg" alt="VectorMind Logo" width="130" style="border-radius: 20%; filter: drop-shadow(0 0 16px rgba(16, 185, 129, 0.45));" />
+  <br /><br />
+  
+  [![Next.js](https://img.shields.io/badge/Next.js-13-emerald?style=flat-square&logo=next.js&logoColor=white)](https://nextjs.org/)
+  [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-emerald?style=flat-square&logo=postgresql&logoColor=white)](https://github.com/pgvector/pgvector)
+  [![PWA](https://img.shields.io/badge/PWA-Compatible-emerald?style=flat-square&logo=pwa&logoColor=white)](#progressive-web-app-pwa)
+  [![License](https://img.shields.io/badge/License-MIT-emerald?style=flat-square)](#)
+
+  <h3>Premium, Enterprise-Grade Hybrid RAG & CAG Document Intelligence Platform</h3>
 
   <p>
-    <a href="#features">Features</a> •
-    <a href="#architecture">Architecture</a> •
-    <a href="#setup">Setup</a> •
-    <a href="#advanced-rag-prompt">AI Auto-Analysis Prompt</a>
+    <a href="#-system-architecture">Architecture</a> •
+    <a href="#-hybrid-rag-vs-cag">RAG vs CAG</a> •
+    <a href="#-key-features">Key Features</a> •
+    <a href="#%EF%B8%8F-installation--quickstart">Quickstart</a> •
+    <a href="#-pwa-standalone">PWA App</a>
   </p>
 </div>
 
 ---
 
-## 🧠 System Architecture Overview
+## 🧠 System Architecture
 
-VectorMind is a highly-optimized **Retrieval-Augmented Generation (RAG)** platform designed to enable context-aware semantic search, document analysis, and autonomous AI orchestration over custom knowledge vaults.
+VectorMind is a highly-optimized, production-scale intelligence platform that supports both **Retrieval-Augmented Generation (RAG)** and **Cache-Augmented Generation (CAG)** workflows. It allows teams to orchestrate natural-language chat pipelines over complex corporate knowledge vaults with zero hallucinations.
 
-Built with a state-of-the-art serverless stack, VectorMind integrates **Next.js**, **Google Gemini**, **Cohere**, **Groq**, and **Supabase (PostgreSQL + pgvector)** to offer sub-second document indexing and fully-cited AI streaming.
+```mermaid
+graph TD
+    A[User Document Ingestion] --> B[Sliding-Window Token Chunking]
+    B --> C[Cohere Embeddings v3]
+    C --> D[(Supabase pgvector DB)]
+    E[User Search Prompt] --> F[HyDE Query Expansion]
+    F --> G[Hybrid BM25 + Cosine Search]
+    G --> H[Reciprocal Rank Fusion RRF]
+    D --> G
+    H --> I[LLM Orchestration: Gemini/Groq/Command-R]
+    I --> J[Streaming Cited Responses]
+```
 
-### 🔄 Dual-Pipeline Architecture
+### 🔄 Dual-Pipeline Engineering
 
-1. **Ingestion Pipeline (Write-Path):** Extracts text (PDFs, Markdown, DOCX, Code), sanitizes null bytes, dynamically chunks via sliding-window, embeds using 768-dim/1024-dim models, and indexes via `pgvector`.
-2. **Query Loop (Read-Path):** Converts user queries to embeddings via HyDE (Hypothetical Document Embeddings), performs fast negative-dot-product similarity matching, applies MMR (Maximal Marginal Relevance) + RRF (Reciprocal Rank Fusion), and streams answers via LLM.
+1. **The Ingestion Pipeline (Write-Path):**
+   * **Parsing & Extraction:** Auto-detects and digests `.pdf`, `.docx`, `.md`, `.json`, `.ts`, `.py`, and standard `.txt` files.
+   * **Semantic Chunking:** Splits documents using a sliding-window token limits tokenizer, keeping document structural metadata intact.
+   * **Vector Embedding:** Generates high-density dimensional embeddings via models like Cohere v3 or OpenAI.
+   * **Storage Layer:** Populates a `pgvector`-enabled Supabase database using custom HNSW similarity indexes.
+
+2. **The Retrieval Loop (Read-Path):**
+   * **HyDE (Hypothetical Document Embeddings):** Expands the query space by generating draft replies, maximizing document hit rates.
+   * **Hybrid Search:** Queries the PostgreSQL database with combined BM25 keyword weights and vector cosine similarity.
+   * **Rank Fusion (RRF):** Applies Reciprocal Rank Fusion to merge structured and vector lookup streams, returning only top-relevance context blocks.
+   * **Context Streaming:** Compresses the token context and streams responses directly back to the interface with source-citations.
 
 ---
 
-## 💎 Premium Features
+## ⚡ Hybrid RAG vs CAG
 
-* **Multi-LLM Orchestration:** Switch between Google Gemini 2.5 Flash, Cohere Command-R, Groq Llama 3, and OpenAI ChatGPT dynamically.
-* **Hybrid Search & Reranking:** Context compression, sliding-window token chunking, and intelligent reranking for zero-hallucination responses.
-* **Enterprise-Grade UI:** Glassmorphism, smooth micro-animations, customizable dark mode, and an intuitive sliding sidebar workspace.
-* **Multi-Format Ingestion:** Supports `.pdf`, `.docx`, `.md`, `.json`, `.ts`, `.csv`, `.py`, `.txt`, and more.
-* **Instant Workspace Sync:** Real-time updates, local storage cache layers, and immediate Supabase synchronization.
+VectorMind implements a unified workspace architecture to combine the strengths of both paradigms:
+
+| Metric | Retrieval-Augmented Generation (RAG) | Cache-Augmented Generation (CAG) |
+| :--- | :--- | :--- |
+| **Concept** | Retrieves chunks dynamically on-demand from a vector database for each user prompt. | Pre-loads full contexts or databases directly into the LLM's extended context cache windows. |
+| **Ideal For** | Massive knowledge bases (10,000+ pages), dynamic files, and cost-efficient scaling. | Highly analytical sessions requiring deep synthesis across multiple full documents. |
+| **Latency** | Dynamic retrieval takes 100ms - 200ms before sending context to the LLM. | Context is instantly loaded in cache; response begins streaming almost immediately. |
+| **VectorMind Integration** | Activates dynamic pgvector similarity lookup. Toggle **"Strict RAG Mode"** in the sidebar controls. | Pre-caches selected document contexts into the active chat session context window. |
 
 ---
 
-## 🛠️ Advanced RAG Auto-Analysis System Prompt
+## 💎 Key Features
 
-Are you looking to deeply analyze, optimize, and refactor an entire RAG project (including VectorMind itself)? Use this massive system prompt in **Cursor AI**, **Windsurf**, **Claude**, or **OpenAI Platform**.
+* **ChatGPT-Style UX:** A borderless, minimalist chat interface with right-aligned speech pills, circular bot avatar support, and raw typographic grids.
+* **Ultra-Responsive (Down to 290px):** Meticulously scaled layout margins, fluid paddings, and dynamic filename table truncations designed for perfect display on mobile viewports.
+* **Ambient Fading Transitions:** The animated green `gemini-glow` background radial gradient fades smoothly to a solid premium Google-Gemini style background (`#131314`) after the first prompt to maximize readability.
+* **Dynamic Multi-Provider Selector:** Instantly swap between Google Gemini 2.5 Flash, Groq Llama 3, Cohere Command-R, and OpenAI models in active conversation.
+* **Selective Context File Picker:** Limit or expand search filters on the fly to target specific files.
+* **Workspaces Hub:** Organize document categories by independent workspaces, each configured with specific embedding and LLM defaults.
+
+---
+
+## 📱 PWA Standalone App
+
+VectorMind is a fully compliant **Progressive Web App (PWA)**. 
+
+* **Native Window Container:** Saves as a standalone desktop or mobile application on Mac, Windows, Linux, iOS, and Android.
+* **Offline Resilience:** Leverages a custom service worker (`public/sw.js`) that caches static assets and platform pages.
+* **Lightning Bolt Branding:** Uses your official glowing green lightning bolt vector logo (`vectormind-icon.svg`) as the home screen identity icon.
+* **Dual Action Installers:** Provides a pulsing download action button in the leftmost navigation rail, and a distinct install banner in the right workspace drawer.
+
+---
+
+## 🛠️ Installation & Quickstart
+
+### 1. Prerequisites
+Ensure you have Node.js (v18+) and a PostgreSQL instance with the `pgvector` extension (e.g. Supabase).
+
+### 2. Clone and Install Dependencies
+```bash
+git clone https://github.com/krishsoni15/VectorMind.git
+cd VectorMind
+npm install
+```
+
+### 3. Database Schema Setup
+Execute the following statements in your Supabase SQL editor to deploy the vector tables:
+
+```sql
+-- Enable the pgvector extension
+create extension if not exists vector;
+
+-- Document Metadata Table
+create table "public"."nods_page" (
+  id bigserial primary key,
+  project_id text not null,
+  path text not null,
+  checksum text,
+  meta jsonb,
+  type text
+);
+
+-- Vector Embedding Chunks Table
+create table "public"."nods_page_section" (
+  id bigserial primary key,
+  page_id bigint not null references public.nods_page on delete cascade,
+  content text,
+  token_count int,
+  embedding vector(768), -- Match with your embedding dimension size (768/1536)
+  chunk_level int
+);
+
+-- Fast similarity index (HNSW Cosine)
+create index on public.nods_page_section using hnsw (embedding vector_cosine_ops);
+```
+
+### 4. Setup Environment Keys
+Create a `.env.local` file in your root directory:
+```ini
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+
+# Model APIs
+GEMINI_API_KEY=your_gemini_api_key
+COHERE_API_KEY=your_cohere_api_key
+GROQ_API_KEY=your_groq_api_key
+OPENAI_API_KEY=your_openai_api_key
+```
+
+### 5. Launch local server
+```bash
+npm run dev
+```
+Open `http://localhost:3000` to access the production-grade dashboard.
+
+---
+
+## 🤖 Advanced RAG System Auto-Analysis Prompt
+
+For developers looking to refactor, expand, or optimize the VectorMind repository:
 
 <details>
-<summary><b>Click to expand the Advanced RAG Project Auto-Analysis Prompt</b></summary>
+<summary><b>Click to expand the Automated Analysis System Prompt</b></summary>
 
 ```text
 # Advanced RAG Project Auto-Analysis System Prompt
@@ -51,190 +170,19 @@ You are an elite AI Software Architect, Senior RAG Engineer, AI Researcher, Vect
 Your task is to automatically analyze, understand, improve, debug, optimize, and explain an entire RAG (Retrieval-Augmented Generation) project.
 
 You must deeply inspect:
-* Full codebase
-* PDF processing pipeline
-* Embedding system
-* Vector database architecture
-* Chunking strategy
-* Search & retrieval logic
-* Ranking algorithms
-* LLM orchestration
-* API structure
-* Frontend and backend flow
-* Security issues
-* Performance bottlenecks
-* Scalability
-* Cost optimization
-* AI response quality
-* Memory handling
-* Context injection
-* Prompt engineering
-* Agent workflow
-* Multi-query retrieval
-* Hybrid search
-* Metadata filtering
-* Streaming architecture
-* OCR handling
-* Semantic search pipeline
-* Database schema
-* Deployment architecture
-* GPU/CPU optimization
-* File ingestion pipeline
-* User query understanding
-* Token optimization
-* Error handling
-* Logging system
-* AI hallucination reduction
-* Latency optimization
-* Async processing
-* Caching strategy
-* Authentication system
-* Environment variables
-* API key security
-* Docker setup
-* CI/CD pipeline
-* Production readiness
+* Full codebase, PDF processing pipeline, and Vector schemas.
+* Chunking strategies and metadata filtering algorithms.
+* HyDE query expansions and RRF rank fusion metrics.
+* Streaming context pipelines and token utilization.
 
----
-
-# Main Objective
-Completely understand the project automatically. Then:
-1. Explain the full architecture.
-2. Detect issues and weaknesses.
-3. Suggest improvements.
-4. Optimize performance.
-5. Improve retrieval quality.
-6. Improve answer accuracy.
-7. Improve scalability.
-8. Improve UI/UX.
-9. Improve AI reasoning.
-10. Generate missing code automatically.
-11. Refactor bad code.
-12. Detect dead code.
-13. Detect security vulnerabilities.
-14. Improve embedding quality.
-15. Improve vector search.
-16. Improve chunking.
-17. Improve reranking.
-18. Improve hallucination prevention.
-19. Optimize token usage.
-20. Suggest production-grade architecture.
-
----
-
-# Auto Analysis Workflow
-
-## Step 1 — Project Structure Analysis
-Automatically scan: All folders, files, config files, env vars, dependencies. Generate: Full project map, dependency graph, architecture diagram, file purpose summary.
-
-## Step 2 — RAG Pipeline Analysis
-Analyze:
-- **Document Ingestion:** PDF parsing, text extraction, cleaning, metadata, duplicate detection.
-- **Chunking:** Chunk size, overlap, semantic/recursive/token-aware chunking.
-- **Embeddings:** Model, dimensions, cost, latency. Suggest hybrid embeddings.
-- **Vector Database:** Indexing strategy, metadata filtering, query speed, ANN/Hybrid search.
-
-## Step 3 — Retrieval Analysis
-Analyze: Similarity search, Top-k, Reranking, BM25, query expansion, context compression.
-
-## Step 4 — LLM Analysis
-Analyze: Prompts, context injection, token limits, streaming, memory, hallucination control, tool calling.
-
-## Step 5 — Code Quality Analysis
-Inspect: Clean architecture, SOLID, typing, memory leaks, error handling. Automatically refactor and suggest cleaner architecture.
-
-## Step 6 — Security Analysis
-Check: API key exposure, injection vulnerabilities, auth issues, rate limiting, dependency vulnerabilities.
-
-## Step 7 — Performance Optimization
-Analyze: API latency, vector query speed, parallel processing, caching, DB indexing.
-
-## Step 8 — Frontend Analysis
-Analyze: UX/UI, responsiveness, streaming, state management, accessibility.
-
-## Step 9 — AI Product Intelligence
-Suggest: Monetization ideas, enterprise improvements, AI agents, voice/image integrations, knowledge graphs.
-
----
-
-# Expected Output Format
-1. Project Summary
-2. Full Architecture Flow
-3. Problem Detection
-4. Improvement Suggestions
-5. Code Refactoring
-6. Production Readiness Report
-7. Advanced AI Recommendations
-
-# Important Rules
-* Act like a senior engineer from OpenAI, Anthropic, Google DeepMind, and Perplexity combined.
-* Prioritize scalability, maintainability, retrieval quality, and hallucination reduction.
-* Provide exact technical improvements and high-quality optimized code.
+Expected Output Format:
+1. Architectural Flow Summary
+2. Latency/Hallucination Problem Detections
+3. Code Refactoring Proposals
+4. Production Scalability Reports
 ```
 
 </details>
-
----
-
-## 🗄️ Database Schema
-
-VectorMind utilizes `Supabase PostgreSQL` with the `pgvector` extension.
-
-### 1. `nods_page` (Document Metadata)
-```sql
-create table "public"."nods_page" (
-  id bigserial primary key,
-  project_id text not null,
-  path text not null,
-  checksum text,
-  meta jsonb,
-  type text
-);
-```
-
-### 2. `nods_page_section` (Document Embeddings)
-```sql
-create table "public"."nods_page_section" (
-  id bigserial primary key,
-  page_id bigint not null references public.nods_page on delete cascade,
-  content text,
-  token_count int,
-  embedding vector(768),
-  chunk_level int
-);
-```
-
----
-
-## 🚀 Getting Started
-
-### 1. Install Dependencies
-```bash
-npm install
-```
-
-### 2. Environment Variables
-Create a `.env.local` file:
-```ini
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-
-# Add the AI models you want to use
-GEMINI_API_KEY=your_gemini_key
-COHERE_API_KEY=your_cohere_key
-GROQ_API_KEY=your_groq_key
-OPENAI_API_KEY=your_openai_key
-```
-
-### 3. Setup Database
-Run the SQL queries in `fix_database.sql` and `fix_database_v5.sql` in your Supabase SQL Editor to prepare the vector database.
-
-### 4. Run Development Server
-```bash
-npm run dev
-```
-Open `http://localhost:3000` to access the VectorMind dashboard.
 
 ---
 *Built for production scale by elite AI engineers.*

@@ -1,0 +1,24 @@
+{
+  "name": "VectorMind AI Document Intelligence",
+  "short_name": "VectorMind",
+  "description": "Advanced RAG & CAG Document Intelligence Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#131314",
+  "theme_color": "#10b981",
+  "icons": [
+    {
+      "src": "/vectormind-icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/vectormind-icon.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
