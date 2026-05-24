@@ -36,7 +36,7 @@ export const EMBEDDING_PROVIDERS: Record<EmbeddingProviderId, EmbeddingProviderC
   gemini: {
     id: 'gemini',
     name: 'Google Gemini',
-    model: 'gemini-embedding-2',
+    model: 'text-embedding-004',
     dimension: 768,
     free: true,
     freeLimit: '1500 RPD free',
@@ -155,12 +155,12 @@ export async function generateEmbedding(
     switch (providerId) {
       case 'gemini': {
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key=${key}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${key}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              model: 'models/gemini-embedding-2',
+              model: 'models/text-embedding-004',
               content: { parts: [{ text }] },
               taskType: taskType === 'document' ? 'RETRIEVAL_DOCUMENT' : 'RETRIEVAL_QUERY',
               outputDimensionality: 768,
@@ -262,13 +262,13 @@ export async function generateEmbeddingsBatch(
         for (let i = 0; i < texts.length; i += chunkSize) {
           const chunk = texts.slice(i, i + chunkSize)
           const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:batchEmbedContents?key=${key}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents?key=${key}`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 requests: chunk.map(text => ({
-                  model: 'models/gemini-embedding-2',
+                  model: 'models/text-embedding-004',
                   content: { parts: [{ text }] },
                   taskType: taskType === 'document' ? 'RETRIEVAL_DOCUMENT' : 'RETRIEVAL_QUERY',
                   outputDimensionality: 768,

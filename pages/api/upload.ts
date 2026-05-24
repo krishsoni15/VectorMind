@@ -4,6 +4,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import { execFile } from 'child_process'
 import { generateEmbeddingsBatch, EMBEDDING_PROVIDERS, isProviderAvailable, type EmbeddingProviderId } from '../../lib/providers'
@@ -133,12 +134,8 @@ async function uploadHandler(
       }
     } else if (ext === '.docx') {
       try {
-        // Write the DOCX buffer to a temporary file in the scratch directory
-        const scratchDir = path.join(process.cwd(), 'scratch')
-        if (!fs.existsSync(scratchDir)) {
-          fs.mkdirSync(scratchDir, { recursive: true })
-        }
-        const tempPath = path.join(scratchDir, `temp_${Date.now()}.docx`)
+        // Write the DOCX buffer to a temporary file in the OS temp directory (required for Vercel serverless)
+        const tempPath = path.join(os.tmpdir(), `temp_${Date.now()}.docx`)
         fs.writeFileSync(tempPath, buffer)
         
         // Extract word/document.xml content

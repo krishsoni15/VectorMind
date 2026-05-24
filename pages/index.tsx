@@ -291,6 +291,7 @@ interface UploadFile {
 interface Citation {
   id: number;
   sourceName?: string;
+  storageUrl?: string | null;
   chunk: string;
   score: number;
 }
@@ -982,7 +983,7 @@ export default function Home() {
     const url = doc.meta?.storageUrl as string | undefined
     const path = doc.meta?.storagePath as string | undefined
     if (url) {
-      setPreviewPdfUrl(url)
+      setPreviewPdfUrl(`/api/proxy?url=${encodeURIComponent(url)}`)
       return
     }
     if (path) {
@@ -1719,7 +1720,7 @@ export default function Home() {
                     .map(c => (
                       <div key={c.id} className={`group flex items-center gap-1 rounded-xl transition-colors relative ${activeChatId === c.id ? 'bg-[#1D9E75]/10 ring-1 ring-[#1D9E75]/25' : 'hover:bg-white/5'}`}>
                         {editingChatId === c.id ? (
-                          <div className="flex-1 flex items-center gap-2 px-2.5 py-2.5 min-w-0">
+                          <div className="flex-1 flex items-center gap-2.5 px-2.5 py-2.5 min-w-0">
                             <MessageSquare className="w-4 h-4 shrink-0 text-emerald-400" />
                             <form
                               onSubmit={(e) => {
@@ -3090,8 +3091,8 @@ export default function Home() {
             <div className="flex-1 flex overflow-hidden">
               {/* Left Side: PDF Preview */}
               <div className="flex-1 border-r border-zinc-800 bg-zinc-950/50">
-                {activeCitation.sourceName && (activeCitation.sourceName.toLowerCase().endsWith('.pdf') || activeCitation.sourceName.toLowerCase().endsWith('.txt') || activeCitation.sourceName.toLowerCase().endsWith('.md')) ? (
-                  <iframe src={`/api/preview/${encodeURIComponent(activeCitation.sourceName)}`} className="w-full h-full" />
+                {activeCitation?.storageUrl || activeCitation?.sourceName ? (
+                  <iframe src={activeCitation.storageUrl ? `/api/proxy?url=${encodeURIComponent(activeCitation.storageUrl)}#view=FitH` : `/api/preview/${encodeURIComponent(activeCitation.sourceName || '')}`} className="w-full h-full" />
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-zinc-500 gap-4">
                     <FileText className="w-12 h-12 opacity-50" />

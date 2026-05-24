@@ -335,12 +335,16 @@ async function chatHandler(
     // Resolve sources
     const pageIds = Array.from(new Set(diverseResults.map((r: any) => r.page_id)))
     const { data: pages } = await supabase.from('nods_page').select('id, path, meta').in('id', pageIds)
-    const sourceMap = new Map<number, string>()
-    pages?.forEach((p: any) => sourceMap.set(p.id, p.meta?.filename || p.path?.split('/').pop() || 'doc'))
+    const sourceMap = new Map<number, { name: string, url: string | null }>()
+    pages?.forEach((p: any) => sourceMap.set(p.id, { 
+      name: p.meta?.filename || p.path?.split('/').pop() || 'doc',
+      url: p.meta?.storageUrl || null
+    }))
 
     const citations = diverseResults.map((r: any, idx: number) => ({
       id: idx + 1,
-      sourceName: sourceMap.get(r.page_id) || 'doc',
+      sourceName: sourceMap.get(r.page_id)?.name || 'doc',
+      storageUrl: sourceMap.get(r.page_id)?.url || null,
       chunk: r.content,
       score: r.similarity || 0
     }))
