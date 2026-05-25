@@ -3407,7 +3407,24 @@ export default function Home() {
                             {/* Assistant Message Actions & Metadata */}
                             {msg.role === 'assistant' && !msg.isLoading && (
                               <div className="mt-2 flex flex-col gap-4">
-                                <div className="flex items-center justify-between">
+                                <div className="flex items-center justify-start gap-4">
+                                  {/* AI Action Buttons */}
+                                  <div className="flex items-center gap-1.5 -ml-1">
+                                    <button onClick={() => handleCopy(msg.id, msg.text)} className="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-white/5 rounded-md transition-colors" title="Copy response">
+                                      {copiedId === msg.id ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                                    </button>
+
+                                    {isSearchLoading && activeMessageIdRef.current === msg.id ? (
+                                      <button onClick={() => stop()} className="p-1.5 text-red-400 hover:text-red-300 hover:bg-white/5 rounded-md transition-colors" title="Stop generating">
+                                        <Square className="w-4 h-4" />
+                                      </button>
+                                    ) : (
+                                      <button onClick={() => handleSearchSubmit(undefined, messages.filter(m => m.role === 'user').pop()?.text)} className={`p-1.5 transition-colors rounded-md ${msg.error ? 'text-amber-400 hover:text-amber-300 hover:bg-amber-400/10' : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'}`} title="Regenerate response">
+                                        <RefreshCw className="w-4 h-4" />
+                                      </button>
+                                    )}
+                                  </div>
+
                                   <div className="flex items-center gap-3">
                                     {msg.cached && (
                                       <div className="text-[10px] font-bold px-2.5 py-1 rounded-md border flex items-center gap-1.5 shadow-sm bg-yellow-500/10 text-yellow-500 border-yellow-500/20" title="Served from semantic cache">
@@ -3427,23 +3444,6 @@ export default function Home() {
                                       </div>
                                     )}
                                     */}
-                                  </div>
-
-                                  {/* AI Action Buttons */}
-                                  <div className="flex items-center gap-1.5 mt-1 -ml-1">
-                                    <button onClick={() => handleCopy(msg.id, msg.text)} className="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-white/5 rounded-md transition-colors" title="Copy response">
-                                      {copiedId === msg.id ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                                    </button>
-
-                                    {isSearchLoading && activeMessageIdRef.current === msg.id ? (
-                                      <button onClick={() => stop()} className="p-1.5 text-red-400 hover:text-red-300 hover:bg-white/5 rounded-md transition-colors" title="Stop generating">
-                                        <Square className="w-4 h-4" />
-                                      </button>
-                                    ) : (
-                                      <button onClick={() => handleSearchSubmit(undefined, messages.filter(m => m.role === 'user').pop()?.text)} className={`p-1.5 transition-colors rounded-md ${msg.error ? 'text-amber-400 hover:text-amber-300 hover:bg-amber-400/10' : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'}`} title="Regenerate response">
-                                        <RefreshCw className="w-4 h-4" />
-                                      </button>
-                                    )}
                                   </div>
                                 </div>
 
