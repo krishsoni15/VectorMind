@@ -7,6 +7,8 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { filename } = req.query
 
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN')
+  
   if (!filename || typeof filename !== 'string') {
     return res.status(400).json({ error: 'Missing filename' })
   }
@@ -19,12 +21,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     auth: { persistSession: false, autoRefreshToken: false },
   })
 
-  const { data, error } = await supabase.storage
+  // Attempt to download the file directly
+  let { data, error } = await supabase.storage
     .from('documents')
     .download(filename)
 
+  // Fallback: If not found, maybe it's in a folder with the active project ID?
+  // We don't have the projectId here, so we just return a 404 with proper headers
   if (error || !data) {
-    return res.status(404).json({ error: 'File not found' })
+    res.setHeader('Content-Type', 'text/html')
+    return res.status(404).send(`
+      <div style="font-family: sans-serif; padding: 2rem; text-align: center; color: #888;">
+        <h2>File not found</h2>
+        <p>The document could not be located in storage.</p>
+        <p style="font-size: 0.8em; color: #aaa;">Error: ${error?.message || 'Unknown'}</p>
+      </div>
+    `)
   }
 
   // Convert Blob to Buffer and stream it back

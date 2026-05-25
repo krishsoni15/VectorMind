@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Clipboard, FileText, FileDown, ChevronDown, ChevronUp, Check, AlertTriangle, XCircle, CheckCircle } from 'lucide-react';
+import { getEmoji } from '../lib/emojiMapper';
 
 export type PriorityListSection = {
   type: 'priority_list';
@@ -114,9 +115,11 @@ const PrintStyles = () => (
 
 const SectionHeader = ({ title }: { title?: string }) => {
   if (!title) return null;
+  const emoji = getEmoji(title);
   return (
     <h3 className="text-lg font-semibold text-gray-100 flex items-center mb-4 mt-6">
       <div className="w-1.5 h-5 bg-blue-500 rounded-full mr-2 print-hidden"></div>
+      {emoji && <span className="mr-2 select-none" style={{ fontSize: '15px' }}>{emoji}</span>}
       {title}
     </h3>
   );

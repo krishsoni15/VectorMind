@@ -426,6 +426,10 @@ export default function Home() {
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
+  // --- Inline Prompt Editor State ---
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
+  const [editingMessageText, setEditingMessageText] = useState<string>('')
+
   // --- PWA Installation State & Hooks ---
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
   const [showInstallBtn, setShowInstallBtn] = useState(false)
@@ -525,7 +529,7 @@ export default function Home() {
   // Enterprise Scale Filtering & Pagination
   const [fileSearchQuery, setFileSearchQuery] = useState('')
   const [dashboardPage, setDashboardPage] = useState(1)
-  const ITEMS_PER_PAGE = 25
+  const [itemsPerPage, setItemsPerPage] = useState(25)
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' })
 
   // Search state
@@ -984,11 +988,11 @@ export default function Home() {
   }, [documents, fileSearchQuery, formatFilter, sortConfig])
 
   const paginatedDocs = useMemo(() => {
-    const start = (dashboardPage - 1) * ITEMS_PER_PAGE
-    return filteredAndSortedDocs.slice(start, start + ITEMS_PER_PAGE)
-  }, [filteredAndSortedDocs, dashboardPage])
+    const start = (dashboardPage - 1) * itemsPerPage
+    return filteredAndSortedDocs.slice(start, start + itemsPerPage)
+  }, [filteredAndSortedDocs, dashboardPage, itemsPerPage])
 
-  const totalPages = Math.ceil(filteredAndSortedDocs.length / ITEMS_PER_PAGE)
+  const totalPages = Math.ceil(filteredAndSortedDocs.length / itemsPerPage)
 
   const requestSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'asc'
@@ -1029,15 +1033,26 @@ export default function Home() {
   const openPreview = (doc: IndexedDocument) => {
     const url = doc.meta?.storageUrl as string | undefined
     const path = doc.meta?.storagePath as string | undefined
+    
+    // 1. If we have the exact public URL, use it directly (bypasses Next.js strict iframe headers)
     if (url) {
-      setPreviewPdfUrl(`/api/proxy?url=${encodeURIComponent(url)}`)
+      setPreviewPdfUrl(url)
       return
     }
+    
+    // 2. If we only have the storage path, reconstruct the Supabase public URL
     if (path) {
-      setPreviewPdfUrl(`/api/preview/${encodeURIComponent(path)}`)
-      return
+      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+      if (baseUrl) {
+        // We split by '/' to encode each path segment individually without converting '/' to '%2F'
+        const encodedPath = path.split('/').map(encodeURIComponent).join('/')
+        setPreviewPdfUrl(`${baseUrl}/storage/v1/object/public/documents/${encodedPath}`)
+        return
+      }
     }
-    setPreviewPdfUrl(`/api/preview/${encodeURIComponent(getDocName(doc))}`)
+
+    // 3. Legacy document fallback
+    setPreviewPdfUrl('legacy-missing-file')
   }
 
   const handleSearchSubmit = async (e?: React.FormEvent, overrideQuery?: string) => {
@@ -1151,6 +1166,31 @@ export default function Home() {
       activeMessageIdRef.current = null
       abortControllerRef.current = null
     }
+  }
+
+  const handleEditSubmit = async (msgId: string, newText: string) => {
+    if (!newText.trim()) return
+    
+    // Stop any ongoing search
+    if (isSearchLoading) {
+      stop()
+    }
+    
+    // Find index of the edited message
+    const msgIndex = messages.findIndex(m => m.id === msgId)
+    if (msgIndex === -1) return
+    
+    // Slice history up to (but not including) this message
+    const newHistory = messages.slice(0, msgIndex)
+    
+    // Set messages to this sliced history so handleSearchSubmit starts fresh from this prompt
+    setMessages(newHistory)
+    setEditingMessageId(null)
+    
+    // Submit the query with the new text
+    setTimeout(() => {
+      handleSearchSubmit(undefined, newText)
+    }, 10)
   }
 
   const handleCopy = (id: string, text: string) => {
@@ -1422,6 +1462,18 @@ export default function Home() {
           </button>
           {toolsMenuOpen && (
             <div className="absolute bottom-full left-0 mb-2 w-56 rounded-xl border border-white/10 bg-[#1e1f20] shadow-xl p-1.5 z-50 animate-slide-up">
+              {/* Mobile model selector */}
+              <div className="sm:hidden border-b border-white/[0.06] pb-2 mb-2 px-3 pt-2">
+                <span className="text-[10px] font-bold text-zinc-550 uppercase tracking-widest block mb-1.5">Select Model</span>
+                <CustomSelect 
+                  value={activeProject?.chat_provider || 'groq'} 
+                  onChange={(val) => { handleUpdateChatProvider(val); setToolsMenuOpen(false); }} 
+                  options={CHAT_PROVIDER_OPTIONS} 
+                  containerClassName="w-full" 
+                  buttonClassName="flex h-8 w-full items-center justify-between rounded-lg bg-white/5 border border-white/[0.04] px-2.5 text-xs text-zinc-300 hover:bg-white/10 outline-none" 
+                  dropdownPosition="bottom-full mb-2 left-0 right-0 z-[210] origin-bottom"
+                />
+              </div>
               <button type="button" className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-zinc-200 hover:bg-white/5 flex items-center gap-2" onClick={() => { setActiveTab('database'); setTimeout(() => dbFileInputRef.current?.click(), 100); setToolsMenuOpen(false); }}>
                 <UploadCloud className="w-4 h-4 text-emerald-400" /> Upload documents
               </button>
@@ -1470,8 +1522,8 @@ export default function Home() {
             style={{ minHeight: '44px', maxHeight: '120px' }}
           />
         </div>
-        <div className="hidden sm:block w-28 shrink-0 mb-1">
-          <CustomSelect value={activeProject?.chat_provider || 'groq'} onChange={handleUpdateChatProvider} options={CHAT_PROVIDER_OPTIONS} containerClassName="w-full" buttonClassName="flex h-9 w-full items-center justify-between rounded-full bg-white/5 px-3 text-xs text-zinc-300 hover:bg-white/10 border-0" dropdownPosition="bottom-full mb-2 left-0 right-0 z-[200] origin-bottom" />
+        <div className="hidden sm:flex w-24 shrink-0 mb-1">
+          <CustomSelect value={activeProject?.chat_provider || 'groq'} onChange={handleUpdateChatProvider} options={CHAT_PROVIDER_OPTIONS} containerClassName="w-full" buttonClassName="flex h-7 w-full items-center justify-between rounded-lg bg-white/5 border border-white/[0.04] px-2 text-[10px] sm:text-[11.5px] text-zinc-350 hover:bg-white/10 hover:text-zinc-100 outline-none select-none transition-all duration-200" dropdownPosition="bottom-full mb-2 left-0 right-0 z-[200] origin-bottom" />
         </div>
         {isSearchLoading ? (
           <button type="button" onClick={() => stop()} className="w-9 h-9 shrink-0 rounded-full bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-all flex items-center justify-center shadow-lg shadow-red-500/5 animate-pulse mb-1" aria-label="Stop">
@@ -2740,16 +2792,55 @@ export default function Home() {
                       </div>
 
                       {/* Pagination */}
-                      {totalPages > 1 && (
-                        <div className="p-4 border-t border-white/[0.05] flex items-center justify-between bg-zinc-950/20">
-                          <div className="text-xs text-zinc-500">
-                            Showing <span className="font-semibold text-zinc-350">{(dashboardPage - 1) * ITEMS_PER_PAGE + 1}</span> to <span className="font-semibold text-zinc-350">{Math.min(dashboardPage * ITEMS_PER_PAGE, filteredAndSortedDocs.length)}</span> of <span className="font-semibold text-zinc-350">{filteredAndSortedDocs.length}</span> files
+                      {filteredAndSortedDocs.length > 0 && (
+                        <div className="p-4 border-t border-white/[0.05] flex flex-col sm:flex-row items-center justify-between gap-4 bg-zinc-950/20">
+                          {/* Left: Size Selector & Showing Status */}
+                          <div className="flex flex-col sm:flex-row items-center gap-3.5 text-xs text-zinc-500 w-full sm:w-auto justify-between sm:justify-start">
+                            <div className="flex items-center gap-2 self-start sm:self-auto">
+                              <span>Show</span>
+                              <CustomSelect 
+                                value={String(itemsPerPage)} 
+                                onChange={(val) => { setItemsPerPage(Number(val)); setDashboardPage(1); }} 
+                                options={[
+                                  { value: '10', label: '10' },
+                                  { value: '25', label: '25' },
+                                  { value: '50', label: '50' },
+                                  { value: '100', label: '100' }
+                                ]} 
+                                containerClassName="w-16 shrink-0 z-40" 
+                                buttonClassName="flex h-7.5 items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-350 hover:bg-zinc-900 transition-colors" 
+                                dropdownPosition="bottom-full mb-1.5 left-0 w-20 origin-bottom"
+                              />
+                              <span>per page</span>
+                            </div>
+                            <div className="h-4 w-px bg-white/[0.06] hidden sm:block" />
+                            <div className="self-start sm:self-auto text-zinc-450">
+                              Showing <span className="font-semibold text-zinc-350">{(dashboardPage - 1) * itemsPerPage + 1}</span> to <span className="font-semibold text-zinc-350">{Math.min(dashboardPage * itemsPerPage, filteredAndSortedDocs.length)}</span> of <span className="font-semibold text-zinc-350">{filteredAndSortedDocs.length}</span> files
+                            </div>
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <button onClick={() => setDashboardPage(p => Math.max(1, p - 1))} disabled={dashboardPage === 1} className="p-1.5 rounded-lg border border-white/5 hover:bg-white/5 disabled:opacity-30 disabled:hover:bg-transparent transition text-zinc-300"><ChevronLeft className="w-4 h-4" /></button>
-                            <span className="text-xs font-semibold text-zinc-450 px-2">Page {dashboardPage} of {totalPages}</span>
-                            <button onClick={() => setDashboardPage(p => Math.min(totalPages, p + 1))} disabled={dashboardPage === totalPages} className="p-1.5 rounded-lg border border-white/5 hover:bg-white/5 disabled:opacity-30 disabled:hover:bg-transparent transition text-zinc-300"><ChevronRight className="w-4 h-4" /></button>
-                          </div>
+                          
+                          {/* Right: Next / Previous Controls */}
+                          {totalPages > 1 && (
+                            <div className="flex items-center gap-1.5 w-full sm:w-auto justify-between sm:justify-end">
+                              <button 
+                                onClick={() => setDashboardPage(p => Math.max(1, p - 1))} 
+                                disabled={dashboardPage === 1} 
+                                className="p-1.5 rounded-lg border border-white/5 bg-zinc-900/40 hover:bg-white/5 disabled:opacity-30 disabled:hover:bg-transparent transition text-zinc-350"
+                                aria-label="Previous Page"
+                              >
+                                <ChevronLeft className="w-4 h-4" />
+                              </button>
+                              <span className="text-xs font-semibold text-zinc-450 px-2">Page {dashboardPage} of {totalPages}</span>
+                              <button 
+                                onClick={() => setDashboardPage(p => Math.min(totalPages, p + 1))} 
+                                disabled={dashboardPage === totalPages} 
+                                className="p-1.5 rounded-lg border border-white/5 bg-zinc-900/40 hover:bg-white/5 disabled:opacity-30 disabled:hover:bg-transparent transition text-zinc-355"
+                                aria-label="Next Page"
+                              >
+                                <ChevronRight className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                     </>
@@ -3202,9 +3293,59 @@ export default function Home() {
                         )}
 
                         {msg.role === 'user' ? (
-                          <div className="bg-[#2f2f32]/90 border border-white/[0.03] text-zinc-100 px-4 py-2.5 rounded-2xl rounded-tr-sm max-w-[85%] text-[14.5px] leading-relaxed shadow-md select-text break-words">
-                            {msg.text}
-                          </div>
+                          editingMessageId === msg.id ? (
+                            <div className="flex flex-col items-end max-w-[85%] w-full bg-[#1e1f20] border border-white/10 rounded-2xl p-3.5 space-y-2.5 shadow-xl animate-fade-in text-left">
+                              <textarea
+                                value={editingMessageText}
+                                onChange={e => setEditingMessageText(e.target.value)}
+                                className="w-full bg-transparent outline-none text-zinc-100 text-[14.5px] leading-relaxed resize-none custom-scrollbar min-h-[60px]"
+                                autoFocus
+                              />
+                              <div className="flex gap-2">
+                                <button 
+                                  type="button" 
+                                  onClick={() => setEditingMessageId(null)} 
+                                  className="px-3 py-1.5 rounded-lg text-xs font-bold text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition-all"
+                                >
+                                  Cancel
+                                </button>
+                                <button 
+                                  type="button" 
+                                  onClick={() => handleEditSubmit(msg.id, editingMessageText)} 
+                                  className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-450 text-[#0a0a0c] transition-all shadow-lg shadow-emerald-500/10 active:scale-95"
+                                >
+                                  Save & Submit
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-end max-w-[85%] group">
+                              <div className="bg-[#2f2f32]/90 border border-white/[0.03] text-zinc-100 px-4 py-2.5 rounded-2xl rounded-tr-sm text-[14.5px] leading-relaxed shadow-md select-text break-words w-full text-left">
+                                {msg.text}
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200 pr-1">
+                                <button 
+                                  type="button" 
+                                  onClick={() => handleCopy(msg.id, msg.text)} 
+                                  className="p-1 rounded hover:bg-white/5 text-zinc-500 hover:text-zinc-350 transition-colors"
+                                  title="Copy prompt"
+                                >
+                                  {copiedId === msg.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                                </button>
+                                <button 
+                                  type="button" 
+                                  onClick={() => {
+                                    setEditingMessageId(msg.id);
+                                    setEditingMessageText(msg.text);
+                                  }} 
+                                  className="p-1 rounded hover:bg-white/5 text-zinc-500 hover:text-zinc-350 transition-colors"
+                                  title="Edit prompt"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          )
                         ) : (
                           <div className="flex-1 min-w-0 max-w-[calc(100vw-32px)] sm:max-w-[calc(100vw-85px)] md:max-w-[85%] text-sm text-zinc-200">
                             <div className="px-1 py-1">
@@ -3339,7 +3480,7 @@ export default function Home() {
                                           key={idx}
                                           type="button"
                                           onClick={() => setSearchQuery(suggestion)}
-                                          className="text-[13px] text-zinc-350 hover:text-zinc-50 bg-zinc-900/60 hover:bg-zinc-850/80 border border-zinc-800/80 hover:border-zinc-700/80 px-3.5 py-1.5 rounded-full transition-all duration-200 active:scale-95 shadow-sm text-left break-words whitespace-normal max-w-full"
+                                          className="text-[11px] sm:text-[13px] text-zinc-350 hover:text-zinc-50 bg-zinc-900/60 hover:bg-zinc-850/80 border border-zinc-800/80 hover:border-zinc-700/80 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-lg sm:rounded-full transition-all duration-200 active:scale-95 shadow-sm text-left break-words whitespace-normal max-w-full"
                                         >
                                           {suggestion}
                                         </button>
@@ -3450,16 +3591,30 @@ export default function Home() {
                 Document Viewer
               </div>
               <div className="flex items-center gap-3">
-                <a href={previewPdfUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-zinc-300 hover:text-zinc-550 bg-transparent hover:bg-zinc-900 px-3.5 py-1.5 rounded-md border border-zinc-800 transition-colors">
-                  Open External
-                </a>
+                {previewPdfUrl !== 'legacy-missing-file' && (
+                  <a href={previewPdfUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-zinc-300 hover:text-zinc-550 bg-transparent hover:bg-zinc-900 px-3.5 py-1.5 rounded-md border border-zinc-800 transition-colors">
+                    Open External
+                  </a>
+                )}
                 <button onClick={() => setPreviewPdfUrl(null)} className="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-zinc-550 bg-transparent hover:bg-zinc-900 rounded-md transition-colors border border-zinc-800">
                   <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
             <div className="flex-1 bg-zinc-900 relative p-1 flex items-center justify-center">
-              {previewPdfUrl.toLowerCase().includes('.docx') ? (
+              {previewPdfUrl === 'legacy-missing-file' ? (
+                <div className="text-center p-8 max-w-md mx-auto space-y-4">
+                  <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto text-amber-500 shadow-inner">
+                    <FileText className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <h3 className="text-zinc-200 font-semibold text-lg">Legacy Document</h3>
+                    <p className="text-zinc-450 text-xs mt-2 leading-relaxed">
+                      This document was uploaded before the secure physical storage backup feature was introduced. The text is fully indexed and searchable in the vector database, but the original file cannot be previewed natively. To enable preview, please delete and re-upload this file.
+                    </p>
+                  </div>
+                </div>
+              ) : previewPdfUrl.toLowerCase().includes('.docx') ? (
                 <div className="text-center p-8 max-w-md mx-auto space-y-4">
                   <div className="w-16 h-16 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mx-auto text-blue-450 shadow-inner animate-pulse">
                     <FileText className="w-8 h-8" />
