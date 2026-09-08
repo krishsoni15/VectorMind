@@ -20,7 +20,7 @@ Format your output as clean Markdown:
 Do NOT wrap your output in conversational intro/outro text (like "Here is the extracted text:"). Output ONLY the extracted text.`
 
   let response: any = null
-  const modelsToTry = ['gemini-3.6-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-flash']
+  const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']
   
   for (const modelName of modelsToTry) {
     try {

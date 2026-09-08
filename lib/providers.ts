@@ -69,7 +69,7 @@ export const CHAT_PROVIDERS: Record<ChatProviderId, ChatProviderConfig> = {
   gemini: {
     id: 'gemini',
     name: 'Google Gemini',
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.0-flash',
     free: true,
     freeLimit: '15 RPM free',
     signupUrl: 'https://ai.google.dev',
@@ -398,7 +398,7 @@ export async function expandQueryHyDE(
         const key = getApiKey('GEMINI_API_KEY', apiKeyOverride)
         if (!key) return [query]
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -545,7 +545,7 @@ export async function streamChatResponse(
       }
 
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${key}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=${key}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
