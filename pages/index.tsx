@@ -252,9 +252,27 @@ export default function VectorMindLanding() {
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
+  const [activeSection, setActiveSection] = useState<string>('hero')
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
   const [canInstallPWA, setCanInstallPWA] = useState(false)
   const [showPWAModal, setShowPWAModal] = useState(false)
+  const [techPhraseIdx, setTechPhraseIdx] = useState(0)
+
+  const TECH_PHRASES = useMemo(() => [
+    'Hybrid RAG + CAG Engine',
+    'HNSW Vector Indexing (pgvector)',
+    'HyDE Query Expansion',
+    'BM25 + Cosine Rank Fusion (RRF)',
+    'Multi-Model LLM Router (Groq/Gemini/Cohere/OpenAI)'
+  ], [])
+
+  // Ticker for tech phrases
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTechPhraseIdx((prev) => (prev + 1) % TECH_PHRASES.length)
+    }, 2800)
+    return () => clearInterval(timer)
+  }, [TECH_PHRASES])
 
   // Track PWA installation prompt
   useEffect(() => {
@@ -292,16 +310,32 @@ export default function VectorMindLanding() {
   // Activate scroll reveal
   useScrollReveal()
 
-  // Track scroll for dynamic navbar transformation
+  // Track scroll for dynamic navbar transformation and active section detection
   useEffect(() => {
+    const sections = ['hero', 'architecture', 'product', 'features', 'pipeline', 'docs']
+
     const handleScroll = () => {
       if (window.scrollY > 20) {
         setScrolled(true)
       } else {
         setScrolled(false)
       }
+
+      const scrollPosition = window.scrollY + 180
+      for (let i = sections.length - 1; i >= 0; i--) {
+        const secId = sections[i]
+        const el = document.getElementById(secId)
+        if (el) {
+          const top = el.offsetTop
+          if (scrollPosition >= top) {
+            setActiveSection(secId)
+            break
+          }
+        }
+      }
     }
-    window.addEventListener('scroll', handleScroll)
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    handleScroll()
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
@@ -363,12 +397,33 @@ export default function VectorMindLanding() {
             </Link>
           </div>
 
-          {/* Desktop Nav Links (Pill Style Container) */}
-          <div className="hidden md:flex items-center gap-1 px-4 py-1.5 rounded-full bg-zinc-900/40 border border-zinc-800/80 backdrop-blur-xl shadow-inner text-[13px] font-medium text-zinc-400 hover:border-zinc-700/60 transition-all duration-300">
-            <a href="#product" className="px-3.5 py-1.5 rounded-full hover:text-white hover:bg-zinc-800/60 transition-all duration-200">Product</a>
-            <a href="#architecture" className="px-3.5 py-1.5 rounded-full hover:text-white hover:bg-zinc-800/60 transition-all duration-200">Architecture</a>
-            <a href="#features" className="px-3.5 py-1.5 rounded-full hover:text-white hover:bg-zinc-800/60 transition-all duration-200">Features</a>
-            <a href="#docs" className="px-3.5 py-1.5 rounded-full hover:text-white hover:bg-zinc-800/60 transition-all duration-200">Docs</a>
+          {/* Desktop Nav Links (Dynamic Active Pill Indicator Container) */}
+          <div className="hidden md:flex items-center gap-1 px-3 py-1.5 rounded-full bg-zinc-900/60 border border-zinc-800/80 backdrop-blur-xl shadow-inner text-[13px] font-medium text-zinc-400 hover:border-zinc-700/80 transition-all duration-300">
+            {[
+              { id: 'product', label: 'Product' },
+              { id: 'architecture', label: 'Architecture' },
+              { id: 'features', label: 'Features' },
+              { id: 'pipeline', label: 'RAG Pipeline' },
+              { id: 'docs', label: 'Docs' }
+            ].map((nav) => {
+              const isActive = activeSection === nav.id
+              return (
+                <a
+                  key={nav.id}
+                  href={`#${nav.id}`}
+                  className={`relative px-3.5 py-1.5 rounded-full transition-all duration-300 ${
+                    isActive
+                      ? 'bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/40 shadow-[0_0_16px_rgba(16,185,129,0.25)]'
+                      : 'hover:text-white hover:bg-zinc-800/60'
+                  }`}
+                >
+                  {nav.label}
+                  {isActive && (
+                    <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-2 h-0.5 bg-emerald-400 rounded-full shadow-[0_0_8px_#10b981]" />
+                  )}
+                </a>
+              )
+            })}
           </div>
 
           {/* Actions */}
@@ -419,7 +474,7 @@ export default function VectorMindLanding() {
       {/* ════════════════════════════════════════════════════════
           HERO SECTION (Powered by DarkVeil WebGL Background)
           ════════════════════════════════════════════════════════ */}
-      <section className="relative pt-20 pb-20 md:pt-28 md:pb-32 z-10 overflow-hidden min-h-[650px] lg:min-h-[720px] flex items-center">
+      <section id="hero" className="relative pt-20 pb-20 md:pt-28 md:pb-32 z-10 overflow-hidden min-h-[650px] lg:min-h-[720px] flex items-center">
         {/* Full-bleed WebGL DarkVeil background */}
         <div className="absolute inset-0 z-0 opacity-40 pointer-events-auto">
           <DarkVeil
@@ -442,10 +497,13 @@ export default function VectorMindLanding() {
             
             {/* Left Column: Text Content */}
             <div className="text-left">
-              {/* Badge */}
-              <div className="hero-entrance hero-entrance-1 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono mb-6 shadow-[0_0_15px_rgba(16,185,129,0.15)] backdrop-blur-md">
-                <Zap className="w-3.5 h-3.5 fill-current text-emerald-400" />
-                <span className="font-semibold">AI KNOWLEDGE INFRASTRUCTURE</span>
+              {/* Badge with rotating animated tech ticker */}
+              <div className="hero-entrance hero-entrance-1 inline-flex items-center gap-2.5 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono mb-6 shadow-[0_0_20px_rgba(16,185,129,0.2)] backdrop-blur-md">
+                <Zap className="w-3.5 h-3.5 fill-current text-emerald-400 animate-pulse" />
+                <span className="font-bold text-zinc-300">ENGINE:</span>
+                <span key={techPhraseIdx} className="font-semibold text-emerald-400 transition-all duration-500 animate-fadeIn">
+                  {TECH_PHRASES[techPhraseIdx]}
+                </span>
               </div>
 
               {/* Main Title */}
@@ -1138,7 +1196,7 @@ export default function VectorMindLanding() {
       {/* ════════════════════════════════════════════════════════
           FULL-WIDTH CTA BANNER (Placed directly above Footer)
           ════════════════════════════════════════════════════════ */}
-      <section className="w-full relative z-10 overflow-hidden border-t border-b border-emerald-500/30 bg-[#050709]">
+      <section id="docs" className="w-full relative z-10 overflow-hidden border-t border-b border-emerald-500/30 bg-[#050709]">
         {/* Background Landscape Image - Edge to Edge */}
         <div className="absolute inset-0 z-0">
           <img
