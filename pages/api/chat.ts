@@ -11,10 +11,14 @@ import { getCachedAnswer, setCachedAnswer } from '../../lib/semanticCache'
 import { calculateGroundingScore } from '../../lib/groundingScore'
 import { withValidation, ChatRequestSchema } from '../../lib/validateRequest'
 import { withRateLimit } from '../../lib/rateLimiter'
+import { getServerUser } from '../../lib/supabase'
+import { getProviderCredential } from '../../lib/credentialResolver'
 import { z } from 'zod'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+const supabaseAnonKey = (serviceKey && !serviceKey.includes('your_')) ? serviceKey : (anonKey || '')
 
 // ─── RRF Fusion ─────────────────────────────────────────────────────────────────
 
@@ -62,7 +66,7 @@ function packContext(citations: any[], maxTokens = 15000): string {
   let context = '', total = 0
   for (let idx = 0; idx < citations.length; idx++) {
     const item = citations[idx]
-    const chunk = `[${item.id}] (Source: ${item.sourceName})\n${item.chunk}\n\n`
+    const chunk = `[Citation ${item.id}] (File Name: ${item.sourceName})\n${item.chunk}\n\n`
     const tokenCount = tokenizer.encode(chunk).bpe.length
     if (total + tokenCount > maxTokens) break
     context += chunk
@@ -100,7 +104,7 @@ async function formatAndSummarizeHistory(
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'groq/compound-mini',
         messages: [
           {
             role: 'system',
@@ -141,7 +145,7 @@ async function getFollowUpSuggestions(question: string, answer: string): Promise
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: 'groq/compound-mini',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: inputPayload }
@@ -167,7 +171,7 @@ async function getFollowUpSuggestions(question: string, answer: string): Promise
     // Fallback to Gemini
     const geminiKey = process.env.GEMINI_API_KEY
     if (geminiKey) {
-      const gemRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
+      const gemRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -279,13 +283,18 @@ async function chatHandler(
       chatProvider = fb.id
     }
 
+    // Extract user & resolve provider credentials
+    const user = await getServerUser(req)
+    const personalChatKey = await getProviderCredential({ userId: user?.id, provider: chatProvider })
+    const personalEmbedKey = await getProviderCredential({ userId: user?.id, provider: embedProvider })
+
     // HyDE expansion
-    const allQueries = await expandQueryHyDE(sanitizedQuery, chatProvider)
+    const allQueries = await expandQueryHyDE(sanitizedQuery, chatProvider, personalChatKey)
     
     // Embed queries
     let queryEmbeddings: number[][] = []
     try {
-      queryEmbeddings = await generateEmbeddingsBatch(allQueries, embedProvider, 'query')
+      queryEmbeddings = await generateEmbeddingsBatch(allQueries, embedProvider, 'query', 0, personalEmbedKey)
     } catch (e: any) {
       console.error('[VectorMind] Query batch embedding failed:', e.message)
     }
@@ -328,9 +337,51 @@ async function chatHandler(
     // RRF + MMR + Confidence
     const fusedResults = rrfFusion(allResultLists)
     let diverseResults = mmrFilter(fusedResults, 0.7, 20)
-    const confidence = computeConfidence(diverseResults)
 
-    // If no results are found, we still allow the LLM to answer (for conversational queries like "hello")
+    // Summary/Overview query detection & zero-results fallback
+    const isSummaryQuery = /summary|summarize|overview|give me summary|tell me about|what is in|my file|this file|the file|image|picture|explain|what does/i.test(sanitizedQuery)
+    if (diverseResults.length === 0 || isSummaryQuery) {
+      try {
+        let pageIds: number[] = []
+        if (selectedFileIds && selectedFileIds.length > 0) {
+          pageIds = selectedFileIds.map(id => parseInt(id, 10)).filter(id => !isNaN(id))
+        } else {
+          const { data: matchedPages } = await supabase
+            .from('nods_page')
+            .select('id')
+            .eq('project_id', projectId)
+          if (matchedPages && matchedPages.length > 0) {
+            pageIds = matchedPages.map(p => p.id)
+          }
+        }
+
+        if (pageIds.length > 0) {
+          const { data: fallbackSections } = await supabase
+            .from('nods_page_section')
+            .select('id, content, page_id')
+            .in('page_id', pageIds)
+            .limit(20)
+
+          if (fallbackSections && fallbackSections.length > 0) {
+            const existingIds = new Set(diverseResults.map(r => String(r.id)))
+            fallbackSections.forEach((sec: any) => {
+              if (!existingIds.has(String(sec.id))) {
+                diverseResults.push({
+                  id: sec.id,
+                  page_id: sec.page_id,
+                  content: sec.content,
+                  similarity: 0.5
+                })
+              }
+            })
+          }
+        }
+      } catch (e) {
+        console.warn('[VectorMind] Fallback section fetch notice:', e)
+      }
+    }
+
+    const confidence = computeConfidence(diverseResults)
 
     // Resolve sources
     const pageIds = Array.from(new Set(diverseResults.map((r: any) => r.page_id)))
@@ -349,7 +400,8 @@ async function chatHandler(
       score: r.similarity || 0
     }))
 
-    const packedContext = packContext(citations, 15000)
+    const packedContext = packContext(citations, 4000)
+    const uniqueFiles = Array.from(new Set(citations.map((c: any) => c.sourceName)))
 
     const historySummary = await formatAndSummarizeHistory(conversationHistory || [])
     let historyContext = ''
@@ -359,6 +411,7 @@ async function chatHandler(
 
     const systemPrompt = `${historyContext}You are VectorMind, a helpful and intelligent AI assistant.
 Current Workspace: "${workspaceName}" (${documentCount} indexed document${documentCount !== 1 ? 's' : ''}).
+Workspace Context Files (${uniqueFiles.length} file${uniqueFiles.length !== 1 ? 's' : ''}): ${uniqueFiles.map(f => `"${f}"`).join(', ')}.
 
 Instructions:
 1. For conversational greetings (e.g., "hello", "good morning") or questions about yourself or the workspace, respond naturally and helpfully.
@@ -368,8 +421,12 @@ ${strictMode
 4. If you refuse to answer, your ENTIRE reply must be exactly this: "I don't have enough information in your indexed documents to answer that. Please expand your database."` 
   : `2. For questions regarding knowledge or facts, answer using ONLY the information in the CONTEXT section below.
 3. If the user asks an off-topic question that is not covered in the CONTEXT, you MUST answer it using your general knowledge but keep the answer very short. At the very end of your answer, you MUST append this note: **Note: This information is not from your database.**`}
-${strictMode ? '5' : '4'}. When you use information from the CONTEXT, you MUST cite your sources inline using brackets with the citation ID, like [1].
-${strictMode ? '6' : '5'}. FORMATTING RULES:
+${strictMode ? '5' : '4'}. CRITICAL FILE ACCURACY RULE:
+   - There are ${uniqueFiles.length} unique file(s) in this request context: ${uniqueFiles.map(f => `"${f}"`).join(', ')}.
+   - When summarizing or listing files, ALWAYS group the content by actual File Name (e.g., "**${uniqueFiles[0] || 'File'}**").
+   - NEVER refer to individual chunks or citations as separate "Document 1", "Document 2", or "Document 3". Combine all text chunks belonging to the same file under that single File Name section.
+${strictMode ? '6' : '5'}. When you use information from the CONTEXT, you MUST cite your sources inline using brackets with the citation ID, like [1].
+${strictMode ? '7' : '6'}. FORMATTING RULES:
    - You are an elite senior software engineer and technical educator. Always format coding answers in a clean professional developer style.
    - NEVER dump raw unformatted code. Never return code as plain text paragraphs.
    - Always separate: Explanation, File structure, Code (HTML/CSS/JS/Backend), Commands, Output.
@@ -396,7 +453,8 @@ ${packedContext}`
       (text) => {
         fullAnswer += text
         sendEvent({ token: text, done: false })
-      }
+      },
+      personalChatKey
     )
 
     sendEvent({ text_done: true })

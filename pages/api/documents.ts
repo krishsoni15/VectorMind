@@ -2,9 +2,12 @@
 // Document Library API: GET (list by projectId) and DELETE (remove by id)
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { createClient } from '@supabase/supabase-js'
+import { getServerUser } from '../../lib/supabase'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+const supabaseAnonKey = (serviceKey && !serviceKey.includes('your_')) ? serviceKey : (anonKey || '')
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -16,17 +19,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   })
 
   try {
+    const user = await getServerUser(req)
+
     if (req.method === 'GET') {
       const { projectId } = req.query
       
+      const isValidUuid = (str?: string) => !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+
+      if (!projectId || typeof projectId !== 'string' || !isValidUuid(projectId)) {
+        return res.status(200).json([])
+      }
+
       let query = supabase
         .from('nods_page')
         .select('id, path, checksum, meta, project_id, nods_page_section(id)')
+        .eq('project_id', projectId)
         .order('id', { ascending: false })
-
-      if (projectId && typeof projectId === 'string') {
-        query = query.eq('project_id', projectId)
-      }
 
       const { data: pages, error } = await query
 

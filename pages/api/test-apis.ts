@@ -9,15 +9,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Test Gemini Embedding
   try {
     const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${geminiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${geminiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'models/text-embedding-004',
-          content: { parts: [{ text: 'test' }] },
-          taskType: 'RETRIEVAL_DOCUMENT',
-          outputDimensionality: 768
+          content: { parts: [{ text: 'test' }] }
         })
       }
     )
@@ -33,7 +30,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const start = Date.now()
     const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -115,7 +112,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: 'groq/compound-mini',
           messages: [{ role: 'user', content: 'Say hi' }],
           temperature: 0.1,
           max_tokens: 20
@@ -123,7 +120,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })
       const d = await r.json()
       results.groq = r.ok
-        ? { ok: true, model: 'llama-3.3-70b-versatile', response: d.choices?.[0]?.message?.content?.slice(0, 50), latencyMs: Date.now() - start }
+        ? { ok: true, model: 'groq/compound-mini', response: d.choices?.[0]?.message?.content?.slice(0, 50), latencyMs: Date.now() - start }
         : { ok: false, status: r.status, error: d }
     } catch (e: any) {
       results.groq = { ok: false, error: e.message }
@@ -179,7 +176,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Test Supabase
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+  const supabaseKey = (serviceKey && !serviceKey.includes('your_')) ? serviceKey : (anonKey || '')
   if (supabaseUrl && supabaseKey) {
     const { createClient } = await import('@supabase/supabase-js')
     const supabase = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } })

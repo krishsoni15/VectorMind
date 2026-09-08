@@ -71,8 +71,8 @@ export const ChatRequestSchema = z.object({
 export const UploadRequestSchema = z.object({
   filename: z.string().refine(name => {
     const ext = name.split('.').pop()?.toLowerCase()
-    return ['pdf', 'md', 'txt', 'docx', 'json', 'csv', 'py', 'ts'].includes(ext || '')
-  }, { message: "Invalid file type. Supported types: pdf, md, txt, docx, json, csv, py, ts" }),
+    return ['pdf', 'md', 'txt', 'docx', 'json', 'csv', 'py', 'ts', 'js', 'jsx', 'tsx', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'].includes(ext || '')
+  }, { message: "Invalid file type. Supported types: pdf, md, txt, docx, json, csv, py, ts, png, jpg, jpeg, webp, bmp, gif" }),
   base64: z.string().refine(val => {
     const bufferSize = (val.length * 3) / 4
     return bufferSize <= 50 * 1024 * 1024 // 50MB

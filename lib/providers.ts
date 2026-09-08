@@ -36,8 +36,8 @@ export const EMBEDDING_PROVIDERS: Record<EmbeddingProviderId, EmbeddingProviderC
   gemini: {
     id: 'gemini',
     name: 'Google Gemini',
-    model: 'text-embedding-004',
-    dimension: 768,
+    model: 'gemini-embedding-001',
+    dimension: 3072,
     free: true,
     freeLimit: '1500 RPD free',
     signupUrl: 'https://ai.google.dev',
@@ -69,7 +69,7 @@ export const CHAT_PROVIDERS: Record<ChatProviderId, ChatProviderConfig> = {
   gemini: {
     id: 'gemini',
     name: 'Google Gemini',
-    model: 'gemini-2.0-flash',
+    model: 'gemini-2.5-flash',
     free: true,
     freeLimit: '15 RPM free',
     signupUrl: 'https://ai.google.dev',
@@ -86,8 +86,8 @@ export const CHAT_PROVIDERS: Record<ChatProviderId, ChatProviderConfig> = {
   },
   groq: {
     id: 'groq',
-    name: 'Groq (Llama 3.3)',
-    model: 'llama-3.3-70b-versatile',
+    name: 'Groq',
+    model: 'groq/compound-mini',
     free: true,
     freeLimit: '1000 RPD free',
     signupUrl: 'https://console.groq.com',
@@ -116,7 +116,10 @@ export const CHAT_PROVIDER_OPTIONS = Object.values(CHAT_PROVIDERS).map(p => ({
 
 // ─── Key Helpers ─────────────────────────────────────────────────────────────────
 
-export function getApiKey(envName: string): string | undefined {
+export function getApiKey(envName: string, overrideKey?: string | null): string | undefined {
+  if (overrideKey && overrideKey.trim()) {
+    return overrideKey.trim()
+  }
   if (envName === 'OPENAI_API_KEY') {
     return process.env.OPENAI_API_KEY || process.env.OPENAI_KEY
   }
@@ -139,7 +142,8 @@ export async function generateEmbedding(
   text: string,
   providerId: EmbeddingProviderId,
   taskType: 'document' | 'query',
-  attempt = 0
+  attempt = 0,
+  apiKeyOverride?: string | null
 ): Promise<number[]> {
   // Rate limiting
   const now = Date.now()
@@ -148,22 +152,19 @@ export async function generateEmbedding(
   lastEmbedTime = Date.now()
 
   const config = EMBEDDING_PROVIDERS[providerId]
-  const key = getApiKey(config.keyEnv)
+  const key = getApiKey(config.keyEnv, apiKeyOverride)
   if (!key) throw new Error(`${config.name} API key not set (${config.keyEnv})`)
 
   try {
     switch (providerId) {
       case 'gemini': {
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${key}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${key}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              model: 'models/text-embedding-004',
               content: { parts: [{ text }] },
-              taskType: taskType === 'document' ? 'RETRIEVAL_DOCUMENT' : 'RETRIEVAL_QUERY',
-              outputDimensionality: 768,
             }),
           }
         )
@@ -248,10 +249,11 @@ export async function generateEmbeddingsBatch(
   texts: string[],
   providerId: EmbeddingProviderId,
   taskType: 'document' | 'query',
-  attempt = 0
+  attempt = 0,
+  apiKeyOverride?: string | null
 ): Promise<number[][]> {
   const config = EMBEDDING_PROVIDERS[providerId]
-  const key = getApiKey(config.keyEnv)
+  const key = getApiKey(config.keyEnv, apiKeyOverride)
   if (!key) throw new Error(`${config.name} API key not set (${config.keyEnv})`)
 
   try {
@@ -385,17 +387,18 @@ export async function generateEmbeddingsBatch(
 
 export async function expandQueryHyDE(
   query: string,
-  chatProvider: ChatProviderId
+  chatProvider: ChatProviderId,
+  apiKeyOverride?: string | null
 ): Promise<string[]> {
   try {
     const prompt = `Generate exactly 3 alternative search queries for: "${query}"\nReturn ONLY a JSON array of 3 strings. No other text.`
 
     switch (chatProvider) {
       case 'gemini': {
-        const key = getApiKey('GEMINI_API_KEY')
+        const key = getApiKey('GEMINI_API_KEY', apiKeyOverride)
         if (!key) return [query]
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -474,7 +477,7 @@ export async function expandQueryHyDE(
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
+            model: 'groq/compound-mini',
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.3,
             max_tokens: 200,
@@ -502,10 +505,11 @@ export async function streamChatResponse(
   userQuery: string,
   chatHistory: Array<{ role: string; text: string }>,
   chatProvider: ChatProviderId,
-  onChunk: (text: string) => void
+  onChunk: (text: string) => void,
+  apiKeyOverride?: string | null
 ): Promise<void> {
   const config = CHAT_PROVIDERS[chatProvider]
-  const key = getApiKey(config.keyEnv)
+  const key = getApiKey(config.keyEnv, apiKeyOverride)
 
   if (!key) {
     // Auto-fallback to any available chat provider
@@ -541,7 +545,7 @@ export async function streamChatResponse(
       }
 
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=${key}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${key}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -638,7 +642,7 @@ export async function streamChatResponse(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: 'groq/compound-mini',
           messages,
           stream: true,
           temperature: 0.1,

@@ -1,8 +1,11 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { createClient } from '@supabase/supabase-js'
+import { getServerUserInfo, getUserTag, formatProjectForUser } from '../../lib/supabase'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+const supabaseAnonKey = (serviceKey && !serviceKey.includes('your_')) ? serviceKey : (anonKey || '')
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -14,27 +17,98 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   })
 
   try {
+    const userInfo = await getServerUserInfo(req)
+    const tag = getUserTag(userInfo.email)
+
     if (req.method === 'GET') {
       const { data: projects, error } = await supabase
         .from('nods_project')
         .select('*')
         .order('created_at', { ascending: false })
 
-      if (error) throw error
-      return res.status(200).json(projects || [])
+      if (error) {
+        console.warn('[VectorMind] Projects GET warning:', error.message)
+        return res.status(200).json([formatProjectForUser({
+          id: '00000000-0000-0000-0000-000000000001',
+          name: `${tag} Default Workspace`,
+          created_at: new Date().toISOString(),
+          provider: 'cohere',
+          embedding_provider: 'cohere',
+          chat_provider: 'groq'
+        }, userInfo.email)])
+      }
+
+      let userProjects = (projects || []).filter((p: any) => p.name && p.name.startsWith(tag))
+
+      // For guest users, if no tagged project exists, include untagged legacy projects
+      if (userInfo.isGuest && userProjects.length === 0) {
+        userProjects = (projects || []).filter((p: any) => !p.name || !p.name.startsWith('[usr:'))
+      }
+
+      // If user has 0 projects, create default workspace for this user in Supabase
+      if (userProjects.length === 0) {
+        const defaultTaggedName = `${tag} Default Workspace`
+        let newProj = null
+        try {
+          const result = await supabase
+            .from('nods_project')
+            .insert({
+              name: defaultTaggedName,
+              embedding_provider: 'cohere',
+              chat_provider: 'groq',
+              provider: 'cohere',
+            })
+            .select()
+            .single()
+          newProj = result.data
+        } catch (e) {}
+
+        if (!newProj) {
+          try {
+            const result = await supabase
+              .from('nods_project')
+              .insert({
+                name: defaultTaggedName,
+                provider: 'cohere',
+              })
+              .select()
+              .single()
+            newProj = result.data
+          } catch (e) {}
+        }
+
+        if (newProj) {
+          userProjects = [newProj]
+        } else {
+          userProjects = [{
+            id: '00000000-0000-0000-0000-000000000001',
+            name: defaultTaggedName,
+            created_at: new Date().toISOString(),
+            provider: 'cohere',
+            embedding_provider: 'cohere',
+            chat_provider: 'groq'
+          }]
+        }
+      }
+
+      const formatted = userProjects.map((p: any) => formatProjectForUser(p, userInfo.email))
+      return res.status(200).json(formatted)
     }
 
     if (req.method === 'POST') {
       const { name, embedding_provider, chat_provider } = req.body
       if (!name) return res.status(400).json({ error: 'Project name is required' })
 
+      const cleanName = name.replace(/^\[usr:[^\]]+\]\s*/, '').trim()
+      const taggedName = `${tag} ${cleanName}`
+
       let project = null
-      let dbError = null
+      let dbError: any = null
       try {
         const result = await supabase
           .from('nods_project')
           .insert({
-            name,
+            name: taggedName,
             embedding_provider: embedding_provider || 'cohere',
             chat_provider: chat_provider || 'groq',
             provider: embedding_provider || 'cohere',
@@ -53,7 +127,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           const result = await supabase
             .from('nods_project')
             .insert({
-              name,
+              name: taggedName,
               embedding_provider: embedding_provider || 'cohere',
               provider: embedding_provider || 'cohere',
             })
@@ -71,7 +145,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             const result = await supabase
               .from('nods_project')
               .insert({
-                name,
+                name: taggedName,
                 provider: embedding_provider || 'cohere',
               })
               .select('id, name, created_at, provider')
@@ -84,9 +158,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       }
 
+      if (dbError && (dbError.code === '42501' || errMsg.includes('row-level security'))) {
+        console.warn('[VectorMind] RLS policy notice: Using fallback project object until SQL script is run in Supabase dashboard')
+        project = {
+          id: '00000000-0000-0000-0000-000000000001',
+          name: taggedName,
+          created_at: new Date().toISOString(),
+          provider: embedding_provider || 'cohere',
+          embedding_provider: embedding_provider || 'cohere',
+          chat_provider: chat_provider || 'groq',
+          _rlsFallback: true
+        }
+        dbError = null
+      }
+
       if (project) {
         project.embedding_provider = project.embedding_provider || project.provider || embedding_provider || 'cohere'
         project.chat_provider = project.chat_provider || chat_provider || 'groq'
+        project = formatProjectForUser(project, userInfo.email)
       }
 
       if (dbError && !project) throw dbError
@@ -103,10 +192,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'PUT') {
-      const { id, embedding_provider, chat_provider } = req.body
+      const { id, name, embedding_provider, chat_provider } = req.body
       if (!id) return res.status(400).json({ error: 'ID is required' })
 
       const updateData: any = {}
+      if (name) {
+        const cleanName = name.replace(/^\[usr:[^\]]+\]\s*/, '').trim()
+        updateData.name = `${tag} ${cleanName}`
+      }
       if (embedding_provider) {
         updateData.embedding_provider = embedding_provider
         updateData.provider = embedding_provider
@@ -135,11 +228,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const errMsg = dbError?.message || ''
       if (dbError && (errMsg.includes('chat_provider') || errMsg.includes('embedding_provider') || errMsg.includes('Could not find') || errMsg.includes('column'))) {
-        if (embedding_provider) {
+        if (embedding_provider || updateData.name) {
           try {
             const fallback = await supabase
               .from('nods_project')
-              .update({ embedding_provider, provider: embedding_provider })
+              .update(updateData)
               .eq('id', id)
               .select('id, name, created_at, provider, embedding_provider')
               .single()
@@ -148,31 +241,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           } catch (e: any) {
             dbError = e
           }
-
-          const fallbackErrMsg = dbError?.message || ''
-          if (dbError && (fallbackErrMsg.includes('embedding_provider') || fallbackErrMsg.includes('Could not find') || fallbackErrMsg.includes('column'))) {
-            try {
-              const fallback = await supabase
-                .from('nods_project')
-                .update({ provider: embedding_provider })
-                .eq('id', id)
-                .select('id, name, created_at, provider')
-                .single()
-              data = fallback.data
-              dbError = fallback.error
-            } catch (e: any) {
-              dbError = e
-            }
-          }
         } else {
-          // chat_provider only update: bypass DB and return success for client local storage
-          return res.status(200).json({ id, chat_provider, _localOnly: true })
+          return res.status(200).json(formatProjectForUser({ id, chat_provider, _localOnly: true }, userInfo.email))
         }
       }
 
       if (data) {
         data.embedding_provider = data.embedding_provider || data.provider || embedding_provider || 'cohere'
         data.chat_provider = data.chat_provider || chat_provider || 'groq'
+        data = formatProjectForUser(data, userInfo.email)
       }
 
       if (dbError && !data) throw dbError

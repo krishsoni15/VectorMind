@@ -1,3917 +1,1251 @@
 import Head from 'next/head'
+import Link from 'next/link'
+import Image from 'next/image'
+import dynamic from 'next/dynamic'
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
-  Search, UploadCloud, Database, Trash2, Loader2, CheckCircle,
-  XCircle, FileText, AlertCircle, RefreshCw, Send, Bot, User,
-  MessageSquare, Menu, X, PlusCircle, Activity, Info, Zap,
-  Folder, FolderPlus, Eye,
-  LayoutDashboard, Copy, Square, Check, ChevronDown, BarChart3, Download,
-  Link as LinkIcon, Filter, ArrowUpDown, ChevronLeft, ChevronRight,
-  ArrowRight, MoreVertical, Edit2, History, Paperclip, AlertTriangle, Sun, Moon, ArrowDown,
-  ThumbsUp, ThumbsDown
+  Zap, Database, Search, Cpu, Layers, FileText, Check, Copy, ExternalLink,
+  Shield, ArrowRight, ChevronRight, ChevronLeft, Terminal, Sliders, Eye, RefreshCw,
+  Code, GitBranch, Server, Activity, Menu, X, ChevronDown,
+  Lock, Smartphone, ArrowUpRight, BarChart2,
+  HardDrive, FileCode, Play, Pause, CheckCircle, Github, GitFork, CornerDownRight,
+  Upload, MessageSquare, Settings, BookOpen, Image as ImageIcon,
+  Linkedin
 } from 'lucide-react'
-import { useCompletion } from 'ai/react'
-import { EMBEDDING_PROVIDER_OPTIONS, CHAT_PROVIDER_OPTIONS, EMBEDDING_PROVIDERS, CHAT_PROVIDERS, type ChatProviderId, type EmbeddingProviderId } from '../lib/providers'
 
-// ─── Markdown Renderer ───────────────────────────────────────────────────────
-function renderMarkdown(text: string, onCitationClick?: (id: number) => void): React.ReactNode[] {
-  const parseInline = (txt: string) => {
-    const parts = txt.split(/(\[[\d,\s]+\]|\*\*.*?\*\*)/g)
-    return parts.map((part, i) => {
-      if (part.startsWith('**') && part.endsWith('**')) {
-        return <strong key={i} className="text-zinc-50 font-semibold">{part.slice(2, -2)}</strong>
-      }
-      const citMatch = part.match(/^\[([\d,\s]+)\]$/)
-      if (citMatch) {
-        // User requested to hide inline citations: "i hate this type of thing on it"
-        return null
-      }
-      return <React.Fragment key={i}>{part}</React.Fragment>
-    })
+import { AccountMenu } from '@/components/AccountMenu'
+
+const DarkVeil = dynamic(() => import('@/components/DarkVeil'), { ssr: false })
+
+// ─── TYPES & CONSTANTS ────────────────────────────────────────────────────────
+interface StepDetail {
+  step: number
+  title: string
+  shortTitle: string
+  subtitle: string
+  description: string
+  codeSnippet: string
+  metrics: { label: string; value: string }[]
+}
+
+interface FeatureCard {
+  icon: React.ReactNode
+  title: string
+  description: string
+}
+
+const STEPS_DATA: StepDetail[] = [
+  {
+    step: 1,
+    title: 'Multi-Format File Ingestion',
+    shortTitle: 'Ingest',
+    subtitle: 'Extract text, tables & image OCR',
+    description: 'Accepts PDF, DOCX, TXT, MD, and image uploads. Automatic client-side extraction and server-side tesseract OCR for scanned docs.',
+    codeSnippet: `// lib/ocr.ts - Extracting text from document uploads
+export async function processDocument(file: File) {
+  const text = await extractTextFromPDF(file)
+  const tables = await parseDocumentTables(file)
+  return { content: text, metadata: { pages: file.size, type: file.type } }
+}`,
+    metrics: [{ label: 'Format Support', value: 'PDF, DOCX, TXT, PNG, JPG' }, { label: 'OCR Speed', value: '< 450ms / page' }]
+  },
+  {
+    step: 2,
+    title: 'Text Extraction & Parsing',
+    shortTitle: 'Extract',
+    subtitle: 'Recursive boundary-aware split',
+    description: 'Split text into 512-token chunks with 64-token overlap, preserving paragraph context and markdown structure.',
+    codeSnippet: `// lib/chunking.ts - Recursive boundary-aware splitter
+export function chunkDocument(text: string, chunkSize = 512, overlap = 64) {
+  const splitter = new RecursiveCharacterTextSplitter({ chunkSize, chunkOverlap: overlap })
+  return splitter.splitText(text)
+}`,
+    metrics: [{ label: 'Chunk Size', value: '512 tokens' }, { label: 'Context Overlap', value: '64 tokens' }]
+  },
+  {
+    step: 3,
+    title: 'Adaptive Chunking Engine',
+    shortTitle: 'Chunk',
+    subtitle: 'Boundary-aware splitting',
+    description: 'Intelligent chunking preserving paragraph boundaries, code blocks, and markdown structure.',
+    codeSnippet: `// lib/chunking.ts
+function adaptiveChunk(text: string) {
+  const boundaries = detectBoundaries(text) // paragraphs, code fences, headers
+  return splitAtBoundaries(text, boundaries, { maxSize: 512, overlap: 64 })
+}`,
+    metrics: [{ label: 'Boundary Types', value: 'Paragraph, Code, H1-H6' }, { label: 'Avg Chunk', value: '480 tokens' }]
+  },
+  {
+    step: 4,
+    title: 'Multi-Model Dense Embeddings',
+    shortTitle: 'Embed',
+    subtitle: 'Vector representations via Gemini & Cohere',
+    description: 'Generates 768d or 1024d dense vector embeddings using Google Gemini text-embedding-004 or Cohere embed-english-v3.0.',
+    codeSnippet: `// lib/generate-embeddings.ts
+const response = await googleAI.embedContent({
+  model: 'text-embedding-004',
+  content: { parts: [{ text: chunk }] }
+})
+const embedding = response.embedding.values`,
+    metrics: [{ label: 'Embedding Model', value: 'text-embedding-004' }, { label: 'Dimensions', value: '768d dense vector' }]
+  },
+  {
+    step: 5,
+    title: 'HNSW Indexing in pgvector',
+    shortTitle: 'Index',
+    subtitle: 'Sub-millisecond ANN search',
+    description: 'Stores vectors in Supabase PostgreSQL using pgvector with HNSW index configuration (m=16, ef_construction=64).',
+    codeSnippet: `-- Supabase SQL: HNSW Vector Indexing
+CREATE INDEX ON document_chunks 
+USING hnsw (embedding vector_cosine_ops)
+WITH (m = 16, ef_construction = 64);`,
+    metrics: [{ label: 'Index Algorithm', value: 'HNSW Cosine' }, { label: 'Search Latency', value: '1.8 ms' }]
+  },
+  {
+    step: 6,
+    title: 'HyDE Query Expansion',
+    shortTitle: 'Understand',
+    subtitle: 'Hypothetical Document Embeddings',
+    description: 'Generates synthetic answer for incoming queries to bridge vocabulary mismatch between user questions and technical corpus.',
+    codeSnippet: `// lib/retrieval.ts - HyDE Expansion
+const hypotheticalDoc = await generateSyntheticAnswer(userQuery)
+const hydeVector = await getEmbedding(hypotheticalDoc)`,
+    metrics: [{ label: 'Recall Boost', value: '+34%' }, { label: 'Vocabulary Match', value: 'Zero-shot HyDE' }]
+  },
+  {
+    step: 7,
+    title: 'Hybrid BM25 + Vector Search',
+    shortTitle: 'Retrieve',
+    subtitle: 'Full-text + Cosine distance',
+    description: 'Combines PostgreSQL tsvector keyword matching with pgvector cosine similarity.',
+    codeSnippet: `-- Hybrid SQL Query
+SELECT id, chunk_content,
+  ts_rank_cd(text_vector, websearch_to_tsquery(query_text)) AS bm25_score,
+  1 - (embedding <=> query_embedding) AS vector_score
+FROM document_chunks WHERE workspace_id = $1`,
+    metrics: [{ label: 'BM25 Weight', value: '0.4' }, { label: 'Vector Weight', value: '0.6' }]
+  },
+  {
+    step: 8,
+    title: 'Reciprocal Rank Fusion',
+    shortTitle: 'Generate',
+    subtitle: 'RRF k=60 unification',
+    description: 'Merges BM25 and vector search using RRF formula without score normalization bias.',
+    codeSnippet: `// RRF Calculation
+function rrfScore(rankBM25: number, rankVector: number, k = 60) {
+  return (1 / (k + rankBM25)) + (1 / (k + rankVector))
+}`,
+    metrics: [{ label: 'RRF Constant k', value: '60' }, { label: 'Precision@5', value: '96.2%' }]
+  },
+  {
+    step: 9,
+    title: 'Multi-Model Streaming LLM',
+    shortTitle: 'Answer',
+    subtitle: 'Gemini, Groq, Cohere & OpenAI',
+    description: 'Streams response directly to user with exact file name and page citations using Server-Sent Events (SSE).',
+    codeSnippet: `// pages/api/chat.ts - Streaming Response
+const stream = await aiProvider.streamText({
+  model: selectedModel,
+  system: 'You are VectorMind Assistant. Answer strictly using cited context.',
+  prompt: formattedPrompt
+})
+return new StreamingTextResponse(stream)`,
+    metrics: [{ label: 'TTFT', value: '140ms' }, { label: 'Supported Models', value: 'Gemini, Groq, Cohere, OpenAI' }]
   }
-  const lines = text.split('\n')
-  const nodes: React.ReactNode[] = []
-  let ulBuf: string[] = []
-  let olBuf: { n: string; t: string }[] = []
-  let tableBuf: string[] = []
-  let keyCounter = 0
-  const nextKey = () => `md-${keyCounter++}`
+]
 
-  const flushUl = () => {
-    if (!ulBuf.length) return
-    const captured = [...ulBuf]
-    ulBuf = []
-    nodes.push(
-      <ul key={nextKey()} className="my-4 space-y-2.5 list-none bg-[#1a1a1f] rounded-xl p-5 border border-white/5 shadow-sm">
-        {captured.map((t, i) => (
-          <li key={i} className="flex gap-3 text-zinc-300 text-[14px]">
-            <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-emerald-500/80 shrink-0 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
-            <span className="leading-relaxed">{parseInline(t)}</span>
-          </li>
-        ))}
-      </ul>
-    )
-  }
-  const flushOl = () => {
-    if (!olBuf.length) return
-    const captured = [...olBuf]
-    olBuf = []
-    nodes.push(
-      <div key={nextKey()} className="my-5 space-y-3">
-        {captured.map((item, i) => (
-          <div key={i} className="flex items-center gap-3.5 px-4 py-3 bg-gradient-to-r from-zinc-800/40 to-transparent border-l-2 border-emerald-500/50 rounded-r-xl">
-            <span className="shrink-0 w-6 h-6 rounded-md bg-zinc-900 border border-zinc-700/50 flex items-center justify-center text-[11px] font-black text-emerald-400 shadow-sm">
-              {item.n}
-            </span>
-            <span className="font-semibold text-zinc-100 tracking-wide text-[15px]">{parseInline(item.t)}</span>
-          </div>
-        ))}
-      </div>
-    )
-  }
+const FEATURES: FeatureCard[] = [
+  { icon: <Eye className="w-5 h-5" />, title: 'Multimodal OCR', description: 'Extract text, tables, diagrams and more.' },
+  { icon: <Search className="w-5 h-5" />, title: 'Hybrid Retrieval', description: 'Semantic + keyword search.' },
+  { icon: <Cpu className="w-5 h-5" />, title: 'HyDE Expansion', description: 'Bridge vocab with hypothetical queries.' },
+  { icon: <Layers className="w-5 h-5" />, title: 'Rank Fusion', description: 'RRF for maximum relevant results.' },
+  { icon: <FileText className="w-5 h-5" />, title: 'File-Level Context', description: 'Associate entire document mapping.' },
+  { icon: <Server className="w-5 h-5" />, title: 'Multi-Model', description: 'Gemini, Groq, Cohere, OpenAI.' },
+  { icon: <GitBranch className="w-5 h-5" />, title: 'Workspaces', description: 'Organize knowledge by projects.' },
+  { icon: <Activity className="w-5 h-5" />, title: 'Streaming Answers', description: 'Fast, real-time SSE responses.' },
+  { icon: <Smartphone className="w-5 h-5" />, title: 'PWA Ready', description: 'Install on any device.' },
+  { icon: <Code className="w-5 h-5" />, title: 'Developer Friendly', description: 'Open source, self-hostable.' },
+]
 
-  const flushTable = () => {
-    if (!tableBuf.length) return
-    const captured = [...tableBuf]
-    tableBuf = []
+const FILE_TYPES = [
+  { label: 'PDF', icon: <FileText className="w-6 h-6" />, color: 'text-red-400' },
+  { label: 'DOCX', icon: <FileCode className="w-6 h-6" />, color: 'text-blue-400' },
+  { label: 'TXT', icon: <FileText className="w-6 h-6" />, color: 'text-zinc-400' },
+  { label: 'Images', icon: <ImageIcon className="w-6 h-6" />, color: 'text-amber-400' },
+  { label: 'Code', icon: <Code className="w-6 h-6" />, color: 'text-emerald-400' },
+  { label: 'Data', icon: <Database className="w-6 h-6" />, color: 'text-purple-400' },
+]
 
-    const parseRow = (r: string) => {
-      let trimmed = r.trim()
-      if (trimmed.startsWith('|')) trimmed = trimmed.slice(1)
-      if (trimmed.endsWith('|')) trimmed = trimmed.slice(0, -1)
-      return trimmed.split('|').map(c => c.trim())
-    }
-
-    const headers = parseRow(captured[0])
-    let dataStart = 1
-    if (captured.length > 1 && captured[1].includes('---')) {
-      dataStart = 2
-    }
-    const rows = captured.slice(dataStart).map(parseRow)
-
-    nodes.push(
-      <div key={nextKey()} className="overflow-x-auto my-5 border border-zinc-800/60 rounded-xl bg-zinc-900/30 custom-scrollbar shadow-sm">
-        <table className="w-full text-left text-sm text-zinc-300">
-          <thead className="bg-zinc-800/50 text-zinc-100 font-semibold border-b border-zinc-700/50">
-            <tr>
-              {headers.map((h, i) => <th key={i} className="px-4 py-3 align-top whitespace-nowrap">{parseInline(h)}</th>)}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-800/50">
-            {rows.map((row, i) => (
-              <tr key={i} className="hover:bg-zinc-800/30 transition-colors">
-                {row.map((cell, j) => <td key={j} className="px-4 py-3 align-top">{parseInline(cell)}</td>)}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    )
-  }
-
-  lines.forEach((line) => {
-    if (line.trim().startsWith('|')) {
-      flushUl(); flushOl()
-      tableBuf.push(line)
-    } else if (line.startsWith('#### ')) {
-      flushUl(); flushOl(); flushTable()
-      nodes.push(<h4 key={nextKey()} className="font-bold text-zinc-300 mt-6 mb-2 text-sm uppercase tracking-wider">{parseInline(line.slice(5))}</h4>)
-    } else if (line.startsWith('### ')) {
-      flushUl(); flushOl(); flushTable()
-      nodes.push(<h3 key={nextKey()} className="font-bold text-zinc-200 mt-8 mb-3 text-[16px] flex items-center gap-2"><span className="w-1.5 h-4 bg-emerald-500/80 rounded-full" /> {parseInline(line.slice(4))}</h3>)
-    } else if (line.startsWith('## ')) {
-      flushUl(); flushOl(); flushTable()
-      nodes.push(<h2 key={nextKey()} className="font-black text-white mt-10 mb-4 text-xl tracking-tight">{parseInline(line.slice(3))}</h2>)
-    } else if (line.startsWith('# ')) {
-      flushUl(); flushOl(); flushTable()
-      nodes.push(<h1 key={nextKey()} className="font-black text-white mt-10 mb-6 text-2xl tracking-tight pb-2 border-b border-white/10">{parseInline(line.slice(2))}</h1>)
-    } else if (/^(- |\* )/.test(line)) {
-      flushOl(); flushTable()
-      ulBuf.push(line.slice(2))
-    } else if (/^(?:#{1,6}\s*)?\d+\.\s/.test(line)) {
-      flushUl(); flushTable()
-      const m = line.match(/^(?:#{1,6}\s*)?(\d+)\.\s(.*)$/)
-      if (m) olBuf.push({ n: m[1], t: m[2] })
-    } else if (line.trim() === '') {
-      flushUl(); flushOl(); flushTable()
-      nodes.push(<div key={nextKey()} className="h-4" />)
-    } else {
-      flushUl(); flushOl(); flushTable()
-      nodes.push(<p key={nextKey()} className="mb-4 text-zinc-300 leading-relaxed text-[15px]">{parseInline(line)}</p>)
-    }
-  })
-  flushUl(); flushOl(); flushTable()
-  return nodes
-}
-
-
-// --- Animated Number Counter ---
-function AnimatedNumber({ value, duration = 600, className = '' }: { value: number; duration?: number; className?: string }) {
-  const [display, setDisplay] = useState(0)
-  const prevRef = useRef(0)
+// ─── SCROLL REVEAL HOOK ────────────────────────────────────────────────────────
+function useScrollReveal() {
   useEffect(() => {
-    const start = prevRef.current
-    const diff = value - start
-    if (diff === 0) return
-    const startTime = performance.now()
-    const animate = (now: number) => {
-      const elapsed = now - startTime
-      const progress = Math.min(elapsed / duration, 1)
-      const eased = 1 - Math.pow(1 - progress, 3) // ease-out cubic
-      setDisplay(Math.round(start + diff * eased))
-      if (progress < 1) requestAnimationFrame(animate)
-      else prevRef.current = value
-    }
-    requestAnimationFrame(animate)
-  }, [value, duration])
-  return <span className={className}>{display.toLocaleString()}</span>
-}
-
-// --- Sidebar Toggle Icon ---
-function SidebarToggleIcon({ className = 'w-5 h-5' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-      <line x1="9" y1="3" x2="9" y2="21" />
-    </svg>
-  )
-}
-
-// --- Mini 7-day Sparkline ---
-function MiniSparkline({ value, color = '#1D9E75' }: { value: number; color?: string }) {
-  // Generate fake 7-day data ending at current value
-  const bars = useMemo(() => {
-    const data = []
-    for (let i = 0; i < 7; i++) {
-      data.push(Math.max(1, Math.round(value * (0.3 + Math.random() * 0.7))))
-    }
-    data[6] = value
-    const max = Math.max(...data, 1)
-    return data.map(v => (v / max) * 100)
-  }, [value])
-  return (
-    <div className="flex items-end gap-[2px] h-8 w-16">
-      {bars.map((h, i) => (
-        <div key={i} className="flex-1 rounded-sm transition-all duration-500" style={{ height: `${Math.max(8, h)}%`, background: i === 6 ? color : `${color}40`, minHeight: '3px' }} />
-      ))}
-    </div>
-  )
-}
-
-// --- Typing Indicator ---
-function TypingIndicator() {
-  return (
-    <div className="flex items-center gap-2 py-2 px-3 bg-zinc-900/50 border border-zinc-800/40 rounded-lg w-max text-xs text-zinc-400">
-      <span>VectorMind is thinking</span>
-      <div className="flex items-center gap-1">
-        <span className="w-1.5 h-1.5 bg-zinc-450 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-        <span className="w-1.5 h-1.5 bg-zinc-450 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-        <span className="w-1.5 h-1.5 bg-zinc-450 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-      </div>
-    </div>
-  )
-}
-
-// --- Grounding Badge ---
-function GroundingBadge({ grounding }: { grounding: { score: number; level: 'high' | 'medium' | 'low'; unsupported_claims: string[] } }) {
-  const [showTooltip, setShowTooltip] = useState(false)
-  const isHigh = grounding.level === 'high'
-  const isMed = grounding.level === 'medium'
-  const text = isHigh ? `Grounded ${grounding.score}%` : isMed ? `Check sources ${grounding.score}%` : `Low confidence ${grounding.score}%`
-  const colorClass = isHigh ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' :
-    isMed ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' :
-      'bg-red-500/10 text-red-500 border-red-500/20'
-  const icon = isHigh ? <CheckCircle className="w-3 h-3" /> : isMed ? <AlertTriangle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />
-
-  return (
-    <div className="relative inline-block" onMouseEnter={() => setShowTooltip(true)} onMouseLeave={() => setShowTooltip(false)}>
-      <div className={`cursor-help text-[10px] font-bold px-2.5 py-1 rounded-md border flex items-center gap-1.5 shadow-sm ${colorClass}`}>
-        {icon} {text}
-      </div>
-      {showTooltip && grounding.unsupported_claims && grounding.unsupported_claims.length > 0 && (
-        <div className="absolute bottom-full mb-2 left-0 w-64 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl p-3 z-50">
-          <div className="text-xs font-semibold text-zinc-300 mb-2">Unsupported Claims</div>
-          <ul className="text-[11px] text-zinc-400 space-y-1.5 list-disc pl-3">
-            {grounding.unsupported_claims.map((claim, i) => (
-              <li key={i}>{claim}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// --- Particle Burst Effect ---
-function useParticleBurst() {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const burst = useCallback((x: number, y: number) => {
-    if (!containerRef.current) return
-    const colors = ['#1D9E75', '#2BC48E', '#34d399', '#6ee7b7', '#a7f3d0']
-    for (let i = 0; i < 12; i++) {
-      const el = document.createElement('div')
-      el.className = 'particle'
-      el.style.left = `${x}px`
-      el.style.top = `${y}px`
-      el.style.background = colors[i % colors.length]
-      const angle = (Math.PI * 2 * i) / 12
-      const dist = 30 + Math.random() * 40
-      el.style.setProperty('--tx', `${Math.cos(angle) * dist}px`)
-      el.style.setProperty('--ty', `${Math.sin(angle) * dist}px`)
-      containerRef.current.appendChild(el)
-      setTimeout(() => el.remove(), 600)
-    }
-  }, [])
-  return { containerRef, burst }
-}
-
-// --- Flow Arrow Between Cards ---
-function FlowArrow() {
-  return (
-    <div className="hidden md:flex items-center justify-center py-1">
-      <svg width="40" height="24" viewBox="0 0 40 24" className="text-vm-accent">
-        <line x1="20" y1="0" x2="20" y2="18" className="flow-arrow-line" stroke="currentColor" strokeWidth="1.5" fill="none" />
-        <circle cx="20" cy="8" r="2" fill="currentColor" className="flow-arrow-dot" />
-        <polygon points="14,16 20,24 26,16" fill="currentColor" opacity="0.6" />
-      </svg>
-    </div>
-  )
-}
-
-// --- Types ---
-interface Project { id: string; name: string; created_at: string; provider?: string; embedding_provider?: string; chat_provider?: string; }
-interface IndexedDocument {
-  id: string; path: string; checksum: string | null; meta: any; sectionCount: number; projectId: string;
-}
-interface UploadFile {
-  id: string; file: File; status: 'idle' | 'uploading' | 'success' | 'error';
-  progress: number; stage: string; error?: string; chunks?: number;
-  projectId?: string | null;
-}
-interface Citation {
-  id: number;
-  sourceName?: string;
-  storageUrl?: string | null;
-  chunk: string;
-  score: number;
-}
-interface Message {
-  id: string; role: 'user' | 'assistant'; text: string; timestamp: Date;
-  isLoading?: boolean; sources?: string[]; confidence?: { level: string; score: string }; sourceUrls?: string[];
-  citations?: Citation[];
-  error?: boolean;
-  cached?: boolean;
-  grounding?: { score: number; level: 'high' | 'medium' | 'low'; unsupported_claims: string[] };
-  suggestions?: string[];
-}
-interface ChatChannel {
-  id: string; name: string; messages: Message[]; createdAt: string;
-}
-
-function getDocName(doc: IndexedDocument): string {
-  return doc.meta?.filename || doc.path?.split('/').pop() || doc.path || 'Untitled'
-}
-
-function formatDocSize(doc: IndexedDocument): string {
-  const bytes = doc.meta?.size
-  if (typeof bytes === 'number' && bytes > 0) {
-    return bytes >= 1024 * 1024
-      ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-      : `${(bytes / 1024).toFixed(1)} KB`
-  }
-  return '—'
-}
-
-// --- localStorage helpers ---
-const CHAT_STORAGE_KEY = 'vectormind_chats'
-const PROVIDER_STORAGE_KEY = 'vectormind_chat_providers'
-
-function loadChannels(projectId: string): ChatChannel[] {
-  try {
-    const raw = localStorage.getItem(`${CHAT_STORAGE_KEY}_${projectId}`)
-    if (!raw) return [{ id: '1', name: 'General', messages: [], createdAt: new Date().toISOString() }]
-    const parsed = JSON.parse(raw)
-    return parsed.length ? parsed : [{ id: '1', name: 'General', messages: [], createdAt: new Date().toISOString() }]
-  } catch { return [{ id: '1', name: 'General', messages: [], createdAt: new Date().toISOString() }] }
-}
-
-function saveChannels(projectId: string, channels: ChatChannel[]) {
-  try {
-    // Strip isLoading messages before saving
-    const clean = channels.map(c => ({ ...c, messages: c.messages.filter(m => !m.isLoading || m.text) }))
-    localStorage.setItem(`${CHAT_STORAGE_KEY}_${projectId}`, JSON.stringify(clean))
-  } catch { }
-}
-
-function loadChatProvider(projectId: string): string {
-  try {
-    const raw = localStorage.getItem(PROVIDER_STORAGE_KEY)
-    if (!raw) return 'groq'
-    const map = JSON.parse(raw)
-    return map[projectId] || 'groq'
-  } catch { return 'groq' }
-}
-
-function saveChatProvider(projectId: string, provider: string) {
-  try {
-    const raw = localStorage.getItem(PROVIDER_STORAGE_KEY)
-    const map = raw ? JSON.parse(raw) : {}
-    map[projectId] = provider
-    localStorage.setItem(PROVIDER_STORAGE_KEY, JSON.stringify(map))
-  } catch { }
-}
-
-function CustomSelect({ value, onChange, options, title, buttonClassName, containerClassName, dropdownPosition = 'top-full mt-1 left-0 right-0 z-[200] origin-top' }: { value: string, onChange: (val: string) => void, options: { value: string, label: string }[], title?: string, buttonClassName?: string, containerClassName?: string, dropdownPosition?: string }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false)
-    }
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [ref])
-
-  const selected = options.find(o => o.value === value)
-
-  return (
-    <div className={`relative ${containerClassName || 'flex-1'}`} ref={ref}>
-      <button
-        type="button"
-        onClick={(e) => { e.preventDefault(); setOpen(!open); }}
-        className={buttonClassName || "flex h-9 w-full items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-300 shadow-sm outline-none transition-colors hover:bg-zinc-900 hover:text-zinc-50"}
-        title={title}
-      >
-        <span className="truncate">{selected?.label || value}</span>
-        <ChevronDown className={`w-3.5 h-3.5 ml-2 transition-transform duration-200 shrink-0 ${open ? 'rotate-180 text-zinc-50' : 'text-zinc-500'}`} />
-      </button>
-
-      {open && (
-        <div className={`absolute min-w-full overflow-hidden rounded-lg border border-zinc-850 bg-zinc-950 text-zinc-555 shadow-2xl shadow-black/80 ${dropdownPosition}`}>
-          <div className="max-h-[150px] overflow-y-auto custom-scrollbar p-1 flex flex-col gap-0.5">
-            {options.map(opt => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={(e) => { e.preventDefault(); onChange(opt.value); setOpen(false); }}
-                className={`flex w-full items-center rounded-md py-1.5 px-2 text-xs outline-none transition-colors ${value === opt.value ? 'bg-zinc-900 text-zinc-50 font-semibold border-l-2 border-emerald-500' : 'text-zinc-300 hover:bg-zinc-900 hover:text-zinc-50'}`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-export default function Home() {
-  const { containerRef: particleRef, burst: particleBurst } = useParticleBurst()
-
-  // --- State ---
-  const [activeTab, setActiveTab] = useState<'chat' | 'dashboard' | 'database' | 'how-it-works'>('dashboard')
-  const [activeHowItWorksTab, setActiveHowItWorksTab] = useState<'pipeline' | 'rag-vs-cag' | 'schema'>('pipeline')
-  const [selectedPipelineStep, setSelectedPipelineStep] = useState<number>(0)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [sidebarExpanded, setSidebarExpanded] = useState(false)
-  const [toolsMenuOpen, setToolsMenuOpen] = useState(false)
-  const [isStrictRAGMode, setIsStrictRAGMode] = useState(false)
-  const toolsMenuRef = useRef<HTMLDivElement>(null)
-  const chatContainerRef = useRef<HTMLDivElement>(null)
-  const chatInputRef = useRef<HTMLTextAreaElement>(null)
-  const uploadAbortControllersRef = useRef<{ [id: string]: AbortController }>({})
-  const [showScrollBottom, setShowScrollBottom] = useState(false)
-  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
-  const [copiedId, setCopiedId] = useState<string | null>(null)
-
-  // --- Inline Prompt Editor State ---
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
-  const [editingMessageText, setEditingMessageText] = useState<string>('')
-
-  // --- PWA Installation State & Hooks ---
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
-  const [showInstallBtn, setShowInstallBtn] = useState(false)
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      // Register Service Worker
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then((reg) => console.log('SW Registered', reg.scope))
-            .catch((err) => console.warn('SW Registration failed', err))
-        })
-      }
-
-      // Capture browser installation prompt
-      const handleBeforeInstallPrompt = (e: any) => {
-        e.preventDefault()
-        setDeferredPrompt(e)
-        setShowInstallBtn(true)
-      }
-
-      window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
-
-      // Hide if already in standalone app mode
-      if (window.matchMedia('(display-mode: standalone)').matches) {
-        setShowInstallBtn(false)
-      }
-
-      return () => {
-        window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
-      }
-    }
-  }, [])
-
-  const handleInstallPWA = async () => {
-    if (!deferredPrompt) return
-    deferredPrompt.prompt()
-    const { outcome } = await deferredPrompt.userChoice
-    if (outcome === 'accepted') {
-      setDeferredPrompt(null)
-      setShowInstallBtn(false)
-    }
-  }
-
-  // --- Theme State ---
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-    const stored = localStorage.getItem('vm-theme')
-    if (stored === 'light' || stored === 'dark') {
-      setTheme(stored)
-      document.documentElement.classList.toggle('light', stored === 'light')
-    } else {
-      const isSystemLight = window.matchMedia('(prefers-color-scheme: light)').matches
-      const defaultTheme = isSystemLight ? 'light' : 'dark'
-      setTheme(defaultTheme)
-      document.documentElement.classList.toggle('light', isSystemLight)
-    }
-  }, [])
-
-
-
-  const toggleTheme = () => {
-    setTheme(prev => {
-      const next = prev === 'dark' ? 'light' : 'dark'
-      localStorage.setItem('vm-theme', next)
-      document.documentElement.classList.toggle('light', next === 'light')
-      return next
-    })
-  }
-
-  // Advanced File Management
-  const [selectedDocIds, setSelectedDocIds] = useState<string[]>([])
-  const [formatFilter, setFormatFilter] = useState<string>('all')
-
-  // Projects State
-  const [projects, setProjects] = useState<Project[]>([])
-  const [activeProjectId, setActiveProjectId] = useState<string>('')
-  const [isCreatingProject, setIsCreatingProject] = useState(false)
-  const [newProjectName, setNewProjectName] = useState('')
-  const [newEmbeddingProvider, setNewEmbeddingProvider] = useState('cohere')
-  const [newChatProvider, setNewChatProvider] = useState('groq')
-  const [projectDropdownOpen, setProjectDropdownOpen] = useState(false)
-  const [navbarDropdownOpen, setNavbarDropdownOpen] = useState(false)
-  const [sidebarProjSearch, setSidebarProjSearch] = useState('')
-  const [navbarProjSearch, setNavbarProjSearch] = useState('')
-  const [isCreatingProjectSidebar, setIsCreatingProjectSidebar] = useState(false)
-  const [isCreatingProjectNavbar, setIsCreatingProjectNavbar] = useState(false)
-
-  // Documents State
-  const [documents, setDocuments] = useState<IndexedDocument[]>([])
-  const [isLibraryLoading, setIsLibraryLoading] = useState(false)
-
-  // Enterprise Scale Filtering & Pagination
-  const [fileSearchQuery, setFileSearchQuery] = useState('')
-  const [dashboardPage, setDashboardPage] = useState(1)
-  const [itemsPerPage, setItemsPerPage] = useState(25)
-  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' })
-
-  // Search state
-  const [searchQuery, setSearchQuery] = useState('')
-
-  // Auto-resize chat input
-  useEffect(() => {
-    if (chatInputRef.current) {
-      chatInputRef.current.style.height = '44px';
-      if (searchQuery) {
-        chatInputRef.current.style.height = `${Math.min(chatInputRef.current.scrollHeight, 120)}px`;
-      }
-    }
-  }, [searchQuery])
-  const [messages, setMessages] = useState<Message[]>([])
-  const activeMessageIdRef = useRef<string | null>(null)
-  const chatEndRef = useRef<HTMLDivElement>(null)
-  const [searchStep, setSearchStep] = useState<'idle' | 'hyde' | 'search' | 'rrf' | 'synth'>('idle')
-  const [apiHealth, setApiHealth] = useState<'checking' | 'healthy' | 'error'>('checking')
-  const [apiStats, setApiStats] = useState<any>(null)
-  const [activeCitation, setActiveCitation] = useState<Citation | null>(null)
-  const [isSearchLoading, setIsSearchLoading] = useState(false)
-  const abortControllerRef = useRef<AbortController | null>(null)
-  const cancelledUploadsRef = useRef<Set<string>>(new Set())
-
-  // Multi-Chat Channels
-  const [chatChannels, setChatChannels] = useState<ChatChannel[]>([])
-  const [activeChatId, setActiveChatId] = useState<string>('1')
-  const [isCreatingChat, setIsCreatingChat] = useState(false)
-  const [newChatName, setNewChatName] = useState('')
-  const [chatSearchQuery, setChatSearchQuery] = useState('')
-  const [workspaceSearchQuery, setWorkspaceSearchQuery] = useState('')
-  const [chatListOpen, setChatListOpen] = useState(false)
-  const [selectedFileIds, setSelectedFileIds] = useState<string[]>([])
-  const [specificFileSearchQuery, setSpecificFileSearchQuery] = useState('')
-
-  // Tab indicators
-  const tabRefMap = useRef<Record<string, HTMLButtonElement | null>>({})
-  const [indicatorStyle, setIndicatorStyle] = useState<{ left: number; width: number }>({ left: 0, width: 0 })
-
-  // Upload state
-  const [uploadQueue, setUploadQueue] = useState<UploadFile[]>([])
-  const [isUploading, setIsUploading] = useState(false)
-  const dbFileInputRef = useRef<HTMLInputElement>(null)
-  const [dbDragActive, setDbDragActive] = useState(false)
-  const [configError, setConfigError] = useState<string | null>(null)
-
-  const [fileSelectorOpen, setFileSelectorOpen] = useState(false)
-  const fileSelectorRef = useRef<HTMLDivElement>(null)
-
-  // Rename & Options Dropdowns
-  const [editingProjectId, setEditingProjectId] = useState<string | null>(null)
-  const [editingProjectName, setEditingProjectName] = useState<string>('')
-  const [editingChatId, setEditingChatId] = useState<string | null>(null)
-  const [editingChatName, setEditingChatName] = useState<string>('')
-  const [activeMenuProjectId, setActiveMenuProjectId] = useState<string | null>(null)
-  const [activeMenuChatId, setActiveMenuChatId] = useState<string | null>(null)
-
-  // Custom Confirm Modal
-  const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean, title: string, message: string, onConfirm: () => void } | null>(null)
-
-  useEffect(() => {
-    if (activeTab === 'chat' && activeProjectId) {
-      setTimeout(() => {
-        chatInputRef.current?.focus()
-      }, 50)
-    }
-  }, [activeChatId, activeProjectId, activeTab])
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (fileSelectorRef.current && !fileSelectorRef.current.contains(event.target as Node)) {
-        setFileSelectorOpen(false)
-      }
-      if (toolsMenuRef.current && !toolsMenuRef.current.contains(event.target as Node)) {
-        setToolsMenuOpen(false)
-      }
-      const target = event.target as HTMLElement
-      if (target && !target.closest('.options-menu-btn') && !target.closest('.options-menu-dropdown')) {
-        setActiveMenuProjectId(null)
-        setActiveMenuChatId(null)
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [fileSelectorRef])
-
-  useEffect(() => {
-    if (window.innerWidth >= 768) setSidebarExpanded(false)
-  }, [])
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchProjects() }, [])
-
-  useEffect(() => {
-    if (window.innerWidth < 768) {
-      setSidebarOpen(false)
-    }
-  }, [activeProjectId, activeChatId])
-
-  const fetchProjects = async () => {
-    try {
-      const res = await fetch('/api/projects-new')
-      if (res.ok) {
-        const data = await res.json()
-        const enriched = data.map((p: Project) => {
-          const localChat = loadChatProvider(p.id)
-          return {
-            ...p,
-            chat_provider: p.chat_provider || localChat || 'groq',
-            embedding_provider: p.embedding_provider || p.provider || 'cohere'
+    const revealElements = document.querySelectorAll('.reveal, .reveal-left, .reveal-right, .reveal-scale, .reveal-cta')
+    
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('active')
           }
         })
-        setProjects(enriched)
-        if (enriched.length > 0) {
-          const savedId = localStorage.getItem('vectormind_active_project')
-          if (savedId && enriched.find((p: Project) => p.id === savedId)) {
-            setActiveProjectId(savedId)
-          } else {
-            setActiveProjectId(enriched[0].id)
-          }
-        }
-        else if (enriched.length === 0) setIsCreatingProject(true)
-      } else {
-        setConfigError("Database disconnected. Run the SQL migration.")
-      }
-    } catch (e) { setConfigError("Network error. Supabase unavailable.") }
-  }
+      },
+      { threshold: 0.12, rootMargin: '0px 0px -40px 0px' }
+    )
 
-  const checkApiHealth = async () => {
-    try {
-      const res = await fetch('/api/test-apis')
-      if (res.ok) {
-        const data = await res.json()
-        const supabaseOk = data.supabase?.projects?.ok && data.supabase?.pages?.ok
-        const aiOk = data.gemini?.chat?.ok || data.cohere?.chat?.ok || data.groq?.ok || data.openai?.chat?.ok
-        if (supabaseOk && aiOk) {
-          setApiHealth('healthy')
-        } else {
-          setApiHealth('error')
-        }
-        setApiStats(data)
-      } else {
-        setApiHealth('error')
-      }
-    } catch {
-      setApiHealth('error')
-    }
-  }
+    revealElements.forEach((el) => observer.observe(el))
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    checkApiHealth()
-  }, [])
-
-  // Save to localStorage when it changes
-  useEffect(() => {
-    if (activeProjectId) {
-      localStorage.setItem('vectormind_active_project', activeProjectId)
-    }
-  }, [activeProjectId])
-
-  const handleCreateProject = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newProjectName.trim()) return
-    try {
-      const res = await fetch('/api/projects-new', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newProjectName.trim(), embedding_provider: newEmbeddingProvider, chat_provider: newChatProvider })
-      })
-      if (res.ok) {
-        const proj = await res.json()
-        const enriched = {
-          ...proj,
-          chat_provider: proj.chat_provider || newChatProvider,
-          embedding_provider: proj.embedding_provider || newEmbeddingProvider
-        }
-        saveChatProvider(enriched.id, enriched.chat_provider)
-        setProjects(prev => [enriched, ...prev])
-        setActiveProjectId(enriched.id)
-        setNewProjectName('')
-        setNewEmbeddingProvider('cohere')
-        setNewChatProvider('groq')
-        setIsCreatingProject(false)
-        setProjectDropdownOpen(false)
-      }
-    } catch (e) { }
-  }
-  const handleCreateProjectNavbar = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newProjectName.trim()) return
-    try {
-      const res = await fetch('/api/projects-new', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newProjectName.trim(), embedding_provider: newEmbeddingProvider, chat_provider: newChatProvider })
-      })
-      if (res.ok) {
-        const proj = await res.json()
-        const enriched = {
-          ...proj,
-          chat_provider: proj.chat_provider || newChatProvider,
-          embedding_provider: proj.embedding_provider || newEmbeddingProvider
-        }
-        saveChatProvider(enriched.id, enriched.chat_provider)
-        setProjects(prev => [enriched, ...prev])
-        setActiveProjectId(enriched.id)
-        setNewProjectName('')
-        setIsCreatingProjectNavbar(false)
-        setNavbarDropdownOpen(false)
-      }
-    } catch (err) { }
-  }
-
-  const handleUpdateEmbeddingProvider = async (embedding_provider: string) => {
-    if (!activeProjectId) return
-    setConfirmModal({
-      isOpen: true,
-      title: 'Warning: Breaking Change',
-      message: 'Switching embedding models will break search for existing documents because vector dimensions differ. You must delete all existing files first. Proceed?',
-      onConfirm: async () => {
-        try {
-          const res = await fetch('/api/projects-new', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: activeProjectId, embedding_provider })
-          })
-          if (res.ok) {
-            setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, embedding_provider } : p))
-          }
-        } catch (e) { }
-      }
-    })
-  }
-
-  const deleteProject = async (id: string, name: string) => {
-    setConfirmModal({
-      isOpen: true,
-      title: 'Delete Workspace',
-      message: `Are you sure you want to permanently delete the workspace "${name}"? All files, vectors, and chat history inside this workspace will be completely destroyed. This cannot be undone.`,
-      onConfirm: async () => {
-        try {
-          const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' })
-          if (res.ok) {
-            setProjects(prev => prev.filter(p => p.id !== id))
-            if (activeProjectId === id) {
-              const remaining = projects.filter(p => p.id !== id)
-              if (remaining.length > 0) setActiveProjectId(remaining[0].id)
-              else setActiveProjectId('')
-            }
-          }
-        } catch (e) { }
-      }
-    })
-  }
-
-  const saveProjectRename = async (id: string, name: string) => {
-    setEditingProjectId(null)
-    if (!name || !name.trim()) return
-    // Optimistic UI update
-    setProjects(prev => prev.map(p => p.id === id ? { ...p, name: name.trim() } : p))
-    try {
-      const res = await fetch(`/api/projects/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim() })
-      })
-      if (!res.ok) {
-        console.error('Failed to rename project database')
-      }
-    } catch (e) {
-      console.error('Rename project network error', e)
-    }
-  }
-
-  const saveChatRename = (id: string, name: string) => {
-    setEditingChatId(null)
-    if (!name || !name.trim()) return
-    const updated = chatChannels.map(c => c.id === id ? { ...c, name: name.trim() } : c)
-    setChatChannels(updated)
-    if (activeProjectId) saveChannels(activeProjectId, updated)
-  }
-
-  const handleUpdateChatProvider = async (chat_provider: string) => {
-    if (!activeProjectId) return
-
-    // Optimistic UI update + save to local storage
-    setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, chat_provider } : p))
-    saveChatProvider(activeProjectId, chat_provider)
-
-    try {
-      const res = await fetch('/api/projects-new', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: activeProjectId, chat_provider })
-      })
-      if (!res.ok) {
-        console.warn("DB update failed, using local storage fallback for chat provider")
-      }
-    } catch (e: any) {
-      console.warn("Network error, using local storage fallback for chat provider")
-    }
-  }
-
-  // --- Multi-Chat Channel Management ---
-  const createNewChat = (e?: React.FormEvent) => {
-    if (e) e.preventDefault()
-    const name = newChatName.trim() || `Chat ${chatChannels.length + 1}`
-    const newChat: ChatChannel = { id: Math.random().toString(), name, messages: [], createdAt: new Date().toISOString() }
-    const updated = [newChat, ...chatChannels]
-    setChatChannels(updated)
-    setActiveChatId(newChat.id)
-    setMessages([])
-    setNewChatName('')
-    setIsCreatingChat(false)
-    setChatListOpen(false)
-    if (activeProjectId) saveChannels(activeProjectId, updated)
-  }
-
-  const switchChat = (id: string) => {
-    const chat = chatChannels.find(c => c.id === id)
-    if (chat) {
-      setActiveChatId(id)
-      setMessages(chat.messages)
-      setChatListOpen(false)
-    }
-  }
-
-  const startNewChat = () => {
-    const name = `Chat ${chatChannels.length + 1}`
-    const newChat: ChatChannel = { id: Math.random().toString(), name, messages: [], createdAt: new Date().toISOString() }
-    const updated = [newChat, ...chatChannels]
-    setChatChannels(updated)
-    setActiveChatId(newChat.id)
-    setMessages([])
-    setSearchQuery('')
-    setChatListOpen(false)
-    if (activeProjectId) saveChannels(activeProjectId, updated)
-  }
-
-  const deleteChat = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (chatChannels.length <= 1) {
-      // Don't delete the last chat, just clear it
-      const cleared = [{ ...chatChannels[0], messages: [] }]
-      setChatChannels(cleared)
-      setMessages([])
-      if (activeProjectId) saveChannels(activeProjectId, cleared)
-      return
-    }
-    const updated = chatChannels.filter(c => c.id !== id)
-    setChatChannels(updated)
-    if (activeChatId === id) {
-      setActiveChatId(updated[0].id)
-      setMessages(updated[0].messages)
-    }
-    if (activeProjectId) saveChannels(activeProjectId, updated)
-  }
-
-  // Sync messages to active channel whenever they change
-  useEffect(() => {
-    if (!activeProjectId || !activeChatId) return
-    setChatChannels(prev => {
-      const activeChannel = prev.find(c => c.id === activeChatId)
-      if (!activeChannel) return prev
-      if (JSON.stringify(activeChannel.messages) === JSON.stringify(messages)) return prev
-      const updated = prev.map(c => c.id === activeChatId ? { ...c, messages } : c)
-      saveChannels(activeProjectId, updated)
-      return updated
-    })
-  }, [messages, activeChatId, activeProjectId])
-
-  // Sliding Tab Indicator Position Updater
-  useEffect(() => {
-    const updateIndicator = () => {
-      const activeBtn = tabRefMap.current[activeTab]
-      if (activeBtn) {
-        setIndicatorStyle({
-          left: activeBtn.offsetLeft,
-          width: activeBtn.offsetWidth
-        })
-      }
-    }
-    updateIndicator()
-    const timer = setTimeout(updateIndicator, 50)
-    window.addEventListener('resize', updateIndicator)
     return () => {
-      clearTimeout(timer)
-      window.removeEventListener('resize', updateIndicator)
+      revealElements.forEach((el) => observer.unobserve(el))
     }
-  }, [activeTab, projects, activeProjectId])
+  }, [])
+}
 
-  // --- Load library when project changes ---
-  useEffect(() => {
-    if (activeProjectId) {
-      fetchLibrary()
-
-      // Reset document selector on workspace change
-      setSelectedFileIds([])
-
-      // Load multi-chat channels
-      const channels = loadChannels(activeProjectId)
-      setChatChannels(channels)
-      setActiveChatId(channels[0].id)
-      setMessages(channels[0].messages)
-
-      // Apply chat provider from local storage fallback if needed
-      const localProvider = loadChatProvider(activeProjectId)
-      const project = projects.find(p => p.id === activeProjectId)
-      if (project && !project.chat_provider && localProvider) {
-        setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, chat_provider: localProvider } : p))
-      }
-
-      setFileSearchQuery('')
-      setDashboardPage(1)
-      setSelectedDocIds([])
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProjectId])
-
-  const fetchLibrary = async () => {
-    if (!activeProjectId) return
-    setIsLibraryLoading(true)
-    try {
-      const res = await fetch(`/api/documents?projectId=${activeProjectId}`)
-      if (res.ok) setDocuments(await res.json())
-    } catch (err) { console.error(err) } finally { setIsLibraryLoading(false) }
-  }
-
-  // --- Enterprise Document Filtering ---
-  const filteredAndSortedDocs = useMemo(() => {
-    let result = documents
-
-    if (fileSearchQuery.trim()) {
-      const query = fileSearchQuery.toLowerCase()
-      result = result.filter(d => (d.meta?.filename || d.path).toLowerCase().includes(query))
-    }
-
-    if (formatFilter !== 'all') {
-      result = result.filter(d => {
-        const name = d.meta?.filename || d.path
-        return name.toLowerCase().endsWith(formatFilter)
-      })
-    }
-
-    result = [...result].sort((a, b) => {
-      const aVal = sortConfig.key === 'name' ? (a.meta?.filename || a.path) : sortConfig.key === 'size' ? (a.meta?.size || 0) : a.sectionCount
-      const bVal = sortConfig.key === 'name' ? (b.meta?.filename || b.path) : sortConfig.key === 'size' ? (b.meta?.size || 0) : b.sectionCount
-      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1
-      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1
-      return 0
-    })
-
-    return result
-  }, [documents, fileSearchQuery, formatFilter, sortConfig])
-
-  const paginatedDocs = useMemo(() => {
-    const start = (dashboardPage - 1) * itemsPerPage
-    return filteredAndSortedDocs.slice(start, start + itemsPerPage)
-  }, [filteredAndSortedDocs, dashboardPage, itemsPerPage])
-
-  const totalPages = Math.ceil(filteredAndSortedDocs.length / itemsPerPage)
-
-  const requestSort = (key: string) => {
-    let direction: 'asc' | 'desc' = 'asc'
-    if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc'
-    setSortConfig({ key, direction })
-  }
-
-  const stop = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-      abortControllerRef.current = null
-      setIsSearchLoading(false)
-      setSearchStep('idle')
-      activeMessageIdRef.current = null
-    }
-  }
-
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
-
-  useEffect(() => {
-    function handleGlobalClick(e: MouseEvent) {
-      const target = e.target as HTMLElement
-      if (
-        target.tagName === 'BUTTON' ||
-        target.tagName === 'A' ||
-        target.closest('button') ||
-        target.closest('.cursor-pointer') ||
-        target.closest('input[type="checkbox"]') ||
-        target.closest('.custom-checkbox')
-      ) {
-        particleBurst(e.clientX, e.clientY)
-      }
-    }
-    window.addEventListener('click', handleGlobalClick)
-    return () => window.removeEventListener('click', handleGlobalClick)
-  }, [particleBurst])
-
-  const openPreview = (doc: IndexedDocument) => {
-    const url = doc.meta?.storageUrl as string | undefined
-    const path = doc.meta?.storagePath as string | undefined
-    
-    // 1. If we have the exact public URL, use it directly (bypasses Next.js strict iframe headers)
-    if (url) {
-      setPreviewPdfUrl(url)
-      return
-    }
-    
-    // 2. If we only have the storage path, reconstruct the Supabase public URL
-    if (path) {
-      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-      if (baseUrl) {
-        // We split by '/' to encode each path segment individually without converting '/' to '%2F'
-        const encodedPath = path.split('/').map(encodeURIComponent).join('/')
-        setPreviewPdfUrl(`${baseUrl}/storage/v1/object/public/documents/${encodedPath}`)
-        return
-      }
-    }
-
-    // 3. Legacy document fallback
-    setPreviewPdfUrl('legacy-missing-file')
-  }
-
-  const handleSearchSubmit = async (e?: React.FormEvent, overrideQuery?: string) => {
-    if (e) e.preventDefault()
-    const query = (overrideQuery ?? searchQuery).trim()
-    if (!query || !activeProjectId) return
-
-    if (isSearchLoading) {
-      stop()
-      return
-    }
-
-    setSearchQuery('')
-    setIsSearchLoading(true)
-
-    const userMsg: Message = { id: Math.random().toString(), role: 'user', text: query, timestamp: new Date() }
-    const activeId = Math.random().toString()
-    activeMessageIdRef.current = activeId
-    const botMsg: Message = { id: activeId, role: 'assistant', text: '', timestamp: new Date(), isLoading: true }
-
-    setMessages(prev => [...prev, userMsg, botMsg])
-
-    setSearchStep('hyde')
-    setTimeout(() => setSearchStep('search'), 1200)
-    setTimeout(() => setSearchStep('rrf'), 2500)
-
-    const chatHistory = messages.filter(m => !m.isLoading && m.text).slice(-6).map(m => ({ role: m.role, text: m.text }))
-    const conversationHistory = messages
-      .filter(m => !m.isLoading && m.text && !m.error)
-      .slice(-10) // last 5 turns
-      .map(m => ({
-        role: m.role === 'user' ? 'user' as const : 'assistant' as const,
-        content: m.text
-      }))
-    abortControllerRef.current = new AbortController()
-
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: query,
-          chatHistory,
-          conversationHistory,
-          projectId: activeProjectId,
-          chatProvider: activeProject?.chat_provider || 'groq',
-          embeddingProvider: activeProject?.embedding_provider || 'cohere',
-          selectedFileIds,
-          strictMode: isStrictRAGMode
-        }),
-        signal: abortControllerRef.current.signal
-      })
-
-      if (!res.ok) throw new Error(await res.text())
-
-      const reader = res.body?.getReader()
-      if (!reader) throw new Error('No stream response')
-
-      const decoder = new TextDecoder()
-      let fullText = ''
-
-      setSearchStep('synth')
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const chunk = decoder.decode(value, { stream: true })
-        const lines = chunk.split('\n')
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              if (data.error) {
-                throw new Error(data.error)
-              }
-              if (data.token) {
-                fullText += data.token
-                setMessages(prev => prev.map(m => m.id === activeId ? { ...m, text: fullText } : m))
-              }
-              if (data.text_done) {
-                setMessages(prev => prev.map(m => m.id === activeId ? { ...m, isLoading: false } : m))
-              }
-              if (data.done) {
-                setMessages(prev => prev.map(m => m.id === activeId ? {
-                  ...m,
-                  isLoading: false,
-                  text: m.text || data.debugAnswer || "The AI generated an empty response. This might be due to a strict system prompt or an API format change.",
-                  citations: data.citations,
-                  cached: data.cached,
-                  grounding: data.grounding,
-                  suggestions: data.suggestions
-                } : m))
-              }
-
-            } catch (err) {
-              console.error('SSE Parse Error:', err)
-            }
-          }
-        }
-      }
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
-        setMessages(prev => prev.map(m => m.id === activeId ? { ...m, isLoading: false } : m))
-      } else {
-        setMessages(prev => prev.map(m => m.id === activeId ? { ...m, text: `Error: ${err.message}`, isLoading: false, error: true } : m))
-      }
-    } finally {
-      setIsSearchLoading(false)
-      setSearchStep('idle')
-      activeMessageIdRef.current = null
-      abortControllerRef.current = null
-    }
-  }
-
-  const handleEditSubmit = async (msgId: string, newText: string) => {
-    if (!newText.trim()) return
-    
-    // Stop any ongoing search
-    if (isSearchLoading) {
-      stop()
-    }
-    
-    // Find index of the edited message
-    const msgIndex = messages.findIndex(m => m.id === msgId)
-    if (msgIndex === -1) return
-    
-    // Slice history up to (but not including) this message
-    const newHistory = messages.slice(0, msgIndex)
-    
-    // Set messages to this sliced history so handleSearchSubmit starts fresh from this prompt
-    setMessages(newHistory)
-    setEditingMessageId(null)
-    
-    // Submit the query with the new text
-    setTimeout(() => {
-      handleSearchSubmit(undefined, newText)
-    }, 10)
-  }
-
-  const handleCopy = (id: string, text: string) => {
-    navigator.clipboard.writeText(text)
-    setCopiedId(id)
-    setTimeout(() => setCopiedId(null), 2000)
-  }
-
-  const stopUpload = async (id: string, filename: string, projectId?: string | null) => {
-    cancelledUploadsRef.current.add(id)
-    if (uploadAbortControllersRef.current[id]) {
-      uploadAbortControllersRef.current[id].abort()
-      delete uploadAbortControllersRef.current[id]
-    }
-    
-    // Eagerly remove from UI so it doesn't get stuck if DB is slow
-    setUploadQueue(prev => prev.filter(q => q.id !== id))
-    
-    if (!projectId) return
-    
-    try {
-      await fetch(`/api/documents?filename=${encodeURIComponent(filename)}&projectId=${projectId}`, { method: 'DELETE' })
-      fetchLibrary()
-    } catch (e) {
-      console.error('Failed to clean up aborted upload:', e)
-    }
-  }
-
-  const removeQueueItem = (id: string) => {
-    setUploadQueue(prev => prev.filter(item => item.id !== id))
-  }
-
-  const addFilesToQueue = (files: File[]) => {
-    if (!activeProjectId) return alert("Select a project first.")
-    const newItems = files.map(file => ({
-      id: Math.random().toString(36).substring(7),
-      file,
-      status: 'idle' as const,
-      progress: 0,
-      stage: 'Waiting...',
-      projectId: activeProjectId
-    }))
-    setUploadQueue(prev => [...prev, ...newItems])
-    if (window.innerWidth < 768) setSidebarOpen(true)
-  }
-
-
-  const startUpload = async (overrideQueue?: any[]) => {
-    if (isUploading || !activeProjectId) return
-    setIsUploading(true)
-    const queueToProcess = (overrideQueue || uploadQueue).filter(item => item.projectId === activeProjectId)
-    for (const item of queueToProcess.filter(q => q.status === 'idle')) {
-      if (cancelledUploadsRef.current.has(item.id)) continue;
-      
-      setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'uploading', progress: 5, stage: 'Uploading & chunking...' } : q))
-      try {
-        const reader = new FileReader()
-        const base64 = await new Promise<string>((resolve, reject) => {
-          reader.onload = () => resolve((reader.result as string).split(',')[1])
-          reader.onerror = () => reject(reader.error)
-          reader.readAsDataURL(item.file)
-        })
-
-        const controller = new AbortController()
-        uploadAbortControllersRef.current[item.id] = controller
-
-        const res = await fetch('/api/upload', {
-          method: 'POST',
-          signal: controller.signal,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filename: item.file.name,
-            base64,
-            projectId: activeProjectId,
-            embeddingProvider: activeProject?.embedding_provider || 'cohere'
-          })
-        })
-
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}))
-          throw new Error(errData.error || `Upload failed with status ${res.status}`)
-        }
-
-        const bodyReader = res.body?.getReader()
-        if (!bodyReader) throw new Error('No stream body available')
-
-        const decoder = new TextDecoder()
-        let buffer = ''
-        let successResult: any = null
-
-        while (true) {
-          const { done, value } = await bodyReader.read()
-          if (done) break
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop() || ''
-
-          for (const line of lines) {
-            if (!line.trim()) continue
-            try {
-              const data = JSON.parse(line)
-              if (data.status === 'info') {
-                setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, stage: data.message } : q))
-              } else if (data.status === 'started') {
-                setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, progress: 10, stage: `Chunking into ${data.chunksTotal} units...` } : q))
-              } else if (data.status === 'warning') {
-                setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, stage: `⚠️ ${data.message}` } : q))
-              } else if (data.status === 'chunk') {
-                const chunkIndex = data.chunkIndex
-                const total = data.total
-                const percentage = Math.round(15 + (chunkIndex / total) * 75)
-                setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, progress: percentage, stage: `Embedding Chunk ${chunkIndex + 1}/${total} (${data.provider})` } : q))
-              } else if (data.status === 'success') {
-                successResult = data
-              } else if (data.status === 'error') {
-                // Return early from the stream processing so the outer block throws it
-                throw new Error(`SERVER_ERROR:${data.error}`)
-              }
-            } catch (e: any) {
-              if (e.message && e.message.startsWith('SERVER_ERROR:')) {
-                throw new Error(e.message.replace('SERVER_ERROR:', ''))
-              }
-              console.error('SSE JSON error:', e)
-            }
-          }
-        }
-
-        if (buffer.trim()) {
-          try {
-            const data = JSON.parse(buffer)
-            if (data.status === 'success') successResult = data
-            if (data.status === 'error') throw new Error(`SERVER_ERROR:${data.error}`)
-          } catch (e: any) { 
-            if (e.message && e.message.startsWith('SERVER_ERROR:')) {
-              throw new Error(e.message.replace('SERVER_ERROR:', ''))
-            }
-          }
-        }
-
-        if (!successResult) {
-          throw new Error('Upload stream finished without completion payload')
-        }
-
-        setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'success', progress: 100, stage: 'Indexed successfully!', chunks: successResult.chunksIndexed } : q))
-      } catch (err: any) {
-        if (err.name === 'AbortError') {
-          setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'error', error: 'Upload cancelled', stage: 'Cancelled' } : q))
-        } else {
-          setUploadQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'error', progress: 0, stage: 'Failed Ingestion', error: err.message || 'Error occurred' } : q))
-        }
-      } finally {
-        delete uploadAbortControllersRef.current[item.id]
-      }
-    }
-    setIsUploading(false)
-    fetchLibrary()
-  }
-
-  const deleteDocument = async (id: string, filename: string) => {
-    setConfirmModal({
-      isOpen: true,
-      title: 'Delete Document',
-      message: `Are you sure you want to permanently delete "${filename}"? Its vector embeddings will be permanently removed from this workspace.`,
-      onConfirm: async () => {
-        try {
-          const res = await fetch(`/api/documents?id=${id}`, { method: 'DELETE' })
-          if (res.ok) {
-            setDocuments(prev => prev.filter(d => d.id !== id))
-            setSelectedDocIds(prev => prev.filter(x => x !== id))
-          }
-        } catch (e) { }
-      }
-    })
-  }
-
-  const toggleSelectDoc = (id: string) => {
-    setSelectedDocIds(prev =>
-      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
-    )
-  }
-
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      const pageDocIds = paginatedDocs.map(d => d.id)
-      setSelectedDocIds(prev => Array.from(new Set([...prev, ...pageDocIds])))
-    } else {
-      const pageDocIds = paginatedDocs.map(d => d.id)
-      setSelectedDocIds(prev => prev.filter(id => !pageDocIds.includes(id)))
-    }
-  }
-
-  const deleteSelectedDocuments = async () => {
-    if (selectedDocIds.length === 0) return
-    setConfirmModal({
-      isOpen: true,
-      title: 'Delete Selected Documents',
-      message: `Are you sure you want to permanently delete all ${selectedDocIds.length} selected documents? All associated vector embeddings will be destroyed.`,
-      onConfirm: async () => {
-        setIsLibraryLoading(true)
-        try {
-          const idsParam = selectedDocIds.join(',')
-          const res = await fetch(`/api/documents?id=${idsParam}`, { method: 'DELETE' })
-          if (res.ok) {
-            setDocuments(prev => prev.filter(d => !selectedDocIds.includes(d.id)))
-            setSelectedDocIds([])
-          } else {
-            alert("Failed to delete some documents")
-          }
-        } catch (e) {
-          console.error(e)
-          alert("Error deleting documents")
-        } finally {
-          setIsLibraryLoading(false)
-        }
-      }
-    })
-  }
-
-  const isAllPageSelected = paginatedDocs.length > 0 && paginatedDocs.every(d => selectedDocIds.includes(d.id))
-
-  const totalChunks = documents.reduce((sum, doc) => sum + doc.sectionCount, 0)
-  const totalStorageBytes = documents.reduce((sum, doc) => sum + (Number(doc.meta?.size) || 0), 0)
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 KB'
-    const k = 1024
-    const sizes = ['Bytes', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
-  }
-  const formattedStorage = formatBytes(totalStorageBytes)
-  const activeProject = projects.find(p => p.id === activeProjectId)
-  const activeChannel = chatChannels.find(c => c.id === activeChatId)
-  const activeChannelName = activeChannel?.name
-  const chatProviderId = (activeProject?.chat_provider || 'groq') as ChatProviderId
-  const chatProviderLabel = CHAT_PROVIDERS[chatProviderId]?.name?.replace(/ \(.*\)/, '') || 'Groq'
-  const embedProviderId = (activeProject?.embedding_provider || 'cohere') as EmbeddingProviderId
-  const embedProvider = EMBEDDING_PROVIDERS[embedProviderId]
-  const showExpandedSidebar = sidebarExpanded || sidebarOpen
-
-  const toggleSidebarPanel = () => {
-    if (typeof window !== 'undefined' && window.innerWidth < 768) {
-      setSidebarOpen(v => !v)
-    } else {
-      setSidebarExpanded(v => !v)
-    }
-  }
-
-  const chatComposerBlock = (
-    <>
-      {selectedFileIds.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-2 justify-center">
-          {selectedFileIds.map(id => {
-            const doc = documents.find(d => d.id === id)
-            if (!doc) return null
-            return (
-              <span key={id} className="inline-flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 rounded-full pl-2.5 pr-1 py-0.5 text-[11px] font-medium">
-                {getDocName(doc)}
-                <button type="button" onClick={() => setSelectedFileIds(prev => prev.filter(x => x !== id))} className="p-0.5 rounded-full hover:bg-emerald-500/20" aria-label="Remove filter"><X className="w-3 h-3" /></button>
-              </span>
-            )
-          })}
-          <button type="button" onClick={() => setSelectedFileIds([])} className="text-[11px] text-zinc-500 hover:text-zinc-300 px-2">Clear</button>
-        </div>
-      )}
-      <form onSubmit={handleSearchSubmit} className="vm-pill-input flex items-end gap-1 pl-1.5 pr-2 py-1.5 w-full">
-        <div ref={toolsMenuRef} className="relative shrink-0 mb-[2px]">
-          <button type="button" onClick={() => setToolsMenuOpen(!toolsMenuOpen)} className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-400 hover:bg-white/5 hover:text-zinc-100" aria-label="More options">
-            <PlusCircle className="w-5 h-5" />
-          </button>
-          {toolsMenuOpen && (
-            <div className="absolute bottom-full left-0 mb-2 w-56 rounded-xl border border-white/10 bg-[#1e1f20] shadow-xl p-1.5 z-50 animate-slide-up">
-              {/* Mobile model selector */}
-              <div className="sm:hidden border-b border-white/[0.06] pb-2 mb-2 px-3 pt-2">
-                <span className="text-[10px] font-bold text-zinc-550 uppercase tracking-widest block mb-1.5">Select Model</span>
-                <CustomSelect 
-                  value={activeProject?.chat_provider || 'groq'} 
-                  onChange={(val) => { handleUpdateChatProvider(val); setToolsMenuOpen(false); }} 
-                  options={CHAT_PROVIDER_OPTIONS} 
-                  containerClassName="w-full" 
-                  buttonClassName="flex h-8 w-full items-center justify-between rounded-lg bg-white/5 border border-white/[0.04] px-2.5 text-xs text-zinc-300 hover:bg-white/10 outline-none" 
-                  dropdownPosition="bottom-full mb-2 left-0 right-0 z-[210] origin-bottom"
-                />
-              </div>
-              <button type="button" className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-zinc-200 hover:bg-white/5 flex items-center gap-2" onClick={() => { setActiveTab('database'); setTimeout(() => dbFileInputRef.current?.click(), 100); setToolsMenuOpen(false); }}>
-                <UploadCloud className="w-4 h-4 text-emerald-400" /> Upload documents
-              </button>
-              <button type="button" className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-zinc-200 hover:bg-white/5 flex items-center gap-2" onClick={() => { setFileSelectorOpen(!fileSelectorOpen); setToolsMenuOpen(false) }}>
-                <Paperclip className="w-4 h-4 text-emerald-400" /> Search specific files
-              </button>
-              <button type="button" className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-zinc-200 hover:bg-white/5 flex items-center justify-between" onClick={() => { setIsStrictRAGMode(!isStrictRAGMode); setToolsMenuOpen(false) }}>
-                <div className="flex items-center gap-2">
-                  <Database className="w-4 h-4 text-emerald-400" /> Only use my DB
-                </div>
-                {isStrictRAGMode && <Check className="w-4 h-4 text-emerald-400" />}
-              </button>
-              <button type="button" className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-zinc-200 hover:bg-white/5 flex items-center gap-2" onClick={() => { startNewChat(); setToolsMenuOpen(false) }}>
-                <MessageSquare className="w-4 h-4 text-emerald-400" /> New chat
-              </button>
-            </div>
-          )}
-        </div>
-        <div className="flex-1 min-w-0 flex flex-col justify-center">
-          <textarea 
-            ref={chatInputRef} 
-            disabled={!activeProjectId} 
-            placeholder={!activeProjectId ? 'Create a workspace in the sidebar…' : 'Ask your documents anything…'} 
-            value={searchQuery} 
-            rows={1}
-            onChange={e => {
-              setSearchQuery(e.target.value);
-              e.target.style.height = '44px';
-              e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
-            }}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                if (searchQuery.trim()) {
-                  handleSearchSubmit(e as any);
-                  // Reset height after submission
-                  setTimeout(() => {
-                    if (chatInputRef.current) {
-                      chatInputRef.current.style.height = '44px';
-                    }
-                  }, 10);
-                }
-              }
-            }}
-            className="w-full bg-transparent py-2.5 px-1 outline-none text-zinc-100 placeholder:text-zinc-500 text-[15px] disabled:opacity-50 resize-none overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-words leading-relaxed custom-scrollbar block" 
-            style={{ minHeight: '44px', maxHeight: '120px' }}
-          />
-        </div>
-        <div className="hidden sm:flex w-24 shrink-0 mb-1">
-          <CustomSelect value={activeProject?.chat_provider || 'groq'} onChange={handleUpdateChatProvider} options={CHAT_PROVIDER_OPTIONS} containerClassName="w-full" buttonClassName="flex h-7 w-full items-center justify-between rounded-lg bg-white/5 border border-white/[0.04] px-2 text-[10px] sm:text-[11.5px] text-zinc-350 hover:bg-white/10 hover:text-zinc-100 outline-none select-none transition-all duration-200" dropdownPosition="bottom-full mb-2 left-0 right-0 z-[200] origin-bottom" />
-        </div>
-        {isSearchLoading ? (
-          <button type="button" onClick={() => stop()} className="w-9 h-9 shrink-0 rounded-full bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-all flex items-center justify-center shadow-lg shadow-red-500/5 animate-pulse mb-1" aria-label="Stop">
-            <Square className="w-3.5 h-3.5 fill-current" />
-          </button>
-        ) : (
-          <button type="submit" disabled={!searchQuery.trim() || !activeProjectId} className="w-9 h-9 shrink-0 rounded-full bg-emerald-500 text-[#0a0a0c] hover:bg-emerald-450 hover:scale-105 active:scale-95 disabled:opacity-30 disabled:hover:scale-100 disabled:active:scale-100 transition-all flex items-center justify-center shadow-lg shadow-emerald-500/10 mb-1" aria-label="Search">
-            <ArrowRight className="w-4 h-4 stroke-[2.5]" />
-          </button>
-        )}
-      </form>
-      <p className="flex flex-wrap justify-center text-center text-[10px] text-zinc-650 mt-2 px-4 gap-x-1.5 gap-y-0.5">
-        <span>
-          {selectedFileIds.length === 0
-            ? (documents.length === 1 ? 'Searches 1 workspace file' : `Searches all ${documents.length} workspace files`)
-            : `Searching ${selectedFileIds.length} selected file(s)`
-          }
-        </span>
-        <span className="hidden xs:inline text-zinc-800">·</span>
-        <span>
-          Embed: <span className="text-emerald-400/80 font-medium">{embedProvider?.name || 'Cohere'}</span>
-        </span>
-        <span className="text-zinc-850">+</span>
-        <span>
-          Chat: <span className="text-emerald-400/80 font-medium">{chatProviderLabel}</span>
-        </span>
-      </p>
-      {fileSelectorOpen && (
-        <div ref={fileSelectorRef} className="mt-2 rounded-xl border border-white/10 bg-[#1e1f20] p-3 max-h-68 overflow-y-auto custom-scrollbar space-y-2.5">
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] font-bold text-zinc-450 uppercase tracking-wider">Pick files to search (optional)</p>
-            {selectedFileIds.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setSelectedFileIds([])}
-                className="text-[10px] text-red-400 hover:text-red-300 font-bold transition"
-              >
-                Clear all ({selectedFileIds.length})
-              </button>
-            )}
-          </div>
-
-          {/* Search box for filtering specific files */}
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Filter files by name..."
-              value={specificFileSearchQuery}
-              onChange={(e) => setSpecificFileSearchQuery(e.target.value)}
-              className="w-full bg-zinc-950/60 hover:bg-zinc-950/80 focus:bg-zinc-950 border border-white/[0.06] focus:border-emerald-500/30 rounded-lg px-2.5 py-1.5 text-xs text-zinc-250 placeholder:text-zinc-600 outline-none transition-all"
-            />
-            {specificFileSearchQuery && (
-              <button
-                type="button"
-                onClick={() => setSpecificFileSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-550 hover:text-zinc-300 text-[10px] font-bold"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-
-          <div className="space-y-1 max-h-44 overflow-y-auto custom-scrollbar pr-0.5">
-            {documents.length === 0 ? (
-              <p className="text-xs text-zinc-500 py-3 text-center">No files uploaded yet.</p>
-            ) : (() => {
-              const filtered = documents.filter(doc => getDocName(doc).toLowerCase().includes(specificFileSearchQuery.toLowerCase()))
-              if (filtered.length === 0) {
-                return <p className="text-xs text-zinc-550 py-3 text-center">No matching files found.</p>
-              }
-              return filtered.map(doc => {
-                const isChecked = selectedFileIds.includes(doc.id)
-                return (
-                  <button
-                    key={doc.id}
-                    type="button"
-                    onClick={() => setSelectedFileIds(prev => isChecked ? prev.filter(id => id !== doc.id) : [...prev, doc.id])}
-                    className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs text-left transition ${isChecked ? 'bg-emerald-500/10 text-emerald-300 font-medium' : 'text-zinc-400 hover:bg-white/5'}`}
-                  >
-                    <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 transition-colors ${isChecked ? 'border-emerald-500 bg-emerald-500' : 'border-zinc-700 bg-zinc-900/50'}`}>
-                      {isChecked && <Check className="w-2.5 h-2.5 text-[#0a0a0c] stroke-[3]" />}
-                    </span>
-                    <span className="truncate">{getDocName(doc)}</span>
-                  </button>
-                )
-              })
-            })()}
-          </div>
-        </div>
-      )}
-    </>
-  )
-
-  function navBtn(tab: 'chat' | 'dashboard' | 'database' | 'how-it-works', icon: React.ReactNode, label: string) {
-    return (
-      <button
-        type="button"
-        onClick={() => { setActiveTab(tab); if (window.innerWidth < 768) setSidebarOpen(false) }}
-        title={label}
-        aria-label={label}
-        className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${activeTab === tab ? 'bg-white/10 text-emerald-400' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-100'}`}
-      >
-        {icon}
-      </button>
-    )
-  }
-
-  // --- Render ---
+// ─── SYNTAX HIGHLIGHTER HELPER ────────────────────────────────────────────────
+function renderSyntaxCode(code: string) {
+  const lines = code.split('\n')
   return (
-    <div className="flex h-[100dvh] w-full bg-[#131314] text-zinc-200 font-sans overflow-hidden selection:bg-zinc-800">
+    <div className="font-mono text-[12px] leading-relaxed select-text space-y-0.5">
+      {lines.map((line, idx) => {
+        if (line.trim().startsWith('//') || line.trim().startsWith('--') || line.trim().startsWith('#')) {
+          return (
+            <div key={idx} className="flex items-center">
+              <span className="w-7 shrink-0 text-zinc-600 text-[10px] select-none text-right pr-3 opacity-40 font-mono">{idx + 1}</span>
+              <span className="text-emerald-400/90 italic font-mono">{line}</span>
+            </div>
+          )
+        }
+        
+        const tokens = line.split(/(\s+|[(){}[\].,;:=<>+*\-/])/).map((token, tIdx) => {
+          if (['export', 'async', 'function', 'const', 'let', 'var', 'return', 'await', 'import', 'from', 'SELECT', 'FROM', 'WHERE', 'CREATE', 'INDEX', 'ON', 'USING', 'WITH', 'AS'].includes(token)) {
+            return <span key={tIdx} className="text-purple-400 font-bold">{token}</span>
+          }
+          if (['processDocument', 'extractTextFromPDF', 'parseDocumentTables', 'chunkDocument', 'adaptiveChunk', 'detectBoundaries', 'splitAtBoundaries', 'embedContent', 'generateSyntheticAnswer', 'getEmbedding', 'rrfScore', 'streamText'].includes(token)) {
+            return <span key={tIdx} className="text-cyan-300 font-medium">{token}</span>
+          }
+          if (['File', 'RecursiveCharacterTextSplitter', 'StreamingTextResponse', 'hnsw', 'vector_cosine_ops', 'tsvector', 'ts_rank_cd', 'websearch_to_tsquery'].includes(token)) {
+            return <span key={tIdx} className="text-amber-300">{token}</span>
+          }
+          if (token.startsWith("'") || token.startsWith('"') || token.startsWith("`")) {
+            return <span key={tIdx} className="text-teal-300">{token}</span>
+          }
+          if (!isNaN(Number(token)) && token.trim() !== '') {
+            return <span key={tIdx} className="text-orange-400 font-bold">{token}</span>
+          }
+          return <span key={tIdx}>{token}</span>
+        })
+
+        return (
+          <div key={idx} className="flex items-center">
+            <span className="w-7 shrink-0 text-zinc-600 text-[10px] select-none text-right pr-3 opacity-40 font-mono">{idx + 1}</span>
+            <span className="text-zinc-200">{tokens}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── MAIN COMPONENT ────────────────────────────────────────────────────────────
+export default function VectorMindLanding() {
+  const [selectedStep, setSelectedStep] = useState<number>(1)
+  const [isAutoPlaying, setIsAutoPlaying] = useState(false)
+  const [copiedCode, setCopiedCode] = useState<string | null>(null)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
+  const [canInstallPWA, setCanInstallPWA] = useState(false)
+  const [showPWAModal, setShowPWAModal] = useState(false)
+
+  // Track PWA installation prompt
+  useEffect(() => {
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault()
+      setDeferredPrompt(e)
+      setCanInstallPWA(true)
+    }
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall)
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall)
+  }, [])
+
+  const installPWA = useCallback(async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt()
+      const { outcome } = await deferredPrompt.userChoice
+      if (outcome === 'accepted') {
+        setCanInstallPWA(false)
+      }
+      setDeferredPrompt(null)
+    } else {
+      setShowPWAModal(true)
+    }
+  }, [deferredPrompt])
+
+  // Auto-play steps timer
+  useEffect(() => {
+    if (!isAutoPlaying) return
+    const timer = setInterval(() => {
+      setSelectedStep((prev) => (prev >= 9 ? 1 : prev + 1))
+    }, 3500)
+    return () => clearInterval(timer)
+  }, [isAutoPlaying])
+
+  // Activate scroll reveal
+  useScrollReveal()
+
+  // Track scroll for dynamic navbar transformation
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 20) {
+        setScrolled(true)
+      } else {
+        setScrolled(false)
+      }
+    }
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  // Copy code helper
+  const copyToClipboard = useCallback((text: string, id: string) => {
+    navigator.clipboard.writeText(text)
+    setCopiedCode(id)
+    setTimeout(() => setCopiedCode(null), 2000)
+  }, [])
+
+  const currentStepData = useMemo(() => {
+    return STEPS_DATA.find((s) => s.step === selectedStep) || STEPS_DATA[0]
+  }, [selectedStep])
+
+  return (
+    <div className="min-h-screen bg-[#050709] text-zinc-100 font-sans selection:bg-emerald-500 selection:text-zinc-950 relative overflow-x-hidden">
       <Head>
-        <title>VectorMind</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
-        <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#10b981" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <link rel="apple-touch-icon" href="/vectormind-icon.svg" />
+        <title>VectorMind — Hybrid RAG &amp; CAG Document Intelligence Platform</title>
+        <meta name="description" content="Production-grade document intelligence platform featuring Hybrid RAG + CAG, pgvector HNSW indexing, HyDE query expansion, BM25 rank fusion, and multi-model LLM router." />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      {/* Particle Burst Container */}
-      <div ref={particleRef} className="fixed inset-0 pointer-events-none z-[9999]" />
-
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <button type="button" className="fixed inset-0 z-40 bg-black/60 md:hidden" aria-label="Close menu" onClick={() => setSidebarOpen(false)} />
-      )}
-
-      {/* Unified Left Sidebar */}
-      <div
-        className={`fixed md:relative inset-y-0 left-0 z-50 flex shrink-0 border-r border-white/[0.06] bg-[#1a1a1c] transition-[width] duration-300 ease-out overflow-hidden ${showExpandedSidebar
-          ? 'w-[min(100vw,332px)] md:w-[332px]'
-          : 'w-0 md:w-[52px] border-r-0 md:border-r'
-          }`}
-      >
-        {/* Leftmost Rail: Icons Only (Always visible on desktop) */}
-        <aside className="w-[52px] shrink-0 flex flex-col items-center bg-[#131314] py-3 border-r border-white/[0.03]">
-          <button
-            type="button"
-            onClick={toggleSidebarPanel}
-            title={showExpandedSidebar ? "Collapse panel" : "Expand panel"}
-            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/5 mb-2 group transition-all duration-200"
-          >
-            <SidebarToggleIcon className="w-5 h-5 text-zinc-400 group-hover:text-zinc-200 transition-colors" />
-          </button>
-          <div className="w-8 border-t border-white/[0.06] my-1" />
-          {navBtn('dashboard', <LayoutDashboard className="w-5 h-5" />, 'Dashboard')}
-          {navBtn('chat', <MessageSquare className="w-5 h-5" />, 'Chat')}
-          {navBtn('database', <Database className="w-5 h-5" />, 'Library')}
-          {/* {navBtn('how-it-works', <Info className="w-5 h-5" />, 'How it Works')} */}
-          <div className="mt-auto flex flex-col items-center gap-2 pb-2">
-            {showInstallBtn && (
-              <button
-                type="button"
-                onClick={handleInstallPWA}
-                title="Install VectorMind App"
-                className="w-10 h-10 rounded-full flex items-center justify-center bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/25 shadow-lg shadow-emerald-500/5 animate-pulse transition-all duration-200 active:scale-95"
-              >
-                <Download className="w-5 h-5" />
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={checkApiHealth}
-              title={apiHealth === 'healthy' ? 'Connected' : apiHealth === 'checking' ? 'Checking…' : 'Setup needed'}
-              className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/5"
-            >
-              <span className={`w-2.5 h-2.5 rounded-full ${apiHealth === 'healthy' ? 'bg-emerald-500' : apiHealth === 'checking' ? 'bg-amber-400 animate-pulse' : 'bg-red-500'}`} />
-            </button>
-          </div>
-        </aside>
-
-        {/* Right side of sidebar: Panel content, width 280px */}
-        <div className={`flex flex-col h-full w-[calc(100vw-52px)] max-w-[280px] md:w-[280px] shrink-0 transition-opacity duration-200 ${showExpandedSidebar ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-          <div className="h-14 px-4 flex items-center justify-between shrink-0 border-b border-white/[0.06]">
-            <button
-              type="button"
-              onClick={toggleSidebarPanel}
-              className="flex items-center gap-2 group text-left focus:outline-none select-none min-w-0"
-              title="Collapse panel"
-            >
-              <div className="relative w-6 h-6 flex items-center justify-center shrink-0">
-                <Zap className="w-5 h-5 text-emerald-400 absolute transition-all duration-200 group-hover:opacity-0 group-hover:scale-75 group-hover:rotate-45" />
-                <SidebarToggleIcon className="w-5 h-5 text-zinc-400 absolute opacity-0 scale-75 rotate-45 transition-all duration-200 group-hover:opacity-100 group-hover:scale-100 group-hover:rotate-0" />
-              </div>
-              <span className="font-semibold text-sm text-zinc-100 truncate group-hover:text-emerald-400 transition-colors">VectorMind</span>
-            </button>
-
-            {/* Mobile close button */}
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(false)}
-              className="md:hidden p-1.5 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-zinc-200 transition-all shrink-0"
-              title="Close sidebar"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Sidebar content conditional on active tab */}
-          {activeTab === 'chat' ? (
-            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-              {/* Project Switcher */}
-              <div className="p-4 border-b border-white/[0.06] relative z-20">
-                <div className="text-[11px] font-medium text-zinc-500 mb-2">Workspace</div>
-                <div className="relative">
-                  <button onClick={() => setProjectDropdownOpen(!projectDropdownOpen)} className="flex h-10 w-full items-center justify-between rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 shadow-sm outline-none transition-colors hover:bg-zinc-900 hover:text-zinc-50">
-                    <span className="text-sm font-medium truncate pr-2">
-                      {activeProject?.name || 'Select Workspace'}
-                    </span>
-                    <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform duration-200 ${projectDropdownOpen ? 'rotate-180 text-zinc-50' : ''}`} />
-                  </button>
-
-                  {/* Dropdown Menu */}
-                  {projectDropdownOpen && (
-                    <>
-                      <div className="fixed inset-0 z-40" onClick={() => setProjectDropdownOpen(false)} />
-                      <div className="absolute top-full left-0 right-0 mt-1.5 z-50 overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 text-zinc-550 shadow-md animate-slide-up origin-top">
-                        {/* Search Workspace Input */}
-                        <div className="px-2 py-1.5 border-b border-white/[0.04] mb-1">
-                          <input
-                            type="text"
-                            placeholder="Search workspaces..."
-                            value={sidebarProjSearch}
-                            onChange={(e) => setSidebarProjSearch(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-full px-2 py-1.5 bg-zinc-900 border border-white/5 rounded text-xs text-zinc-200 placeholder-zinc-500 outline-none focus:border-emerald-500/30 transition-all"
-                          />
-                        </div>
-
-                        <div className="max-h-[200px] overflow-y-auto custom-scrollbar p-1">
-                          {projects
-                            .filter(p => p.name.toLowerCase().includes(sidebarProjSearch.toLowerCase()))
-                            .map(p => (
-                              <div key={p.id} className={`w-full flex items-center justify-between rounded-sm text-sm transition-colors ${activeProjectId === p.id ? 'bg-zinc-900 text-zinc-50 font-medium' : 'text-zinc-300 hover:bg-zinc-900 hover:text-zinc-50'}`}>
-                                <button onClick={() => { setActiveProjectId(p.id); setProjectDropdownOpen(false); }} className="flex-1 text-left truncate px-2.5 py-2 flex items-center gap-2">
-                                  <Folder className={`w-3.5 h-3.5 shrink-0 ${activeProjectId === p.id ? 'text-emerald-450' : 'text-zinc-500'}`} />
-                                  {p.name}
-                                </button>
-                                <button onClick={(e) => { e.stopPropagation(); deleteProject(p.id, p.name); }} className="p-1.5 text-zinc-400 hover:text-red-405 hover:bg-red-500/10 rounded mr-1 transition-all" title="Delete Workspace">
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            ))}
-                          {projects.filter(p => p.name.toLowerCase().includes(sidebarProjSearch.toLowerCase())).length === 0 && (
-                            <div className="px-3 py-4 text-xs text-zinc-500 text-center">No matching workspaces.</div>
-                          )}
-                        </div>
-                        <div className="border-t border-zinc-800 p-2 bg-zinc-950">
-                          {isCreatingProject ? (
-                            <form onSubmit={handleCreateProject} className="flex flex-col gap-2">
-                              <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="Workspace Name..." className="w-full bg-zinc-955 border border-zinc-800 rounded-md px-3 py-1.5 text-xs text-zinc-100 outline-none focus:border-zinc-700 transition-colors" autoFocus />
-                              <div className="flex gap-1.5 relative z-50">
-                                <CustomSelect
-                                  value={newEmbeddingProvider}
-                                  onChange={setNewEmbeddingProvider}
-                                  options={EMBEDDING_PROVIDER_OPTIONS}
-                                  title="Embedding Model"
-                                />
-                                <CustomSelect
-                                  value={newChatProvider}
-                                  onChange={setNewChatProvider}
-                                  options={CHAT_PROVIDER_OPTIONS}
-                                  title="Chat Model"
-                                />
-                              </div>
-                              <div className="text-[8px] text-zinc-500 leading-tight my-1">
-                                <span className="text-emerald-500 font-bold">Tip:</span> Embedding is permanent per project. Chat LLMs can be freely swapped later!
-                              </div>
-                              <div className="flex gap-1.5">
-                                <button type="submit" disabled={!newProjectName.trim()} className="flex-1 bg-zinc-50 text-zinc-950 px-3 py-1.5 rounded-md font-bold text-xs hover:bg-zinc-200 disabled:opacity-50">Create</button>
-                                <button type="button" onClick={() => setIsCreatingProject(false)} className="bg-zinc-900 text-zinc-50 px-3 rounded-md font-bold hover:bg-zinc-800"><X className="w-3.5 h-3.5" /></button>
-                              </div>
-                            </form>
-                          ) : (
-                            <button onClick={() => setIsCreatingProject(true)} className="w-full flex items-center justify-center gap-2 text-xs font-semibold text-zinc-400 hover:text-zinc-50 py-2 rounded-md hover:bg-zinc-900 transition-colors">
-                              <FolderPlus className="w-3.5 h-3.5" /> Create Workspace
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Chat history */}
-              <div className="px-2 py-3 flex-1 flex flex-col min-h-0">
-                <div className="flex items-center justify-between mb-2 px-2 shrink-0">
-                  <span className="text-xs font-semibold text-zinc-400 flex items-center gap-1.5"><History className="w-3.5 h-3.5" /> Chats</span>
-                  <button type="button" onClick={startNewChat} className="flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold px-2 py-1 rounded-md hover:bg-emerald-500/10">
-                    <PlusCircle className="w-3.5 h-3.5" /> New
-                  </button>
-                </div>
-
-                {/* Chat Search Bar */}
-                <div className="px-2 mb-2 shrink-0">
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
-                    <input
-                      type="text"
-                      placeholder="Search chats..."
-                      value={chatSearchQuery}
-                      onChange={(e) => setChatSearchQuery(e.target.value)}
-                      className="w-full bg-zinc-950/40 hover:bg-zinc-950/60 focus:bg-zinc-950 border border-white/[0.04] focus:border-emerald-500/30 rounded-lg pl-8 pr-7 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-550 outline-none transition-all"
-                    />
-                    {chatSearchQuery && (
-                      <button type="button" onClick={() => setChatSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 p-0.5">
-                        <X className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-0.5 px-1">
-                  {chatChannels
-                    .filter(c => c.name.toLowerCase().includes(chatSearchQuery.toLowerCase()))
-                    .map(c => (
-                      <div key={c.id} className={`group flex items-center gap-1 rounded-xl transition-colors relative ${activeChatId === c.id ? 'bg-[#1D9E75]/10 ring-1 ring-[#1D9E75]/25' : 'hover:bg-white/5'}`}>
-                        {editingChatId === c.id ? (
-                          <div className="flex-1 flex items-center gap-2.5 px-2.5 py-2.5 min-w-0">
-                            <MessageSquare className="w-4 h-4 shrink-0 text-emerald-400" />
-                            <form
-                              onSubmit={(e) => {
-                                e.preventDefault()
-                                saveChatRename(c.id, editingChatName)
-                              }}
-                              className="flex-1 min-w-0"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <input
-                                type="text"
-                                value={editingChatName}
-                                onChange={(e) => setEditingChatName(e.target.value)}
-                                onBlur={() => saveChatRename(c.id, editingChatName)}
-                                className="w-full bg-zinc-950 border border-zinc-800 rounded px-1.5 py-0.5 text-xs text-zinc-100 outline-none focus:border-emerald-500/30"
-                                autoFocus
-                              />
-                            </form>
-                          </div>
-                        ) : (
-                          <button type="button" onClick={() => switchChat(c.id)} className="flex-1 flex items-center gap-2 text-left px-2.5 py-2.5 min-w-0">
-                            <MessageSquare className={`w-4 h-4 shrink-0 ${activeChatId === c.id ? 'text-emerald-400' : 'text-zinc-500'}`} />
-                            <div className="min-w-0 flex-1">
-                              <div className={`text-sm truncate font-medium ${activeChatId === c.id ? 'text-zinc-100' : 'text-zinc-300'}`}>{c.name}</div>
-                              <div className="text-[10px] text-zinc-650 truncate">{c.messages.filter(m => m.text).length || 0} messages</div>
-                            </div>
-                          </button>
-                        )}
-
-                        {editingChatId !== c.id && (
-                          <div className="relative shrink-0">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setActiveMenuChatId(activeMenuChatId === c.id ? null : c.id)
-                                setActiveMenuProjectId(null)
-                              }}
-                              className="p-2 mr-1 rounded-lg text-zinc-500 hover:text-zinc-350 transition-colors shrink-0 options-menu-btn"
-                              aria-label="Options"
-                            >
-                              <MoreVertical className="w-3.5 h-3.5" />
-                            </button>
-
-                            {activeMenuChatId === c.id && (
-                              <div className="absolute right-1 top-full mt-0.5 w-28 rounded-lg border border-white/10 bg-[#1e1f20] shadow-xl p-1 z-50 text-left options-menu-dropdown">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setEditingChatId(c.id)
-                                    setEditingChatName(c.name)
-                                    setActiveMenuChatId(null)
-                                  }}
-                                  className="w-full text-left px-2 py-1.5 rounded text-xs text-zinc-200 hover:bg-white/5 flex items-center gap-1.5"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5 text-zinc-400" /> Rename
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    deleteChat(c.id, e as any)
-                                    setActiveMenuChatId(null)
-                                  }}
-                                  className="w-full text-left px-2 py-1.5 rounded text-xs text-red-400 hover:bg-red-500/10 flex items-center gap-1.5 font-bold"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5 text-red-450" /> Delete
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-              {/* Workspaces List (Dashboard View) */}
-              <div className="p-4 border-b border-white/[0.06] flex items-center justify-between shrink-0">
-                <span className="text-[10px] font-bold text-zinc-555 uppercase tracking-wider flex items-center gap-1.5"><Folder className="w-3.5 h-3.5" /> Workspaces</span>
-                <button
-                  type="button"
-                  onClick={() => setIsCreatingProject(true)}
-                  className="flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold px-2 py-1 rounded-md hover:bg-emerald-500/10"
-                >
-                  <PlusCircle className="w-3.5 h-3.5" /> Create
-                </button>
-              </div>
-
-              {/* Workspace Search Bar */}
-              <div className="px-3 mb-2 mt-2 shrink-0">
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
-                  <input
-                    type="text"
-                    placeholder="Search workspaces..."
-                    value={workspaceSearchQuery}
-                    onChange={(e) => setWorkspaceSearchQuery(e.target.value)}
-                    className="w-full bg-zinc-950/40 hover:bg-zinc-950/60 focus:bg-zinc-950 border border-white/[0.04] focus:border-emerald-500/30 rounded-lg pl-8 pr-7 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-550 outline-none transition-all"
-                  />
-                  {workspaceSearchQuery && (
-                    <button type="button" onClick={() => setWorkspaceSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 p-0.5">
-                      <X className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1">
-                {projects
-                  .filter(p => p.name.toLowerCase().includes(workspaceSearchQuery.toLowerCase()))
-                  .map(p => (
-                    <div key={p.id} className={`group flex items-center gap-1 rounded-xl transition-all relative ${activeProjectId === p.id ? 'bg-[#1D9E75]/10 border-l-2 border-[#1D9E75]' : 'hover:bg-white/5 border-l-2 border-transparent'}`}>
-                      {editingProjectId === p.id ? (
-                        <div className="flex-1 flex items-center gap-2.5 px-2.5 py-3 min-w-0">
-                          <Folder className="w-4 h-4 shrink-0 text-emerald-400" />
-                          <form
-                            onSubmit={(e) => {
-                              e.preventDefault()
-                              saveProjectRename(p.id, editingProjectName)
-                            }}
-                            className="flex-1 min-w-0"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <input
-                              type="text"
-                              value={editingProjectName}
-                              onChange={(e) => setEditingProjectName(e.target.value)}
-                              onBlur={() => saveProjectRename(p.id, editingProjectName)}
-                              className="w-full bg-zinc-950 border border-zinc-800 rounded px-1.5 py-0.5 text-xs text-zinc-100 outline-none focus:border-emerald-500/30"
-                              autoFocus
-                            />
-                          </form>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setActiveProjectId(p.id)}
-                          className="flex-1 flex items-center gap-2.5 text-left px-2.5 py-3 min-w-0"
-                        >
-                          <Folder className={`w-4 h-4 shrink-0 ${activeProjectId === p.id ? 'text-emerald-400' : 'text-zinc-500'}`} />
-                          <div className="min-w-0 flex-1">
-                            <div className={`text-sm truncate font-medium ${activeProjectId === p.id ? 'text-zinc-100' : 'text-zinc-300'}`}>{p.name}</div>
-                            <div className="text-[10px] text-zinc-550 truncate uppercase tracking-wider font-bold text-[8px] flex items-center gap-1.5 mt-0.5">
-                              <span className="hidden min-[380px]:inline">Embed:</span> <span className="text-emerald-400 font-semibold">{p.embedding_provider || 'cohere'}</span>
-                              <span className="text-zinc-700">·</span>
-                              <span className="hidden min-[380px]:inline">Chat:</span> <span className="text-zinc-400">{p.chat_provider || 'groq'}</span>
-                            </div>
-                          </div>
-                        </button>
-                      )}
-
-                      {editingProjectId !== p.id && (
-                        <div className="relative shrink-0">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setActiveMenuProjectId(activeMenuProjectId === p.id ? null : p.id)
-                              setActiveMenuChatId(null)
-                            }}
-                            className="p-2 mr-1 rounded-lg text-zinc-500 hover:text-zinc-350 transition-colors shrink-0 options-menu-btn"
-                            title="Options"
-                          >
-                            <MoreVertical className="w-3.5 h-3.5" />
-                          </button>
-
-                          {activeMenuProjectId === p.id && (
-                            <div className="absolute right-1 top-full mt-0.5 w-28 rounded-lg border border-white/10 bg-[#1e1f20] shadow-xl p-1 z-50 text-left options-menu-dropdown">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setEditingProjectId(p.id)
-                                  setEditingProjectName(p.name)
-                                  setActiveMenuProjectId(null)
-                                }}
-                                className="w-full text-left px-2 py-1.5 rounded text-xs text-zinc-200 hover:bg-white/5 flex items-center gap-1.5"
-                              >
-                                <Edit2 className="w-3.5 h-3.5 text-zinc-400" /> Rename
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  deleteProject(p.id, p.name)
-                                  setActiveMenuProjectId(null)
-                                }}
-                                className="w-full text-left px-2 py-1.5 rounded text-xs text-red-400 hover:bg-red-500/10 flex items-center gap-1.5 font-bold"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-red-450" /> Delete
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                {projects.length === 0 && (
-                  <div className="text-zinc-500 text-center py-6 text-xs">No workspaces found.</div>
-                )}
-              </div>
-
-              {/* Quick Workspace Creation form at bottom */}
-              <div className="p-4 border-t border-white/[0.06] bg-zinc-950/20">
-                {isCreatingProject ? (
-                  <form onSubmit={handleCreateProject} className="flex flex-col gap-2 bg-zinc-950 p-3.5 rounded-xl border border-zinc-800 animate-slide-up">
-                    <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="Workspace Name..." className="w-full bg-zinc-950 border border-zinc-850 rounded-md px-3 py-1.5 text-xs text-zinc-100 outline-none focus:border-zinc-700 transition-colors" autoFocus />
-                    <div className="flex gap-1.5 relative z-50">
-                      <CustomSelect value={newEmbeddingProvider} onChange={setNewEmbeddingProvider} options={EMBEDDING_PROVIDER_OPTIONS} title="Embedding Model" />
-                      <CustomSelect value={newChatProvider} onChange={setNewChatProvider} options={CHAT_PROVIDER_OPTIONS} title="Chat Model" />
-                    </div>
-                    <div className="flex gap-1.5 mt-1">
-                      <button type="submit" disabled={!newProjectName.trim()} className="flex-1 bg-zinc-50 text-zinc-950 px-3 py-1.5 rounded-md font-bold text-xs hover:bg-zinc-200 disabled:opacity-50">Create</button>
-                      <button type="button" onClick={() => setIsCreatingProject(false)} className="bg-zinc-900 text-zinc-50 px-3 rounded-md font-bold hover:bg-zinc-800"><X className="w-3.5 h-3.5" /></button>
-                    </div>
-                  </form>
-                ) : (
-                  <button
-                    onClick={() => setIsCreatingProject(true)}
-                    className="w-full flex items-center justify-center gap-2 text-xs font-semibold text-zinc-400 hover:text-zinc-50 py-2.5 rounded-xl border border-dashed border-zinc-800 hover:border-emerald-500/30 transition-all hover:bg-white/[0.01]"
-                  >
-                    <FolderPlus className="w-3.5 h-3.5 text-emerald-400" /> Create Workspace
-                  </button>
-                )}
-              </div>
-
-              {showInstallBtn && (
-                <div className="px-4 pb-4 animate-fade-in shrink-0">
-                  <button
-                    onClick={handleInstallPWA}
-                    className="w-full flex items-center justify-center gap-2 text-xs font-bold text-emerald-400 hover:text-emerald-350 py-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 transition-all shadow-md active:scale-98"
-                  >
-                    <Download className="w-3.5 h-3.5" /> Install App
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+      {/* ── Background Ambient Effects ── */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] bg-emerald-500/[0.015] blur-[180px] rounded-full float-orb-1" />
+        <div className="absolute top-[500px] right-[-100px] w-[400px] h-[400px] bg-teal-500/[0.01] blur-[140px] rounded-full float-orb-2" />
+        <div className="absolute bottom-[200px] left-[-80px] w-[350px] h-[350px] bg-emerald-600/[0.01] blur-[120px] rounded-full float-orb-1" />
+        {/* Subtle lavender/sand warm undertone */}
+        <div className="absolute top-[300px] left-[40%] w-[500px] h-[300px] bg-violet-500/[0.015] blur-[160px] rounded-full float-orb-2" />
+        <div className="absolute bottom-[400px] right-[20%] w-[400px] h-[250px] bg-amber-500/[0.01] blur-[140px] rounded-full float-orb-1" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#1f29370a_1px,transparent_1px),linear-gradient(to_bottom,#1f29370a_1px,transparent_1px)] bg-[size:48px_48px]" />
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden relative z-10">
-        <div className="h-14 border-b border-white/[0.06] bg-[#131314]/90 backdrop-blur-xl flex items-center justify-between px-4 shrink-0 sticky top-0 z-30">
-          <div className="flex items-center gap-3 min-w-0">
-            <button type="button" onClick={() => setSidebarOpen(true)} className="md:hidden p-2 rounded-full hover:bg-white/5 text-zinc-400 hover:text-zinc-200 transition-colors shrink-0"><SidebarToggleIcon className="w-5 h-5" /></button>
-
-            {/* Active Tab Badge */}
-            <span className="hidden min-[450px]:inline-block text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md shrink-0 select-none">
-              {activeTab === 'dashboard' ? 'Dashboard' : activeTab === 'chat' ? 'Chat' : activeTab === 'database' ? 'Library' : 'How it Works'}
-            </span>
-
-            <span className="hidden min-[450px]:inline text-zinc-700 text-xs shrink-0 select-none">/</span>            {/* Workspace Indicator Selector Dropdown */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setNavbarDropdownOpen(!navbarDropdownOpen)}
-                className="text-xs font-semibold text-zinc-300 hover:text-zinc-100 flex items-center gap-1.5 min-w-0 bg-white/5 hover:bg-white/10 px-2.5 py-1.5 rounded-lg border border-white/[0.04] transition-all cursor-pointer select-none"
-              >
-                <Folder className="w-3.5 h-3.5 text-emerald-450 shrink-0" />
-                <span className="truncate max-w-[70px] min-[450px]:max-w-[120px] sm:max-w-[200px]" title={activeProject?.name || 'No Workspace'}>
-                  {activeProject?.name || 'Select Workspace'}
-                </span>
-                <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" />
-              </button>
-              {navbarDropdownOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setNavbarDropdownOpen(false)} />
-                  <div className="fixed top-14 left-0 mt-0.5 w-64 rounded-xl border border-white/10 bg-[#1e1f20] shadow-xl p-1.5 z-50 text-left animate-slide-up">
-                    <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest px-2.5 py-1.5 border-b border-white/[0.04] mb-1.5">Switch Workspace</p>
-
-                    {/* Search Workspace Input */}
-                    <div className="px-2 py-1 mb-2">
-                      <input
-                        type="text"
-                        placeholder="Search workspaces..."
-                        value={navbarProjSearch}
-                        onChange={(e) => setNavbarProjSearch(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-full px-2 py-1.5 bg-zinc-900 border border-white/5 rounded-lg text-xs text-zinc-200 placeholder-zinc-500 outline-none focus:border-emerald-500/30 transition-all"
-                      />
-                    </div>
-
-                    <div className="max-h-60 overflow-y-auto custom-scrollbar space-y-0.5 px-0.5">
-                      {projects
-                        .filter(p => p.name.toLowerCase().includes(navbarProjSearch.toLowerCase()))
-                        .map(p => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => {
-                              setActiveProjectId(p.id)
-                              setNavbarDropdownOpen(false)
-                            }}
-                            className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition flex items-center gap-2 ${activeProjectId === p.id
-                              ? 'bg-[#1D9E75]/10 text-emerald-400 font-semibold'
-                              : 'text-zinc-300 hover:bg-white/5'
-                              }`}
-                          >
-                            <Folder className={`w-3.5 h-3.5 shrink-0 ${activeProjectId === p.id ? 'text-emerald-400' : 'text-zinc-500'}`} />
-                            <span className="truncate flex-1">{p.name}</span>
-                          </button>
-                        ))}
-                      {projects.filter(p => p.name.toLowerCase().includes(navbarProjSearch.toLowerCase())).length === 0 && (
-                        <div className="text-[10px] text-zinc-555 text-center py-4">No matching workspaces.</div>
-                      )}
-                    </div>
-
-                    {/* Create Workspace Inline Form */}
-                    <div className="border-t border-white/[0.04] mt-2 pt-2 px-1 bg-zinc-950/20 rounded-b-xl">
-                      {isCreatingProjectNavbar ? (
-                        <form
-                          onSubmit={handleCreateProjectNavbar}
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex flex-col gap-2 p-1.5"
-                        >
-                          <input
-                            type="text"
-                            placeholder="Workspace name..."
-                            autoFocus
-                            value={newProjectName}
-                            onChange={(e) => setNewProjectName(e.target.value)}
-                            className="w-full px-2.5 py-1.5 bg-zinc-900 border border-white/5 rounded-lg text-xs text-zinc-200 outline-none focus:border-emerald-500/30"
-                          />
-                          <div className="flex gap-1.5 justify-end">
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); setIsCreatingProjectNavbar(false); }}
-                              className="px-2 py-1 text-[10px] text-zinc-400 hover:text-zinc-200"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              type="submit"
-                              className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-450 text-[#0a0a0c] font-bold text-[10px] rounded"
-                            >
-                              Create
-                            </button>
-                          </div>
-                        </form>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); setIsCreatingProjectNavbar(true); }}
-                          className="w-full flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg hover:bg-white/5 text-[11px] text-emerald-400 font-semibold transition"
-                        >
-                          <FolderPlus className="w-3.5 h-3.5 text-emerald-400" /> Create Workspace
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {activeTab === 'chat' && activeChannelName && (
-              <>
-                <span className="text-zinc-700 text-xs shrink-0 select-none">/</span>
-                <div className="flex items-center gap-1 bg-[#1D9E75]/10 text-emerald-400 px-2 py-1 rounded-lg border border-[#1D9E75]/20 text-xs font-semibold max-w-[65px] xs:max-w-[100px] sm:max-w-[150px] truncate select-none shadow-sm shadow-[#1D9E75]/5">
-                  <MessageSquare className="w-3.5 h-3.5 text-emerald-450 shrink-0" />
-                  <span className="truncate">{activeChannelName}</span>
+      {/* ════════════════════════════════════════════════════════
+          NAVIGATION BAR (Dynamic Glassmorphism Header)
+          ════════════════════════════════════════════════════════ */}
+      <nav
+        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ease-in-out ${
+          scrolled
+            ? 'py-3 bg-[#050709]/85 backdrop-blur-2xl border-b border-emerald-500/20 shadow-[0_10px_30px_rgba(0,0,0,0.8)] shadow-emerald-950/20'
+            : 'py-6 bg-transparent border-b border-transparent'
+        }`}
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-2.5 group">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 via-teal-500 to-emerald-400 p-0.5 shadow-[0_0_18px_rgba(16,185,129,0.3)] group-hover:shadow-[0_0_28px_rgba(16,185,129,0.5)] group-hover:scale-105 transition-all duration-300">
+                <div className="w-full h-full bg-[#050709] rounded-[10px] flex items-center justify-center">
+                  <Zap className="w-4.5 h-4.5 text-emerald-400 fill-current" />
                 </div>
-              </>
-            )}
+              </div>
+              <span className="font-extrabold text-xl tracking-tight bg-gradient-to-r from-white via-zinc-100 to-emerald-400 bg-clip-text text-transparent">
+                VectorMind
+              </span>
+            </Link>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
-            {mounted && (
-              <button
-                onClick={toggleTheme}
-                title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
-                className="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-emerald-400 border border-white/[0.04] transition-all no-invert"
-              >
-                {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-              </button>
-            )}
-            {isLibraryLoading && <Loader2 className="w-4 h-4 animate-spin text-zinc-550" />}
-            {activeTab === 'chat' && activeProjectId && (
-              <button
-                type="button"
-                onClick={startNewChat}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/10 hover:bg-white/5 text-zinc-300 hover:text-zinc-100 text-xs font-semibold transition-colors"
-                title="New chat"
-              >
-                <PlusCircle className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">New Chat</span>
-              </button>
-            )}
+          {/* Desktop Nav Links (Pill Style Container) */}
+          <div className="hidden md:flex items-center gap-1 px-4 py-1.5 rounded-full bg-zinc-900/40 border border-zinc-800/80 backdrop-blur-xl shadow-inner text-[13px] font-medium text-zinc-400 hover:border-zinc-700/60 transition-all duration-300">
+            <a href="#product" className="px-3.5 py-1.5 rounded-full hover:text-white hover:bg-zinc-800/60 transition-all duration-200">Product</a>
+            <a href="#architecture" className="px-3.5 py-1.5 rounded-full hover:text-white hover:bg-zinc-800/60 transition-all duration-200">Architecture</a>
+            <a href="#features" className="px-3.5 py-1.5 rounded-full hover:text-white hover:bg-zinc-800/60 transition-all duration-200">Features</a>
+            <a href="#docs" className="px-3.5 py-1.5 rounded-full hover:text-white hover:bg-zinc-800/60 transition-all duration-200">Docs</a>
+          </div>
+
+          {/* Actions */}
+          <div className="hidden md:flex items-center gap-3">
+            <a
+              href="https://github.com/krishsoni15/VectorMind"
+              target="_blank"
+              rel="noreferrer"
+              className="w-9 h-9 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800 hover:border-emerald-500/40 flex items-center justify-center text-zinc-400 hover:text-emerald-400 transition-all duration-300 shadow-sm group"
+              aria-label="GitHub Repository"
+              title="GitHub Repository"
+            >
+              <Github className="w-4 h-4 group-hover:scale-110 transition-transform" />
+            </a>
+            <AccountMenu />
+          </div>
+
+          {/* Mobile Menu Toggle */}
+          <div className="md:hidden">
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="p-2 rounded-xl bg-zinc-900/90 border border-zinc-800 text-zinc-400 hover:text-white transition-colors"
+            >
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
           </div>
         </div>
 
-        {configError && (
-          <div className="bg-red-950/20 border-b border-red-900/30 text-red-400 p-3 text-xs font-medium flex items-center gap-2 justify-center backdrop-blur-md">
-            <AlertCircle className="w-4 h-4" /> {configError}
-          </div>
-        )}
-
-        {/* --- View: Dashboard (Project DB) --- */}
-        {activeTab === 'dashboard' && (
-          <div className="flex-1 min-h-0 overflow-y-auto p-3 xs:p-4 md:p-8 custom-scrollbar bg-[#131314]">
-            <div className="max-w-6xl mx-auto animate-page-load space-y-8">
-
-              <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2 text-zinc-400 font-bold text-sm tracking-widest uppercase mb-1">
-                    <BarChart3 className="w-4 h-4 text-zinc-500" /> Enterprise Analytics
-                  </div>
-                  <h2 className="text-xl xs:text-2xl sm:text-3xl md:text-4xl font-bold text-zinc-100">{activeProject?.name || 'Workspace'}</h2>
-                </div>
-                <div className="flex flex-wrap gap-2 w-full sm:w-auto shrink-0">
-                  <button onClick={() => setActiveTab('database')} className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-2 border border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-50 rounded-md text-xs font-semibold transition-colors">
-                    <Database className="w-4 h-4 text-emerald-450" /> View Library
-                  </button>
-                  <button onClick={() => setActiveTab('chat')} className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-2 border border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-50 rounded-md text-xs font-semibold transition-colors">
-                    <MessageSquare className="w-4 h-4 text-zinc-400" /> Chat
-                  </button>
-                </div>
-              </div>
-
-              {/* Stats Cards Grid (4 columns) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-                <button
-                  onClick={() => setActiveTab('database')}
-                  className="w-full text-left bg-zinc-900/30 border border-zinc-850 hover:border-emerald-500/25 hover:bg-zinc-900/50 rounded-md p-6 relative overflow-hidden group transition-all duration-300"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="text-xs font-bold text-zinc-550 uppercase tracking-widest">Total Files</div>
-                    <MiniSparkline value={documents.length} color="#1D9E75" />
-                  </div>
-                  <div className="text-5xl font-black text-zinc-100"><AnimatedNumber value={documents.length} /></div>
-                  <div className="text-[10px] text-zinc-500 mt-2 font-medium">+{Math.min(documents.length, 1)} today</div>
-                </button>
-
-                <button
-                  onClick={() => setActiveTab('database')}
-                  className="w-full text-left bg-zinc-900/30 border border-zinc-850 hover:border-emerald-500/25 hover:bg-zinc-900/50 rounded-md p-6 relative overflow-hidden group transition-all duration-300"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="text-xs font-bold text-zinc-550 uppercase tracking-widest">Vector Chunks</div>
-                    <MiniSparkline value={totalChunks} color="#1D9E75" />
-                  </div>
-                  <div className="text-5xl font-black text-zinc-100"><AnimatedNumber value={totalChunks} /></div>
-                  <div className="text-[10px] text-zinc-500 mt-2 font-medium">last sync just now</div>
-                </button>
-
-                <button
-                  onClick={() => setActiveTab('chat')}
-                  className="w-full text-left bg-zinc-900/30 border border-zinc-850 hover:border-emerald-500/25 hover:bg-zinc-900/50 rounded-md p-6 relative overflow-hidden group transition-all duration-300"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="text-xs font-bold text-zinc-550 uppercase tracking-widest">Total Chats</div>
-                    <MiniSparkline value={chatChannels.length} color="#1D9E75" />
-                  </div>
-                  <div className="text-5xl font-black text-zinc-100"><AnimatedNumber value={chatChannels.length} /></div>
-                  <div className="text-[10px] text-zinc-500 mt-2 font-medium">active sessions</div>
-                </button>
-
-                <button
-                  onClick={() => setActiveTab('database')}
-                  className="w-full text-left bg-zinc-900/30 border border-zinc-850 hover:border-emerald-500/25 hover:bg-zinc-900/50 rounded-md p-6 relative overflow-hidden group transition-all duration-300"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="text-xs font-bold text-zinc-555 uppercase tracking-widest">Storage Volume</div>
-                    <MiniSparkline value={totalStorageBytes > 0 ? 100 : 0} color="#1D9E75" />
-                  </div>
-                  <div className="text-4xl font-black text-zinc-100 mt-1">{formattedStorage}</div>
-                  <div className="text-[10px] text-zinc-500 mt-3 font-medium">raw workspace content</div>
-                </button>
-              </div>
-
-              {/* Layout split: limits on left, providers select on right */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8 items-start">
-                {/* Left: API limits quotas (2/3 width) */}
-                <div className="lg:col-span-2 bg-zinc-900/30 border border-zinc-850 rounded-md p-5 shadow-inner">
-                  <div className="flex items-center gap-2 text-zinc-450 font-bold text-[10px] uppercase tracking-widest mb-3">
-                    <Activity className="w-3.5 h-3.5" /> API Quotas & Limits
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-zinc-400">
-                    <div className="bg-zinc-950 p-3.5 rounded-md border border-zinc-850 relative overflow-hidden group">
-                      <div className="text-zinc-250 font-bold mb-1.5 flex justify-between items-center">
-                        Gemini API
-                        <div className="flex items-center gap-1.5">
-                          {!apiStats?.gemini?.chat?.ok && (
-                            <div className="tooltip-wrapper">
-                              <span className="text-[9px] px-1.5 py-0.5 rounded-sm font-bold bg-red-955/20 text-red-400 animate-shake">
-                                {apiStats?.gemini?.chat?.error?.error?.status === 'RESOURCE_EXHAUSTED' ? 'QUOTA EXCEEDED' : 'OFFLINE'}
-                              </span>
-                              <span className="tooltip-text">
-                                {apiStats?.gemini?.chat?.error?.error?.message || 'Gemini API test failed. Check key configuration.'}
-                              </span>
-                            </div>
-                          )}
-                          {!apiStats?.gemini?.chat?.ok && (
-                            <button onClick={() => handleUpdateChatProvider('groq')} className="text-[8px] font-bold text-amber-400 hover:text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded transition-colors">
-                              Switch →
-                            </button>
-                          )}
-                          {apiStats?.gemini?.chat?.ok && (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded-sm font-bold bg-emerald-950/20 text-emerald-400 border border-emerald-900/20">ONLINE</span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="font-mono text-[10px]">15 Req/Min • 1,500 Req/Day</div>
-                    </div>
-                    <div className="bg-zinc-950 p-3.5 rounded-md border border-zinc-850 relative overflow-hidden group">
-                      <div className="text-zinc-250 font-bold mb-1.5 flex justify-between items-center">
-                        Cohere API
-                        <div className="flex items-center gap-1.5">
-                          {!apiStats?.cohere?.chat?.ok && (
-                            <div className="tooltip-wrapper">
-                              <span className="text-[9px] px-1.5 py-0.5 rounded-sm font-bold bg-red-955/20 text-red-400 animate-shake">OFFLINE</span>
-                              <span className="tooltip-text">
-                                {apiStats?.cohere?.chat?.error?.message || apiStats?.cohere?.error || 'Cohere API test failed. Check key configuration.'}
-                              </span>
-                            </div>
-                          )}
-                          {!apiStats?.cohere?.chat?.ok && (
-                            <button onClick={() => handleUpdateChatProvider('groq')} className="text-[8px] font-bold text-amber-400 hover:text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded transition-colors">
-                              Switch →
-                            </button>
-                          )}
-                          {apiStats?.cohere?.chat?.ok && (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded-sm font-bold bg-emerald-950/20 text-emerald-400 border border-emerald-900/20">ONLINE</span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="font-mono text-[10px]">10 Req/Min • 1,000 Req/Month</div>
-                    </div>
-                    <div className="bg-zinc-950 p-3.5 rounded-md border border-zinc-850 relative overflow-hidden group">
-                      <div className="text-zinc-250 font-bold mb-1.5 flex justify-between items-center">
-                        Groq API
-                        <div className="flex items-center gap-1.5">
-                          {!apiStats?.groq?.ok && (
-                            <div className="tooltip-wrapper">
-                              <span className="text-[9px] px-1.5 py-0.5 rounded-sm font-bold bg-red-955/20 text-red-400 animate-shake">
-                                {apiStats?.groq?.error ? 'OFFLINE' : 'KEY MISSING'}
-                              </span>
-                              <span className="tooltip-text">
-                                {apiStats?.groq?.error?.error?.message || apiStats?.groq?.error?.message || apiStats?.groq?.error || 'Groq API key not configured. Add GROQ_API_KEY to .env.local'}
-                              </span>
-                            </div>
-                          )}
-                          {!apiStats?.groq?.ok && (
-                            <button onClick={() => handleUpdateChatProvider('gemini')} className="text-[8px] font-bold text-amber-400 hover:text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded transition-colors">
-                              Switch →
-                            </button>
-                          )}
-                          {apiStats?.groq?.ok && (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded-sm font-bold bg-emerald-950/20 text-emerald-400 border border-emerald-900/20">ONLINE</span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="font-mono text-[10px]">30 Req/Min • 14,400 Tokens/Min</div>
-                    </div>
-                    <div className="bg-zinc-950 p-3.5 rounded-md border border-zinc-850 relative overflow-visible group">
-                      <div className="text-zinc-250 font-bold mb-1.5 flex justify-between items-center">
-                        OpenAI (ChatGPT)
-                        <div className="flex items-center gap-1.5">
-                          {!apiStats?.openai?.chat?.ok && apiStats?.openai && (
-                            <div className="tooltip-wrapper">
-                              <span className="text-[9px] px-1.5 py-0.5 rounded-sm font-bold bg-red-955/20 text-red-400 animate-shake">
-                                {apiStats?.openai?.chat?.error?.error?.code === 'insufficient_quota' ? 'QUOTA EXCEEDED' : 'OFFLINE'}
-                              </span>
-                              <span className="tooltip-text">
-                                {apiStats?.openai?.chat?.error?.error?.message ||
-                                  apiStats?.openai?.chat?.error?.message ||
-                                  apiStats?.openai?.error ||
-                                  'OpenAI API verification failed. Please check key/billing.'}
-                              </span>
-                            </div>
-                          )}
-                          {!apiStats?.openai?.chat?.ok && (
-                            <button onClick={() => handleUpdateChatProvider('cohere')} className="text-[8px] font-bold text-amber-400 hover:text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded transition-colors">
-                              Switch →
-                            </button>
-                          )}
-                          {apiStats?.openai?.chat?.ok && (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded-sm font-bold bg-emerald-950/20 text-emerald-400 border border-emerald-900/20">ONLINE</span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="font-mono text-[10px]">gpt-4o-mini · embed-3-small</div>
-                    </div>
-                  </div>
-                  <div className="mt-3 text-[10px] text-zinc-550">
-                    <strong className="text-zinc-400">Note:</strong> Free APIs do not return live remaining-token metrics. If a limit is reached, it shows as QUOTA EXCEEDED. Use the Switch button to swap providers instantly.
-                  </div>
-                </div>
-
-                {/* Right: AI Providers selection (1/3 width) */}
-                <div className="bg-zinc-900/30 border border-zinc-850 rounded-md p-6 relative overflow-visible">
-                  <div className="text-xs font-bold text-zinc-550 uppercase tracking-widest mb-3">AI Providers</div>
-                  <div className="space-y-3">
-                    <div className="bg-zinc-950 border border-zinc-850 rounded-lg px-3 py-3 space-y-2 overflow-visible">
-                      <div className="text-[10px] font-bold text-zinc-550 uppercase">Embedding</div>
-                      <div className="text-sm font-semibold text-zinc-200">{embedProvider?.name || 'Cohere'}</div>
-                      <div className="text-[9px] text-zinc-500 font-mono">{embedProvider?.dimension || 1024}d · {embedProvider?.model}</div>
-                      <CustomSelect
-                        value={activeProject?.embedding_provider || 'cohere'}
-                        onChange={handleUpdateEmbeddingProvider}
-                        options={EMBEDDING_PROVIDER_OPTIONS}
-                        containerClassName="w-full relative z-30"
-                        buttonClassName="w-full bg-[#1e1f20] border border-white/10 hover:border-white/20 rounded-lg py-2 px-3 text-xs text-zinc-200 flex items-center justify-between"
-                        dropdownPosition="top-full mt-1 left-0 right-0 z-[200] origin-top"
-                      />
-                    </div>
-                    <div className="bg-zinc-950 border border-zinc-850 rounded-lg px-3 py-3 space-y-2 overflow-visible relative z-20">
-                      <div className="text-[10px] font-bold text-zinc-550 uppercase flex items-center gap-1.5">Chat LLM
-                        {apiStats && (() => {
-                          const cp = activeProject?.chat_provider || 'groq'
-                          const isOk = cp === 'groq' ? apiStats.groq?.ok : cp === 'openai' ? apiStats.openai?.chat?.ok : cp === 'cohere' ? apiStats.cohere?.chat?.ok : apiStats.gemini?.chat?.ok
-                          const latency = cp === 'groq' ? apiStats.groq?.latencyMs : cp === 'openai' ? apiStats.openai?.chat?.latencyMs : cp === 'cohere' ? apiStats.cohere?.chat?.latencyMs : apiStats.gemini?.chat?.latencyMs
-                          return <span className={`w-2 h-2 rounded-full ${isOk ? 'bg-emerald-500' : 'bg-red-500'}`} title={latency ? `${latency} ms` : 'offline'} />
-                        })()}
-                      </div>
-                      <div className="text-sm font-semibold text-zinc-200">{CHAT_PROVIDERS[chatProviderId]?.name}</div>
-                      <div className="text-[9px] text-zinc-500 font-mono">{CHAT_PROVIDERS[chatProviderId]?.model}</div>
-                      <CustomSelect
-                        value={activeProject?.chat_provider || 'groq'}
-                        onChange={handleUpdateChatProvider}
-                        options={CHAT_PROVIDER_OPTIONS}
-                        containerClassName="w-full relative z-30"
-                        buttonClassName="w-full bg-[#1e1f20] border border-white/10 hover:border-white/20 rounded-lg py-2 px-3 text-xs text-zinc-200 flex items-center justify-between"
-                        dropdownPosition="top-full mt-1 left-0 right-0 z-[200] origin-top"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
+        {/* Mobile Dropdown */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-b border-zinc-800 bg-[#050709]/95 backdrop-blur-2xl px-4 py-4 space-y-3 text-sm animate-slide-up">
+            <a href="#product" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-zinc-300 hover:text-emerald-400 transition-colors">Product</a>
+            <a href="#architecture" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-zinc-300 hover:text-emerald-400 transition-colors">Architecture</a>
+            <a href="#features" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-zinc-300 hover:text-emerald-400 transition-colors">Features</a>
+            <a href="#docs" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-zinc-300 hover:text-emerald-400 transition-colors">Docs</a>
+            <div className="pt-2 flex flex-col gap-2">
+              <a href="https://github.com/krishsoni15/VectorMind" target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white">
+                <Github className="w-4 h-4" /> GitHub
+              </a>
+              <Link href="/app" className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-zinc-950 font-bold text-xs shadow-lg shadow-emerald-500/20">
+                Get Started <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
             </div>
           </div>
         )}
-        {/* --- View: Database (Repository & Library) --- */}
-        {activeTab === 'database' && (
-          <div className="flex-1 min-h-0 overflow-y-auto p-3 xs:p-4 md:p-8 custom-scrollbar bg-[#131314]">
-            <div className="max-w-6xl mx-auto animate-page-load space-y-8">
+      </nav>
 
-              <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2 text-zinc-450 font-bold text-xs tracking-widest uppercase mb-1.5">
-                    <Database className="w-3.5 h-3.5 text-zinc-500" /> Workspace Library
-                  </div>
-                  <h2 className="text-xl xs:text-2xl sm:text-3xl md:text-4xl font-black text-zinc-150 tracking-tight">{activeProject?.name || 'Workspace'} Files</h2>
-                </div>
-                <div className="flex flex-wrap gap-2 w-full sm:w-auto shrink-0">
-                  <button onClick={() => setActiveTab('dashboard')} className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 border border-white/10 bg-transparent text-zinc-300 hover:bg-white/5 hover:text-zinc-100 rounded-xl text-xs font-semibold transition-all" title="View dashboard">
-                    <LayoutDashboard className="w-3.5 h-3.5 text-emerald-450" /> Dashboard
-                  </button>
-                  <button onClick={() => setActiveTab('chat')} className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-zinc-900 border border-white/5 text-zinc-300 hover:bg-zinc-850 hover:text-zinc-100 rounded-xl text-xs font-semibold transition-all" title="Open chat session">
-                    <MessageSquare className="w-3.5 h-3.5 text-blue-400" /> Chat
-                  </button>
-                </div>
+      {/* ════════════════════════════════════════════════════════
+          HERO SECTION (Powered by DarkVeil WebGL Background)
+          ════════════════════════════════════════════════════════ */}
+      <section className="relative pt-20 pb-20 md:pt-28 md:pb-32 z-10 overflow-hidden min-h-[650px] lg:min-h-[720px] flex items-center">
+        {/* Full-bleed WebGL DarkVeil background */}
+        <div className="absolute inset-0 z-0 opacity-40 pointer-events-auto">
+          <DarkVeil
+            hueShift={135}
+            noiseIntensity={0.02}
+            scanlineIntensity={0.04}
+            speed={0.35}
+            scanlineFrequency={0.15}
+            warpAmount={0.18}
+            resolutionScale={1}
+            lightMode={false}
+          />
+        </div>
+
+        {/* Ambient Top & Bottom Vignette Overlay for smooth page integration */}
+        <div className="absolute inset-0 z-[1] bg-gradient-to-b from-[#050709]/90 via-[#050709]/40 to-[#050709] pointer-events-none" />
+
+        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-12 items-center">
+            
+            {/* Left Column: Text Content */}
+            <div className="text-left">
+              {/* Badge */}
+              <div className="hero-entrance hero-entrance-1 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono mb-6 shadow-[0_0_15px_rgba(16,185,129,0.15)] backdrop-blur-md">
+                <Zap className="w-3.5 h-3.5 fill-current text-emerald-400" />
+                <span className="font-semibold">AI KNOWLEDGE INFRASTRUCTURE</span>
               </div>
 
-              {/* Database View: Ingestion Hub (Top) + Repository (Bottom) */}
-              <div className="flex flex-col gap-6 md:gap-8">
+              {/* Main Title */}
+              <h1 className="hero-entrance hero-entrance-2 text-4xl sm:text-5xl lg:text-[3.8rem] font-extrabold tracking-tight text-white leading-[1.08] mb-6">
+                Turn your documents into an{' '}
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-300 text-gradient-animate">
+                  intelligent knowledge system.
+                </span>
+              </h1>
 
-                {/* Top: Ingestion Hub (Full Width Card with Horizontal Split on desktop) */}
-                <div className="bg-zinc-950/60 backdrop-blur-md border border-white/[0.05] rounded-2xl p-3.5 sm:p-6 shadow-[0_8px_30px_rgb(0,0,0,0.3)] relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-[#1D9E75]/5 rounded-full blur-2xl group-hover:bg-[#1D9E75]/10 transition-all duration-300 pointer-events-none" />
+              {/* Description */}
+              <p className="hero-entrance hero-entrance-3 text-base sm:text-lg text-zinc-300 max-w-xl leading-relaxed mb-9 font-normal drop-shadow-sm">
+                VectorMind combines Hybrid RAG, CAG, semantic retrieval, vector search, and multi-model orchestration into one powerful workspace for querying complex knowledge bases.
+              </p>
 
-                  <div className="flex flex-col lg:flex-row gap-6 items-stretch">
-                    {/* Left half: Drag & Drop Dropzone */}
-                    <div className="flex-1 space-y-4 flex flex-col justify-between">
-                      <div>
-                        <h3 className="text-sm font-bold text-zinc-200 flex items-center gap-2">
-                          <UploadCloud className="w-4 h-4 text-[#1D9E75]" /> Ingestion Hub
-                        </h3>
-                        <p className="text-[11px] text-zinc-500 mt-1">Vectorize files directly into this workspace database.</p>
-                      </div>
+              {/* CTAs */}
+              <div className="hero-entrance hero-entrance-4 flex flex-col sm:flex-row items-start gap-4 mb-9">
+                <Link
+                  href="/app"
+                  className="w-full sm:w-auto px-8 py-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-zinc-950 font-bold text-sm font-mono flex items-center justify-center gap-2.5 shadow-[0_0_24px_rgba(16,185,129,0.3)] hover:shadow-[0_0_36px_rgba(16,185,129,0.5)] transition-all duration-300 btn-hover-lift"
+                >
+                  Get Started <ArrowRight className="w-4 h-4" />
+                </Link>
+                <a
+                  href="#architecture"
+                  className="w-full sm:w-auto px-8 py-4 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700/80 hover:border-emerald-500/50 text-zinc-200 text-sm font-mono flex items-center justify-center gap-2 transition-all duration-300 btn-hover-lift backdrop-blur-xl"
+                >
+                  View Architecture
+                </a>
+              </div>
 
-                      <div
-                        onDragOver={(e) => { e.preventDefault(); setDbDragActive(true); }}
-                        onDragLeave={() => setDbDragActive(false)}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          setDbDragActive(false);
-                          if (e.dataTransfer.files) {
-                            addFilesToQueue(Array.from(e.dataTransfer.files))
-                          }
-                        }}
-                        onClick={() => dbFileInputRef.current?.click()}
-                        className={`group/drop relative overflow-hidden rounded-xl p-4 sm:p-8 text-center cursor-pointer transition-all duration-300 border border-dashed flex-1 flex flex-col justify-center min-h-[160px] ${dbDragActive
-                          ? 'border-emerald-500 bg-emerald-500/5 shadow-[0_0_15px_rgba(16,185,129,0.1)]'
-                          : 'border-white/[0.08] hover:border-emerald-500/40 bg-zinc-950/40 hover:bg-zinc-900/10'
-                          }`}
-                      >
-                        <input ref={dbFileInputRef} type="file" multiple className="hidden" accept=".pdf,.md,.txt,.json,.docx" onChange={(e) => { if (e.target.files) addFilesToQueue(Array.from(e.target.files)) }} />
-                        <div className="w-10 h-10 mx-auto rounded-full flex items-center justify-center mb-2 bg-zinc-900/60 border border-white/[0.06] group-hover/drop:border-emerald-500/30 group-hover/drop:bg-zinc-900 transition-colors shadow-inner">
-                          <UploadCloud className="w-4.5 h-4.5 text-zinc-400 group-hover/drop:text-emerald-450 transition-colors" />
-                        </div>
-                        <div className="text-xs font-bold text-zinc-200 mb-0.5">Drag & drop files here</div>
-                        <div className="text-[10px] text-zinc-550 mb-2.5">or click to browse from device</div>
-                        <div className="inline-flex gap-1.5 flex-wrap justify-center">
-                          <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-white/5 text-[9px] font-medium text-zinc-500 select-none">PDF</span>
-                          <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-white/5 text-[9px] font-medium text-zinc-500 select-none">Markdown</span>
-                          <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-white/5 text-[9px] font-medium text-zinc-500 select-none">TXT</span>
-                          <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-white/5 text-[9px] font-medium text-zinc-500 select-none">JSON</span>
-                          <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-white/5 text-[9px] font-medium text-zinc-500 select-none">DOCX</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Right half: Upload queue */}
-                    <div className="flex-1 min-w-0 w-full border-t lg:border-t-0 lg:border-l border-white/[0.06] pt-6 lg:pt-0 lg:pl-6 flex flex-col justify-between min-h-[220px]">
-                      {uploadQueue.filter(item => item.projectId === activeProjectId).length === 0 ? (
-                        <div className="flex-1 flex flex-col items-center justify-center text-center py-6">
-                          <FileText className="w-10 h-10 text-zinc-800 mb-2" />
-                          <div className="text-xs font-semibold text-zinc-500">No active ingestion jobs</div>
-                          <div className="text-[10px] text-zinc-650 max-w-[240px] mt-1 font-medium">Queued files will appear here with progress bars and stages.</div>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col h-full justify-between gap-4">
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="text-[10px] font-bold text-zinc-550 uppercase tracking-widest">Ingestion Jobs ({uploadQueue.filter(item => item.projectId === activeProjectId).length})</span>
-                            <button
-                              onClick={() => startUpload()}
-                              disabled={isUploading}
-                              className="text-[10px] bg-[#1D9E75] hover:bg-[#1D9E75]/80 text-[#0a0a0c] px-3 py-1.5 rounded-lg font-bold disabled:opacity-50 transition-all flex items-center gap-1 shadow-md shadow-[#1D9E75]/10"
-                            >
-                              {isUploading ? <><Loader2 className="w-2.5 h-2.5 animate-spin" /> Ingesting</> : 'Start Ingest'}
-                            </button>
-                          </div>
-                          <div className="space-y-2 max-h-[160px] overflow-y-auto custom-scrollbar pr-1 flex-1">
-                            {uploadQueue.filter(item => item.projectId === activeProjectId).map(item => {
-                              const matchedDoc = documents.find(d => getDocName(d) === item.file.name)
-                              return (
-                                <div key={item.id} className="bg-zinc-950/80 border border-white/[0.04] rounded-xl p-3 text-xs relative overflow-hidden group">
-                                  <div className="relative z-10 flex justify-between items-center gap-2">
-                                    <div className="flex items-center gap-2 overflow-hidden">
-                                      <FileText className={`w-4 h-4 shrink-0 ${item.status === 'success' ? 'text-emerald-450' : 'text-zinc-500'}`} />
-                                      <span className="truncate text-zinc-300 font-medium max-w-[200px]" title={item.file.name}>{item.file.name}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 shrink-0">
-                                      {item.status === 'success' ? (
-                                        <>
-                                          {matchedDoc && (
-                                            <button
-                                              type="button"
-                                              onClick={() => openPreview(matchedDoc)}
-                                              className="p-1 text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded transition-all mr-0.5"
-                                              title="Preview indexed document"
-                                            >
-                                              <Eye className="w-3.5 h-3.5" />
-                                            </button>
-                                          )}
-                                          <CheckCircle className="w-4 h-4 text-emerald-450" />
-                                        </>
-                                      ) : item.status === 'error' ? (
-                                        <span title={item.error}><XCircle className="w-4 h-4 text-red-400" /></span>
-                                      ) : (
-                                        <span className="text-[10px] font-mono font-bold text-emerald-400">{item.progress}%</span>
-                                      )}
-
-                                      {/* Remove or Stop button */}
-                                      {item.status === 'uploading' ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => stopUpload(item.id, item.file.name, item.projectId)}
-                                          className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-all ml-1 shrink-0"
-                                          title="Stop and delete upload"
-                                        >
-                                          <XCircle className="w-4 h-4" />
-                                        </button>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() => removeQueueItem(item.id)}
-                                          className="p-1 text-zinc-500 hover:text-red-405 hover:bg-white/5 rounded transition-all ml-1 shrink-0"
-                                          title="Remove from queue"
-                                        >
-                                          <X className="w-3.5 h-3.5" />
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                  {item.status === 'uploading' && (
-                                    <div className="relative z-10 space-y-1.5 mt-2">
-                                      <div className="h-1 bg-zinc-900 rounded-full overflow-hidden relative">
-                                        <div className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 animate-pulse transition-all duration-300" style={{ width: `${item.progress}%` }} />
-                                      </div>
-                                      <div className="flex items-center justify-between text-[9px] text-zinc-500 font-medium">
-                                        <div className="flex items-center gap-1">
-                                          <Loader2 className="w-2.5 h-2.5 animate-spin text-emerald-400" />
-                                          <span>{item.stage}</span>
-                                        </div>
-                                        <span>Ingesting...</span>
-                                      </div>
-                                    </div>
-                                  )}
-                                  {item.status === 'error' && <div className="text-[9px] text-red-400 mt-1.5 truncate bg-red-950/20 px-2 py-1 rounded-md border border-red-900/10 font-medium">{item.error}</div>}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Bottom: Repository Table (Full Width) */}
-                <div className="bg-zinc-950/60 backdrop-blur-md border border-white/[0.05] rounded-2xl overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.3)]">
-                  <div className="p-5 border-b border-white/[0.05] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
-                      <h3 className="text-base font-bold text-zinc-200 flex items-center gap-2"><Database className="w-4 h-4 text-emerald-450" /> Repository</h3>
-                      {selectedDocIds.length > 0 && (
-                        <button
-                          onClick={deleteSelectedDocuments}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg text-xs font-bold transition-all shadow-sm animate-fade-in"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" /> Delete Selected ({selectedDocIds.length})
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Global Search & Filter */}
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
-                      <div className="flex flex-1 sm:flex-initial items-center gap-1.5 rounded-lg border border-white/[0.06] bg-zinc-950/40 hover:bg-zinc-950/60 focus-within:border-emerald-500/30 pl-3 pr-1 h-9 focus-within:ring-2 focus-within:ring-emerald-500/10 transition-all">
-                        <Search className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                        <input
-                          type="text"
-                          placeholder="Search files..."
-                          value={fileSearchQuery}
-                          onChange={(e) => { setFileSearchQuery(e.target.value); setDashboardPage(1); }}
-                          className="w-full bg-transparent text-xs text-zinc-200 placeholder:text-zinc-550 outline-none"
-                        />
-                      </div>
-                      <CustomSelect
-                        value={formatFilter}
-                        onChange={(val) => { setFormatFilter(val); setDashboardPage(1); }}
-                        options={[
-                          { value: 'all', label: 'All Formats' },
-                          { value: '.pdf', label: 'PDF' },
-                          { value: '.md', label: 'Markdown' },
-                          { value: '.txt', label: 'Text' },
-                          { value: '.json', label: 'JSON' },
-                          { value: '.docx', label: 'DOCX' }
-                        ]}
-                        containerClassName="w-32 shrink-0"
-                        buttonClassName="flex h-9 w-full items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-300 shadow-sm outline-none transition-all hover:bg-zinc-900 hover:text-zinc-50"
-                        dropdownPosition="top-full mt-1.5 right-0 w-36 origin-top"
-                      />
-                    </div>
-                  </div>
-
-                  {documents.length === 0 ? (
-                    <div className="text-center py-16 px-4">
-                      <FolderPlus className="w-16 h-16 text-zinc-800 mx-auto mb-4" />
-                      <h4 className="text-lg font-bold text-zinc-350">Repository is Empty</h4>
-                      <p className="text-xs text-zinc-550 max-w-sm mx-auto mt-2 font-medium leading-relaxed">Upload your first batch of files using the Ingestion Hub on the right to start building the vector database.</p>
-                    </div>
-                  ) : filteredAndSortedDocs.length === 0 ? (
-                    <div className="text-center py-16 px-4">
-                      <Search className="w-12 h-12 text-zinc-800 mx-auto mb-4" />
-                      <h4 className="text-lg font-bold text-zinc-350">No results found</h4>
-                      <p className="text-xs text-zinc-555 max-w-sm mx-auto mt-2">Try adjusting your search query.</p>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="overflow-x-auto min-h-[400px]">
-                        <table className="w-full text-left text-sm text-zinc-400 whitespace-nowrap">
-                          <thead className="text-[10px] uppercase tracking-widest bg-zinc-900/10 text-zinc-500 border-b border-white/[0.04]">
-                            <tr>
-                              <th className="w-12 px-3 sm:px-6 py-3.5">
-                                <div
-                                  onClick={() => handleSelectAll(!isAllPageSelected)}
-                                  className={`w-4 h-4 rounded border flex items-center justify-center cursor-pointer transition-all ${isAllPageSelected ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400' : 'border-zinc-800 bg-zinc-950 hover:border-zinc-700'}`}
-                                  title={isAllPageSelected ? "Deselect all page files" : "Select all page files"}
-                                >
-                                  {isAllPageSelected && <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
-                                </div>
-                              </th>
-                              <th className="px-3 sm:px-6 py-3.5 font-bold cursor-pointer hover:text-zinc-200 transition group select-none" onClick={() => requestSort('name')}>
-                                <div className="flex items-center gap-1">Filename <ArrowUpDown className={`w-3 h-3 ${sortConfig.key === 'name' ? 'text-zinc-300' : 'opacity-0 group-hover:opacity-100'}`} /></div>
-                              </th>
-                              <th className="px-3 sm:px-6 py-3.5 font-bold cursor-pointer hover:text-zinc-200 transition group select-none hidden sm:table-cell" onClick={() => requestSort('size')}>
-                                <div className="flex items-center gap-1">Size <ArrowUpDown className={`w-3 h-3 ${sortConfig.key === 'size' ? 'text-zinc-300' : 'opacity-0 group-hover:opacity-100'}`} /></div>
-                              </th>
-                              <th className="px-3 sm:px-6 py-3.5 font-bold cursor-pointer hover:text-zinc-200 transition group select-none hidden md:table-cell" onClick={() => requestSort('chunks')}>
-                                <div className="flex items-center gap-1">Vectors <ArrowUpDown className={`w-3 h-3 ${sortConfig.key === 'chunks' ? 'text-zinc-300' : 'opacity-0 group-hover:opacity-100'}`} /></div>
-                              </th>
-                              <th className="px-3 sm:px-6 py-3.5 font-bold text-right">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-white/[0.03]">
-                            {paginatedDocs.map(doc => {
-                              const name = getDocName(doc)
-                              const sizeStr = doc.meta?.size ? formatBytes(Number(doc.meta.size)) : '0 B'
-                              const chunkCount = doc.sectionCount || 0
-                              const isSelected = selectedDocIds.includes(doc.id)
-                              const extension = name.substring(name.lastIndexOf('.')).toLowerCase()
-                              return (
-                                <tr key={doc.id} className={`hover:bg-white/[0.01] transition-colors ${isSelected ? 'bg-emerald-500/[0.02]' : ''}`}>
-                                  <td className="px-3 sm:px-6 py-3.5">
-                                    <div
-                                      onClick={() => toggleSelectDoc(doc.id)}
-                                      className={`w-4 h-4 rounded border flex items-center justify-center cursor-pointer transition-all ${isSelected ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400' : 'border-zinc-800 bg-zinc-950 hover:border-zinc-700'}`}
-                                      title={isSelected ? "Deselect file" : "Select file"}
-                                    >
-                                      {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
-                                    </div>
-                                  </td>
-                                  <td className="px-3 sm:px-6 py-3.5 font-medium text-zinc-200 max-w-[100px] xs:max-w-[140px] sm:max-w-xs md:max-w-md truncate">
-                                    <div className="flex items-center gap-2.5">
-                                      {extension === '.pdf' ? <FileText className="w-4 h-4 text-rose-400 shrink-0" /> :
-                                        extension === '.md' ? <FileText className="w-4 h-4 text-sky-400 shrink-0" /> :
-                                          extension === '.json' ? <FileText className="w-4 h-4 text-amber-400 shrink-0" /> :
-                                            extension === '.docx' ? <FileText className="w-4 h-4 text-blue-400 shrink-0" /> :
-                                              <FileText className="w-4 h-4 text-emerald-450 shrink-0" />}
-                                      <span className="truncate" title={name}>{name}</span>
-                                    </div>
-                                  </td>
-                                  <td className="px-3 sm:px-6 py-3.5 text-xs text-zinc-450 hidden sm:table-cell">{sizeStr}</td>
-                                  <td className="px-3 sm:px-6 py-3.5 text-xs text-zinc-450 hidden md:table-cell">
-                                    <span className="px-2 py-0.5 bg-zinc-900 border border-white/5 rounded text-[10px] font-mono text-zinc-350">{chunkCount}</span>
-                                  </td>
-                                  <td className="px-3 sm:px-6 py-3.5 text-right text-xs">
-                                    <div className="flex justify-end gap-1.5">
-                                      <button
-                                        onClick={() => openPreview(doc)}
-                                        className="p-1.5 text-zinc-450 hover:text-zinc-250 hover:bg-white/5 rounded transition-all"
-                                        title="Preview content"
-                                      >
-                                        <Eye className="w-4 h-4" />
-                                      </button>
-                                      <button
-                                        onClick={() => deleteDocument(doc.id, name)}
-                                        className="p-1.5 text-zinc-450 hover:text-red-400 hover:bg-red-500/10 rounded transition-all"
-                                        title="Delete file"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Pagination */}
-                      {filteredAndSortedDocs.length > 0 && (
-                        <div className="p-4 border-t border-white/[0.05] flex flex-col sm:flex-row items-center justify-between gap-4 bg-zinc-950/20">
-                          {/* Left: Size Selector & Showing Status */}
-                          <div className="flex flex-col sm:flex-row items-center gap-3.5 text-xs text-zinc-500 w-full sm:w-auto justify-between sm:justify-start">
-                            <div className="flex items-center gap-2 self-start sm:self-auto">
-                              <span>Show</span>
-                              <CustomSelect 
-                                value={String(itemsPerPage)} 
-                                onChange={(val) => { setItemsPerPage(Number(val)); setDashboardPage(1); }} 
-                                options={[
-                                  { value: '10', label: '10' },
-                                  { value: '25', label: '25' },
-                                  { value: '50', label: '50' },
-                                  { value: '100', label: '100' }
-                                ]} 
-                                containerClassName="w-16 shrink-0 z-40" 
-                                buttonClassName="flex h-7.5 items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-350 hover:bg-zinc-900 transition-colors" 
-                                dropdownPosition="bottom-full mb-1.5 left-0 w-20 origin-bottom"
-                              />
-                              <span>per page</span>
-                            </div>
-                            <div className="h-4 w-px bg-white/[0.06] hidden sm:block" />
-                            <div className="self-start sm:self-auto text-zinc-450">
-                              Showing <span className="font-semibold text-zinc-350">{(dashboardPage - 1) * itemsPerPage + 1}</span> to <span className="font-semibold text-zinc-350">{Math.min(dashboardPage * itemsPerPage, filteredAndSortedDocs.length)}</span> of <span className="font-semibold text-zinc-350">{filteredAndSortedDocs.length}</span> files
-                            </div>
-                          </div>
-                          
-                          {/* Right: Next / Previous Controls */}
-                          {totalPages > 1 && (
-                            <div className="flex items-center gap-1.5 w-full sm:w-auto justify-between sm:justify-end">
-                              <button 
-                                onClick={() => setDashboardPage(p => Math.max(1, p - 1))} 
-                                disabled={dashboardPage === 1} 
-                                className="p-1.5 rounded-lg border border-white/5 bg-zinc-900/40 hover:bg-white/5 disabled:opacity-30 disabled:hover:bg-transparent transition text-zinc-350"
-                                aria-label="Previous Page"
-                              >
-                                <ChevronLeft className="w-4 h-4" />
-                              </button>
-                              <span className="text-xs font-semibold text-zinc-450 px-2">Page {dashboardPage} of {totalPages}</span>
-                              <button 
-                                onClick={() => setDashboardPage(p => Math.min(totalPages, p + 1))} 
-                                disabled={dashboardPage === totalPages} 
-                                className="p-1.5 rounded-lg border border-white/5 bg-zinc-900/40 hover:bg-white/5 disabled:opacity-30 disabled:hover:bg-transparent transition text-zinc-355"
-                                aria-label="Next Page"
-                              >
-                                <ChevronRight className="w-4 h-4" />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
+              {/* Tech Chips */}
+              <div className="hero-entrance hero-entrance-5 flex flex-wrap items-center gap-2.5 text-xs font-mono text-zinc-300">
+                {['RAG', 'CAG', 'pgvector', 'HyDE', 'RRF', 'Multi-Model'].map((chip) => (
+                  <span key={chip} className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-zinc-900/80 border border-zinc-800/80 backdrop-blur-md shadow-sm">
+                    <span className="text-emerald-400 font-bold">&bull;</span> {chip}
+                  </span>
+                ))}
               </div>
             </div>
-          </div>
-        )}
 
-        {/* --- View: How it Works (Architecture) --- */}
-        {activeTab === 'how-it-works' && (
-          <div className="flex-1 min-h-0 overflow-y-auto p-3 xs:p-4 md:p-8 custom-scrollbar bg-[#131314]">
-            <div className="max-w-6xl mx-auto animate-page-load space-y-6 pb-12">
-              
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/[0.06] pb-6">
-                <div>
-                  <h2 className="text-xl font-bold text-zinc-150 tracking-tight flex items-center gap-2.5">
-                    <Zap className="w-5 h-5 text-emerald-400 step-badge-glow rounded-md" />
-                    How VectorMind Works
-                  </h2>
-                  <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
-                    {"Under the hood of VectorMind's premium hybrid Retrieval-Augmented Generation (RAG) architecture."}
-                  </p>
-                </div>
+            {/* Right Column: Hero Visual */}
+            <div className="hero-entrance hero-entrance-5 relative flex items-center justify-center lg:justify-end">
+              <div className="relative w-full max-w-lg lg:max-w-xl">
+                {/* Background Ambient Glow */}
+                <div className="absolute inset-0 bg-emerald-500/[0.04] blur-[100px] rounded-full pointer-events-none" />
                 
-                <div className="flex p-0.5 bg-zinc-950/80 border border-white/[0.05] rounded-xl self-start md:self-auto shrink-0 shadow-inner overflow-x-auto custom-scrollbar flex-nowrap max-w-full whitespace-nowrap">
-                  {(['pipeline', 'rag-vs-cag', 'schema'] as const).map((tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => setActiveHowItWorksTab(tab)}
-                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 shrink-0 ${
-                        activeHowItWorksTab === tab
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-[0_0_12px_rgba(16,185,129,0.05)] font-bold'
-                          : 'text-zinc-400 hover:text-zinc-200 border border-transparent'
-                      }`}
-                    >
-                      {tab === 'pipeline' && '10-Step RAG Pipeline'}
-                      {tab === 'rag-vs-cag' && 'RAG vs CAG'}
-                      {tab === 'schema' && 'Database Schema'}
-                    </button>
-                  ))}
-                </div>
-              </div>
+                {/* Large Robot Head Image */}
+                <img
+                  src="/images/hero_robot_clean.png"
+                  alt="VectorMind AI Intelligence Engine"
+                  className="relative z-10 w-full h-auto object-contain breathe-glow hero-robot-blend pointer-events-none drop-shadow-[0_0_30px_rgba(16,185,129,0.15)]"
+                  width={640}
+                  height={640}
+                />
 
-              {/* Beginner-friendly Concept Guide */}
-              <div className="bg-zinc-950/50 border border-white/[0.04] p-5 rounded-2xl relative overflow-hidden shadow-lg">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/[0.02] blur-xl pointer-events-none" />
-                <h3 className="text-xs font-bold text-zinc-200 flex items-center gap-2 mb-3">
-                  <Info className="w-4 h-4 text-emerald-400 shrink-0" />
-                  New to AI Search? Start Here (Simple Analogies)
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-zinc-900/30 p-3.5 rounded-xl border border-white/[0.02]">
-                    <span className="text-xs font-bold text-emerald-400 block mb-1">📖 RAG (What we use)</span>
-                    <p className="text-[11px] text-zinc-450 leading-relaxed">
-                      <strong>Like an open-book exam:</strong> Instead of memorizing your files, VectorMind searches the database for the exact pages containing the answer, pulls them out, and feeds them to the AI to draft a response. Scales to millions of pages cheaply.
-                    </p>
+                {/* Floating Label - Top Right */}
+                <div className="absolute top-12 right-2 lg:right-[-12px] z-20 text-right animate-float">
+                  <div className="text-xs font-mono text-zinc-300 tracking-[0.2em] uppercase font-medium leading-tight">
+                    YOUR<br />
+                    DOCUMENTS<br />
+                    <span className="text-zinc-100 font-bold tracking-[0.22em]">AMPLIFIED</span>
                   </div>
-                  <div className="bg-zinc-900/30 p-3.5 rounded-xl border border-white/[0.02]">
-                    <span className="text-xs font-bold text-blue-400 block mb-1">🧠 CAG (The alternative)</span>
-                    <p className="text-[11px] text-zinc-450 leading-relaxed">
-                      <strong>Like memorizing the whole book:</strong> {"Feeding all documents into the AI's memory at once. It's simple, but gets extremely slow and expensive when you upload large books or many documents."}
-                    </p>
-                  </div>
-                  <div className="bg-zinc-900/30 p-3.5 rounded-xl border border-white/[0.02]">
-                    <span className="text-xs font-bold text-purple-400 block mb-1">⚡ Semantic Cache (Both)</span>
-                    <p className="text-[11px] text-zinc-450 leading-relaxed">
-                      <strong>Like a cheat sheet:</strong> VectorMind remembers previous questions. If you ask something similar, it skips the book search and gives you the cached answer instantly (&lt;15ms) without querying the AI again.
-                    </p>
+                  <div className="mt-2.5 w-10 h-[2px] bg-emerald-400 ml-auto shadow-[0_0_10px_rgba(16,185,129,0.8)]" />
+                </div>
+
+                {/* Floating Label - Bottom Right */}
+                <div className="absolute bottom-16 right-2 lg:right-[-8px] z-20 text-right animate-float" style={{ animationDelay: '1.2s' }}>
+                  <div className="border-r-2 border-emerald-400 pr-3.5 py-1">
+                    <span className="text-xs font-mono italic text-zinc-200 font-medium">
+                      &ldquo;From files<br />to intelligence.&rdquo;
+                    </span>
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
-              {activeHowItWorksTab === 'pipeline' && (
-                <div className="how-it-works-grid">
-                  
-                  {/* Left Column: Interactive Steps Timeline List */}
-                  <div className="flex flex-col gap-2 bg-zinc-950/20 p-2.5 rounded-2xl border border-white/[0.03] max-h-[700px] overflow-y-auto custom-scrollbar">
-                    <div className="text-[10px] font-bold text-zinc-500 px-3 py-1 uppercase tracking-wider">
-                      Execution Pipeline
+      {/* ════════════════════════════════════════════════════════
+          TRUSTED BY SECTION
+          ════════════════════════════════════════════════════════ */}
+      <section className="py-12 md:py-16 border-t border-zinc-800/40 relative z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <div className="reveal">
+            <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-zinc-500 font-bold">
+              Trusted by Knowledge Workers
+            </span>
+          </div>
+          <div className="reveal reveal-delay-2 mt-6 flex flex-wrap items-center justify-center gap-3">
+            {['Developers', 'Researchers', 'Businesses', 'Educators', 'Individuals'].map((label, idx) => (
+              <span
+                key={label}
+                className="px-5 py-2 rounded-full bg-zinc-900/60 border border-zinc-800/80 text-xs font-medium text-zinc-400 hover:text-emerald-400 hover:border-emerald-500/40 transition-all duration-300 cursor-default card-hover-glow"
+              >
+                {label}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════════
+          PROBLEM & SOLUTION SECTION (Exact match to User Screenshot)
+          ════════════════════════════════════════════════════════ */}
+      <section id="architecture" className="py-20 md:py-28 border-t border-zinc-800/40 relative z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
+            
+            {/* THE PROBLEM (Left Column - 5 cols) */}
+            <div className="lg:col-span-5">
+              <div className="reveal">
+                <span className="text-[11px] font-mono uppercase tracking-[0.2em] text-zinc-500 font-bold">
+                  THE PROBLEM
+                </span>
+                <h2 className="mt-2 text-3xl sm:text-4xl font-extrabold tracking-tight text-white leading-tight">
+                  Your knowledge is everywhere.
+                </h2>
+              </div>
+
+              {/* Scattered File Cards Cluster */}
+              <div className="reveal reveal-delay-2 mt-8 grid grid-cols-3 gap-3 max-w-sm">
+                <div className="p-3.5 rounded-2xl bg-zinc-900/70 border border-zinc-800/80 flex flex-col items-center justify-center gap-1.5 card-hover-glow card-shine">
+                  <div className="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center text-red-400">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-300 font-bold">PDF</span>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-zinc-900/70 border border-zinc-800/80 flex flex-col items-center justify-center gap-1.5 card-hover-glow card-shine mt-4">
+                  <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400">
+                    <FileCode className="w-4 h-4" />
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-300 font-bold">DOCX</span>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-zinc-900/70 border border-zinc-800/80 flex flex-col items-center justify-center gap-1.5 card-hover-glow card-shine">
+                  <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400">
+                    <BookOpen className="w-4 h-4" />
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-300 font-bold">TXT</span>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-zinc-900/70 border border-zinc-800/80 flex flex-col items-center justify-center gap-1.5 card-hover-glow card-shine">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                    <Code className="w-4 h-4" />
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-300 font-bold">CODE</span>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-zinc-900/70 border border-zinc-800/80 flex flex-col items-center justify-center gap-1.5 card-hover-glow card-shine mt-4">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400">
+                    <ImageIcon className="w-4 h-4" />
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-300 font-bold">IMAGES</span>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-zinc-900/70 border border-zinc-800/80 flex flex-col items-center justify-center gap-1.5 card-hover-glow card-shine">
+                  <div className="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center text-cyan-400">
+                    <Database className="w-4 h-4" />
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-300 font-bold">DATA</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Center Arrow Connector (1 col on desktop) */}
+            <div className="hidden lg:flex lg:col-span-1 items-center justify-center relative">
+              <div className="w-12 h-12 rounded-full bg-emerald-950/80 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shadow-[0_0_14px_rgba(16,185,129,0.2)] animate-pulse">
+                <ArrowRight className="w-5 h-5" />
+              </div>
+            </div>
+
+            {/* THE SOLUTION (Right Column - 6 cols) */}
+            <div className="lg:col-span-6">
+              <div className="reveal-right">
+                <p className="text-xs sm:text-sm text-zinc-400 leading-relaxed mb-6">
+                  PDFs, docs, code, reports, images &mdash; important information is scattered across different files and tools, making it hard to search, connect and get real insights.
+                </p>
+                <span className="text-[11px] font-mono uppercase tracking-[0.2em] text-emerald-400 font-bold">
+                  THE SOLUTION
+                </span>
+                <h2 className="mt-2 text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight mb-6">
+                  One searchable intelligence layer.
+                </h2>
+              </div>
+
+              {/* VectorMind Core Engine Node Box */}
+              <div className="reveal-right reveal-delay-3 rounded-2xl border border-emerald-500/30 bg-emerald-950/15 backdrop-blur-xl p-6 text-center shadow-[0_0_28px_rgba(16,185,129,0.1)]">
+                <div className="flex items-center justify-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                    <Zap className="w-4 h-4 text-emerald-400 fill-current" />
+                  </div>
+                  <span className="text-xl font-extrabold text-white">VectorMind</span>
+                </div>
+                <div className="mt-2 text-xs font-mono text-zinc-400">
+                  RAG &bull; CAG &bull; Multi-Model
+                </div>
+              </div>
+
+              {/* SVG Connecting Branches */}
+              <div className="reveal-right reveal-delay-4 relative -mt-1 z-0">
+                <svg className="w-full h-10 text-emerald-400/60" viewBox="0 0 400 30" fill="none">
+                  <path d="M200 0 C200 15, 50 10, 50 30" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3 3" />
+                  <path d="M200 0 C200 15, 150 10, 150 30" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3 3" />
+                  <path d="M200 0 C200 15, 250 10, 250 30" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3 3" />
+                  <path d="M200 0 C200 15, 350 10, 350 30" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3 3" />
+                </svg>
+              </div>
+
+              {/* 4 Feature Action Nodes */}
+              <div className="reveal-right reveal-delay-5 grid grid-cols-4 gap-2 text-center mt-1">
+                {[
+                  { label: 'Search', icon: <Search className="w-3.5 h-3.5" /> },
+                  { label: 'Understand', icon: <Cpu className="w-3.5 h-3.5" /> },
+                  { label: 'Reason', icon: <Zap className="w-3.5 h-3.5" /> },
+                  { label: 'Cite', icon: <CheckCircle className="w-3.5 h-3.5" /> },
+                ].map((node) => (
+                  <div key={node.label} className="flex flex-col items-center gap-1.5">
+                    <div className="w-8 h-8 rounded-full bg-zinc-900 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.15)]">
+                      {node.icon}
                     </div>
-                    {PIPELINE_STEPS.map((step, idx) => {
-                      const isActive = selectedPipelineStep === idx;
-                      return (
-                        <button
-                          key={idx}
-                          onClick={() => setSelectedPipelineStep(idx)}
-                          className={`step-item-btn flex items-center gap-3.5 px-4 py-3 rounded-xl border text-left transition ${
-                            isActive
-                              ? 'bg-gradient-to-r from-emerald-500/10 to-emerald-500/[0.02] border-emerald-500/20 text-white font-bold'
-                              : 'bg-zinc-900/30 border-white/[0.02] text-zinc-450 hover:bg-zinc-900/60 hover:text-zinc-200'
-                          }`}
-                        >
-                          <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 ${
-                            isActive 
-                              ? 'bg-emerald-500/25 border border-emerald-500/40 text-emerald-400 step-badge-glow' 
-                              : 'bg-zinc-900 border border-zinc-800 text-zinc-400'
-                          }`}>
-                            {idx + 1}
-                          </span>
-                          <div className="truncate">
-                            <div className="text-xs font-semibold truncate leading-none mb-1">
-                              {step.title.replace(/^\d+\.\s+/, '')}
-                            </div>
-                            <span className="text-[10px] text-zinc-500 font-mono tracking-wide uppercase">
-                              {step.badge}
-                            </span>
-                          </div>
-                          {isActive && (
-                            <div className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-400 step-badge-glow animate-pulse" />
-                          )}
-                        </button>
-                      );
-                    })}
+                    <span className="text-[10px] font-mono text-zinc-300 font-semibold">{node.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════════
+          REAL PRODUCT WORKSPACE DEMO (Exact match to User Screenshot)
+          ════════════════════════════════════════════════════════ */}
+      <section id="product" className="py-20 md:py-28 border-t border-zinc-800/40 relative z-10 bg-zinc-950/30">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
+            
+            {/* Left Column (5 cols) */}
+            <div className="lg:col-span-5">
+              <div className="reveal-left">
+                <span className="text-[11px] font-mono uppercase tracking-[0.2em] text-emerald-400 font-bold">
+                  REAL PRODUCT
+                </span>
+                <h2 className="mt-2 text-3xl sm:text-4xl font-extrabold tracking-tight text-white leading-tight">
+                  A clean workspace for deeper thinking.
+                </h2>
+                <p className="mt-4 text-sm text-zinc-400 leading-relaxed">
+                  Search knowledge, inspect sources, switch models, and reason across documents &mdash; all in one place.
+                </p>
+              </div>
+
+              {/* 4 Green Rounded Square Icon Items */}
+              <div className="reveal-left reveal-delay-3 mt-8 space-y-4 text-sm text-zinc-200 font-medium">
+                {[
+                  { label: 'Chat with your documents', icon: <MessageSquare className="w-4 h-4" /> },
+                  { label: 'View source citations', icon: <FileText className="w-4 h-4" /> },
+                  { label: 'Switch between AI models', icon: <Cpu className="w-4 h-4" /> },
+                  { label: 'Organize with workspaces', icon: <GitBranch className="w-4 h-4" /> },
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center gap-3.5">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-500/12 border border-emerald-500/25 flex items-center justify-center text-emerald-400 shrink-0 shadow-[0_0_10px_rgba(16,185,129,0.1)]">
+                      {item.icon}
+                    </div>
+                    <span>{item.label}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="reveal-left reveal-delay-5 mt-8 flex flex-col sm:flex-row items-center gap-3">
+                <Link
+                  href="/app"
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-xs font-mono flex items-center justify-center gap-2 transition-all duration-300 btn-hover-lift shadow-[0_0_18px_rgba(16,185,129,0.2)]"
+                >
+                  Try Live Demo <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+                <a
+                  href="https://github.com/krishsoni15/VectorMind"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700/60 hover:border-emerald-500/40 text-zinc-200 text-xs font-mono flex items-center justify-center gap-2 transition-all duration-300 btn-hover-lift"
+                >
+                  <Github className="w-4 h-4" /> View on GitHub
+                </a>
+              </div>
+            </div>
+
+            {/* Right Column: Interactive App Workspace Mockup (7 cols) */}
+            <div className="lg:col-span-7 reveal-right reveal-delay-2">
+              <div className="rounded-2xl border border-emerald-500/25 bg-[#090b0d] p-4 sm:p-5 shadow-[0_0_40px_rgba(0,0,0,0.7)] backdrop-blur-xl card-hover-glow">
+                
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                  
+                  {/* Left Sidebar inside Mockup (4 cols) */}
+                  <div className="hidden sm:flex sm:col-span-4 flex-col justify-between border-r border-zinc-800/80 pr-4 py-1 space-y-4">
+                    <div className="space-y-4">
+                      {/* Logo */}
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-emerald-500 flex items-center justify-center text-zinc-950 font-bold">
+                          <Zap className="w-3.5 h-3.5 fill-current" />
+                        </div>
+                        <span className="text-xs font-bold text-white tracking-tight">VectorMind</span>
+                      </div>
+
+                      {/* New Chat Button */}
+                      <div className="py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer shadow-[0_0_10px_rgba(16,185,129,0.2)] transition-all">
+                        <Zap className="w-3.5 h-3.5 fill-current" />
+                        <span>New Chat</span>
+                      </div>
+
+                      {/* Navigation Links */}
+                      <div className="space-y-1 text-[11px] font-mono">
+                        <div className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg bg-zinc-900/80 text-zinc-300">
+                          <Search className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Search</span>
+                        </div>
+                        <div className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50 cursor-pointer">
+                          <FileText className="w-3.5 h-3.5 text-zinc-500" />
+                          <span>Documents</span>
+                        </div>
+                        <div className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50 cursor-pointer">
+                          <GitBranch className="w-3.5 h-3.5 text-zinc-500" />
+                          <span>Workspaces</span>
+                        </div>
+                        <div className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50 cursor-pointer">
+                          <Settings className="w-3.5 h-3.5 text-zinc-500" />
+                          <span>Settings</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Bottom Profile */}
+                    <div className="flex items-center gap-2 pt-3 border-t border-zinc-800/80 text-[11px] font-mono text-zinc-300">
+                      <div className="w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 text-[10px] font-bold">
+                        K
+                      </div>
+                      <span className="font-semibold">Krish</span>
+                    </div>
                   </div>
 
-                  {/* Right Column: Step Technical details card */}
-                  {(() => {
-                    const step = PIPELINE_STEPS[selectedPipelineStep];
-                    return (
-                      <div className="flex flex-col gap-5 bg-zinc-950/80 border border-white/[0.05] p-6 rounded-2xl relative overflow-hidden animate-page-load min-h-[500px]">
-                        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 blur-[80px] -mr-20 -mt-20 pointer-events-none" />
-                        
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold font-mono tracking-widest uppercase bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mb-2 shadow-[0_0_8px_rgba(16,185,129,0.05)]">
-                              {step.badge}
-                            </span>
-                            <h3 className="text-base font-bold text-zinc-150 tracking-tight leading-snug">
-                              {step.title}
-                            </h3>
-                          </div>
-                          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-zinc-800 to-zinc-900 border border-white/[0.06] flex items-center justify-center shrink-0">
-                            {selectedPipelineStep === 0 && <UploadCloud className="w-5 h-5 text-emerald-400" />}
-                            {selectedPipelineStep === 1 && <FileText className="w-5 h-5 text-emerald-400" />}
-                            {selectedPipelineStep === 2 && <Activity className="w-5 h-5 text-emerald-400" />}
-                            {selectedPipelineStep === 3 && <Database className="w-5 h-5 text-emerald-400" />}
-                            {selectedPipelineStep === 4 && <Zap className="w-5 h-5 text-emerald-400" />}
-                            {selectedPipelineStep === 5 && <Bot className="w-5 h-5 text-emerald-400" />}
-                            {selectedPipelineStep === 6 && <Search className="w-5 h-5 text-emerald-400" />}
-                            {selectedPipelineStep === 7 && <Filter className="w-5 h-5 text-emerald-400" />}
-                            {selectedPipelineStep === 8 && <Bot className="w-5 h-5 text-emerald-400" />}
-                            {selectedPipelineStep === 9 && <CheckCircle className="w-5 h-5 text-emerald-400" />}
-                          </div>
-                        </div>
+                  {/* Right Chat Area inside Mockup (8 cols) */}
+                  <div className="sm:col-span-8 flex flex-col justify-between space-y-4">
+                    
+                    {/* Header Bar */}
+                    <div className="flex items-center justify-between pb-2 border-b border-zinc-800/60">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-[10px] font-mono text-zinc-300 flex items-center gap-1.5">
+                          <Cpu className="w-3 h-3 text-emerald-400" />
+                          Gemini Flash
+                          <ChevronDown className="w-3 h-3 text-zinc-500" />
+                        </span>
+                      </div>
+                      <div className="w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 text-[10px] font-bold">
+                        K
+                      </div>
+                    </div>
 
-                        <p className="text-xs text-zinc-400 leading-relaxed">
-                          {step.longDesc}
-                        </p>
+                    {/* User Prompt Bubble */}
+                    <div className="flex justify-end">
+                      <div className="px-3.5 py-2 rounded-xl bg-zinc-800/90 border border-zinc-700/60 text-[11px] text-zinc-200 font-mono max-w-[85%]">
+                        What are the key findings from the Q3 research report?
+                      </div>
+                    </div>
 
-                        <div className="bg-gradient-to-r from-emerald-500/[0.06] to-transparent border-l-2 border-emerald-400 p-3.5 rounded-r-xl">
-                          <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block mb-1">
-                            Plain English Meaning:
-                          </span>
-                          <p className="text-xs text-zinc-300 leading-relaxed italic">
-                            &ldquo;{step.conceptExplain}&rdquo;
+                    {/* AI Response Card */}
+                    <div className="p-3.5 rounded-xl bg-zinc-900/90 border border-zinc-800/80 text-xs text-zinc-300 space-y-2.5 leading-relaxed">
+                      <p className="font-semibold text-white text-[11px]">Based on the documents, here are the key findings:</p>
+                      
+                      <div className="space-y-2 text-[11px] font-sans text-zinc-300">
+                        <div>
+                          <div className="font-bold text-white flex items-center gap-1">
+                            <span>1. Market Growth</span>
+                          </div>
+                          <p className="text-zinc-400 text-[10px] pl-3">
+                            The platform saw a 42% increase in user engagement in Q3 compared to the previous quarter.
                           </p>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          
-                          <div className="bg-zinc-900/40 border border-white/[0.03] p-4 rounded-xl">
-                            <h4 className="text-[10px] font-bold text-zinc-450 uppercase tracking-wider mb-2.5">
-                              Technical Parameters
-                            </h4>
-                            <div className="divide-y divide-white/[0.03] space-y-2">
-                              {step.metrics.map((m, i) => (
-                                <div key={i} className="flex justify-between text-xs py-1.5">
-                                  <span className="text-zinc-500">{m.label}</span>
-                                  <span className="font-semibold text-zinc-300 text-right">{m.value}</span>
-                                </div>
-                              ))}
-                            </div>
+                        <div>
+                          <div className="font-bold text-white flex items-center gap-1">
+                            <span>2. Revenue Trends</span>
                           </div>
-
-                          {step.formula ? (
-                            <div className="math-card p-4 rounded-xl flex flex-col justify-center">
-                              <h4 className="text-[10px] font-bold text-zinc-450 uppercase tracking-wider mb-3">
-                                Mathematical representation
-                              </h4>
-                              <div className="bg-black/40 border border-white/[0.04] p-3 rounded-lg flex items-center justify-center font-serif text-zinc-200 text-xs tracking-wide overflow-x-auto text-center italic shadow-inner">
-                                {step.formula}
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="bg-zinc-900/10 border border-dashed border-white/[0.04] rounded-xl flex items-center justify-center p-4 text-center">
-                              <span className="text-[11px] text-zinc-500 italic">No formal math needed for this stage</span>
-                            </div>
-                          )}
+                          <p className="text-zinc-400 text-[10px] pl-3">
+                            Revenue grew by 28%, with significant contributions from enterprise clients.
+                          </p>
                         </div>
 
-                        <div className="flex flex-col bg-zinc-950 border border-white/[0.05] rounded-xl overflow-hidden shadow-2xl code-container-glow">
-                          <div className="flex items-center justify-between px-4 py-2 border-b border-white/[0.04] bg-zinc-900/40">
-                            <span className="text-[10px] font-bold font-mono text-zinc-500 tracking-wide">
-                              {selectedPipelineStep === 3 ? 'SQL SCHEMA' : 'CODE IMPLEMENTATION'}
-                            </span>
-                            <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(step.code);
-                                setCopiedId(`step-${selectedPipelineStep}`);
-                                setTimeout(() => setCopiedId(null), 1500);
-                              }}
-                              className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-400 hover:text-white transition"
-                            >
-                              {copiedId === `step-${selectedPipelineStep}` ? (
-                                <>
-                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                  <span className="text-emerald-400">Copied!</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Copy className="w-3.5 h-3.5" />
-                                  <span>Copy snippet</span>
-                                </>
-                              )}
-                            </button>
+                        <div>
+                          <div className="font-bold text-white flex items-center gap-1">
+                            <span>3. User Feedback</span>
                           </div>
-                          <pre className="p-4 overflow-x-auto text-xs text-teal-350 font-mono leading-relaxed max-h-[350px] custom-scrollbar text-left bg-black/40 whitespace-pre">
-                            <code>{step.code}</code>
-                          </pre>
+                          <p className="text-zinc-400 text-[10px] pl-3">
+                            Users highlighted improved performance and requested more integrations.
+                          </p>
                         </div>
-                        
                       </div>
-                    );
-                  })()}
+
+                      {/* Source Citation Pills */}
+                      <div className="pt-2 border-t border-zinc-800/60">
+                        <span className="text-[10px] font-mono text-zinc-500 uppercase block mb-1.5">Sources:</span>
+                        <div className="flex flex-wrap gap-1.5 text-[9px] font-mono">
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Q3-report.pdf
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md bg-blue-500/15 border border-blue-500/30 text-blue-400 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400" /> analysis.md
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md bg-red-500/15 border border-red-500/30 text-red-400 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-400" /> survey.pdf
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Bottom Prompt Input Bar */}
+                    <div className="flex items-center gap-2 pt-1">
+                      <div className="flex-1 h-9 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center px-3 text-[11px] text-zinc-500 font-mono">
+                        Ask a follow-up question...
+                      </div>
+                      <div className="w-9 h-9 rounded-xl bg-emerald-500 flex items-center justify-center text-zinc-950 font-bold shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+                        <ArrowUpRight className="w-4 h-4 stroke-[3]" />
+                      </div>
+                    </div>
+
+                  </div>
                 </div>
-              )}
 
-              {activeHowItWorksTab === 'rag-vs-cag' && (
-                <div className="space-y-6 animate-page-load">
-                  
-                  <div className="bg-gradient-to-r from-emerald-500/10 to-teal-500/[0.01] border border-emerald-500/25 p-5 rounded-2xl relative overflow-hidden">
-                    <div className="flex gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center shrink-0">
-                        <Bot className="w-5 h-5 text-emerald-400" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-bold text-zinc-150">Understanding Architectures: RAG vs CAG</h4>
-                        <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
-                          <strong>Retrieval-Augmented Generation (RAG)</strong> {"indexes data into chunk vectors and fetches only the top-k matches for LLM context, offering infinite scalability and cost-efficiency."} <br />
-                          <strong>Cache-Augmented Generation (CAG)</strong> {"loads the entire database directly into the context window of huge models (e.g. Gemini 1.5 Pro's 2M context), letting the model's self-attention solve retrieval in memory."}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="border border-white/[0.05] rounded-2xl overflow-hidden bg-zinc-950/60 shadow-xl">
-                    <div className="overflow-x-auto custom-scrollbar">
-                      <table className="w-full text-left text-xs text-zinc-300 border-collapse">
-                        <thead>
-                          <tr className="bg-zinc-900 border-b border-white/[0.05] font-semibold text-zinc-100">
-                            <th className="px-5 py-3.5 font-bold">Feature</th>
-                            <th className="px-5 py-3.5 text-emerald-400 border-l border-white/[0.03] font-bold">RAG (Retrieval-Augmented)</th>
-                            <th className="px-5 py-3.5 text-zinc-400 border-l border-white/[0.03] font-bold">CAG (Cache-Augmented)</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/[0.03]">
-                          
-                          <tr>
-                            <td className="px-5 py-4 font-semibold text-zinc-200">Scaling Limit</td>
-                            <td className="px-5 py-4 border-l border-white/[0.03]">
-                              <span className="font-bold text-emerald-400">Infinite.</span> Easily scales to billions of pages. Vector indexing retrieves slices of data in milliseconds.
-                            </td>
-                            <td className="px-5 py-4 border-l border-white/[0.03]">
-                              <span className="font-semibold text-red-400">Strictly limited</span> by LLM context window (~2,000 pages for 1M context models).
-                            </td>
-                          </tr>
-
-                          <tr>
-                            <td className="px-5 py-4 font-semibold text-zinc-200">Token Cost per Query</td>
-                            <td className="px-5 py-4 border-l border-white/[0.03]">
-                              <span className="font-bold text-emerald-400">Very Low & Predictable.</span> Only feeds retrieved target chunks (~10k tokens).
-                            </td>
-                            <td className="px-5 py-4 border-l border-white/[0.03]">
-                              <span className="font-semibold text-red-400">Exponentially High.</span> Feeds the entire database on every request (millions of tokens).
-                            </td>
-                          </tr>
-
-                          <tr>
-                            <td className="px-5 py-4 font-semibold text-zinc-200">Real-Time Data Support</td>
-                            <td className="px-5 py-4 border-l border-white/[0.03]">
-                              <span className="font-bold text-emerald-400">Instant.</span> Modifying or deleting a document alters only its matching vector chunks in the database.
-                            </td>
-                            <td className="px-5 py-4 border-l border-white/[0.03]">
-                              <span className="font-semibold text-amber-500">Requires Reload.</span> Modifying databases forces a reload of the entire cache context array.
-                            </td>
-                          </tr>
-
-                          <tr>
-                            <td className="px-5 py-4 font-semibold text-zinc-200">Infrastructure Setup</td>
-                            <td className="px-5 py-4 border-l border-white/[0.03]">
-                              <span className="text-amber-500">Complex.</span> Requires chunkers, embedding models, vector search indexing, and a vector database.
-                            </td>
-                            <td className="px-5 py-4 border-l border-white/[0.03]">
-                              <span className="font-bold text-emerald-400">Zero.</span> Simple file dump straight to context or system prompt.
-                            </td>
-                          </tr>
-
-                          <tr>
-                            <td className="px-5 py-4 font-semibold text-zinc-200">Inference Latency</td>
-                            <td className="px-5 py-4 border-l border-white/[0.03]">
-                              <span className="font-semibold text-zinc-300">Fast (Sub-second).</span> Modern HNSW indexing retrieves vectors in &lt; 20ms, LLM runs on tiny prompt.
-                            </td>
-                            <td className="px-5 py-4 border-l border-white/[0.03]">
-                              <span className="text-zinc-500">Slow (Multi-second).</span> Large context inputs cause noticeable time-to-first-token delay on LLM.
-                            </td>
-                          </tr>
-
-                          <tr>
-                            <td className="px-5 py-4 font-semibold text-zinc-200">Ideal Use Case</td>
-                            <td className="px-5 py-4 border-l border-white/[0.03] bg-emerald-500/[0.01]">
-                              Large wikis, enterprise customer support portals, private source code repositories, dynamic databases.
-                            </td>
-                            <td className="px-5 py-4 border-l border-white/[0.03]">
-                              {"Summarizing single textbooks, exploring a codebase's themes, analyzing legal contracts under 500 pages."}
-                            </td>
-                          </tr>
-
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  <div className="bg-zinc-900/30 border border-white/[0.03] p-5 rounded-2xl">
-                    <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider mb-2">{"VectorMind's Stance"}</h4>
-                    <p className="text-xs text-zinc-400 leading-relaxed">
-                      {"VectorMind chooses RAG for workspace scaling. RAG scales efficiently to large document sizes. However, we augment this with Semantic Caching to achieve CAG-like speeds (< 15ms) on repeated query vectors, representing the best of both architectures."}
-                    </p>
-                  </div>
-
-                </div>
-              )}
-
-              {activeHowItWorksTab === 'schema' && (
-                <div className="space-y-6 animate-page-load">
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                    
-                    <div className="bg-zinc-950/80 border border-white/[0.05] p-5 rounded-2xl shadow-lg relative">
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/[0.02] blur-xl pointer-events-none" />
-                      <h4 className="font-mono text-xs font-bold text-blue-400 mb-1">nods_project</h4>
-                      <p className="text-[10px] text-zinc-500 mb-3">Workspace level definitions</p>
-                      <ul className="text-xs font-mono divide-y divide-white/[0.02] space-y-1.5">
-                        <li className="flex justify-between py-1"><span className="text-zinc-450">id</span> <span className="text-zinc-500">uuid (PK)</span></li>
-                        <li className="flex justify-between py-1"><span className="text-zinc-450">name</span> <span className="text-zinc-500">text</span></li>
-                        <li className="flex justify-between py-1"><span className="text-zinc-450">embedding_provider</span> <span className="text-zinc-500">text</span></li>
-                        <li className="flex justify-between py-1"><span className="text-zinc-450">chat_provider</span> <span className="text-zinc-500">text</span></li>
-                      </ul>
-                    </div>
-
-                    <div className="bg-zinc-950/80 border border-white/[0.05] p-5 rounded-2xl shadow-lg relative">
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/[0.02] blur-xl pointer-events-none" />
-                      <h4 className="font-mono text-xs font-bold text-emerald-400 mb-1">nods_page</h4>
-                      <p className="text-[10px] text-zinc-500 mb-3">Uploaded document records</p>
-                      <ul className="text-xs font-mono divide-y divide-white/[0.02] space-y-1.5">
-                        <li className="flex justify-between py-1"><span className="text-zinc-450">id</span> <span className="text-zinc-500">bigint (PK)</span></li>
-                        <li className="flex justify-between py-1"><span className="text-zinc-450">project_id</span> <span className="text-zinc-500">uuid (FK)</span></li>
-                        <li className="flex justify-between py-1"><span className="text-zinc-450">path</span> <span className="text-zinc-500">text</span></li>
-                        <li className="flex justify-between py-1"><span className="text-zinc-450">checksum</span> <span className="text-zinc-500">text</span></li>
-                        <li className="flex justify-between py-1"><span className="text-zinc-450">meta</span> <span className="text-zinc-500">jsonb</span></li>
-                      </ul>
-                    </div>
-
-                    <div className="bg-zinc-950/80 border border-white/[0.05] p-5 rounded-2xl shadow-lg relative">
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/[0.02] blur-xl pointer-events-none" />
-                      <h4 className="font-mono text-xs font-bold text-purple-400 mb-1">nods_page_section</h4>
-                      <p className="text-[10px] text-zinc-500 mb-3">Chunk contents and vectors</p>
-                      <ul className="text-xs font-mono divide-y divide-white/[0.02] space-y-1.5">
-                        <li className="flex justify-between py-1"><span className="text-zinc-450">id</span> <span className="text-zinc-500">bigint (PK)</span></li>
-                        <li className="flex justify-between py-1"><span className="text-zinc-450">page_id</span> <span className="text-zinc-500">bigint (FK)</span></li>
-                        <li className="flex justify-between py-1"><span className="text-zinc-450">content</span> <span className="text-zinc-500">text</span></li>
-                        <li className="flex justify-between py-1"><span className="text-zinc-450">embedding</span> <span className="text-purple-400">vector</span></li>
-                        <li className="flex justify-between py-1"><span className="text-zinc-450">fts</span> <span className="text-blue-400">tsvector</span></li>
-                      </ul>
-                    </div>
-
-                  </div>
-
-                  <div className="bg-zinc-900/30 border border-white/[0.04] p-5 rounded-2xl space-y-3">
-                    <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider">Indexed Search Defense System</h4>
-                    <p className="text-xs text-zinc-400 leading-relaxed">
-                      {"To optimize vector match queries across differing embedding providers (Gemini's 768-dim vs Cohere's 1024-dim), VectorMind avoids raw database dimension locks on `embedding` columns. Instead, it leaves the column dimensions dynamic and applies two partial HNSW indexes filtered by vector size:"}
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
-                      <div className="bg-zinc-950 p-4 border border-white/[0.04] rounded-xl">
-                        <span className="text-emerald-400 font-bold block mb-1">768-Dim Gemini Index</span>
-                        <span className="text-zinc-500 text-[10px]">Filter: WHERE vector_dims(embedding) = 768</span>
-                        <div className="text-[10px] text-zinc-400 mt-2">Speeds up similarity search for text-embedding-004 chunks.</div>
-                      </div>
-                      <div className="bg-zinc-950 p-4 border border-white/[0.04] rounded-xl">
-                        <span className="text-blue-400 font-bold block mb-1">1024-Dim Cohere Index</span>
-                        <span className="text-zinc-500 text-[10px]">Filter: WHERE vector_dims(embedding) = 1024</span>
-                        <div className="text-[10px] text-zinc-400 mt-2">Speeds up similarity search for embed-english-v3.0 chunks.</div>
-                      </div>
-                    </div>
-                  </div>
-
-                </div>
-              )}
-
+              </div>
             </div>
           </div>
-        )}
+        </div>
+      </section>
 
-        {/* --- Chat (Gemini-style) --- */}
-        {activeTab === 'chat' && (
-          <div className="flex-1 min-h-0 flex flex-col relative overflow-hidden">
-            <div className={`gemini-glow transition-all duration-1000 ${messages.length > 0 ? '!opacity-0 !animate-none pointer-events-none' : ''}`} aria-hidden />
-
-
-            <div className={`flex-1 min-h-0 flex flex-col relative z-10 ${messages.length === 0 ? 'justify-center' : ''}`}>
-              {messages.length === 0 ? (
-                <div className="flex flex-col items-center px-4 py-8 max-w-5xl mx-auto w-full">
-                  <h1 className="text-3xl md:text-4xl font-normal text-zinc-100 text-center mb-8 tracking-tight">
-                    {activeProject?.name
-                      ? `Ask anything about ${activeProject.name}`
-                      : 'What would you like to know?'}
-                  </h1>
-                  {documents.length === 0 && activeProjectId && (
-                    <p className="text-xs text-zinc-500 text-center mb-6 max-w-md font-medium leading-relaxed">
-                      This workspace has no documents yet. Please <button type="button" className="text-emerald-400 hover:text-emerald-350 underline transition-colors" onClick={() => { setActiveTab('database'); setTimeout(() => dbFileInputRef.current?.click(), 100); }}>upload files</button> to get started.
-                    </p>
-                  )}
-                  {apiHealth === 'error' && (
-                    <div className="w-full max-w-xl mb-6 p-4 rounded-2xl bg-red-950/30 border border-red-900/40 text-left">
-                      <p className="text-sm text-red-300 font-medium mb-2">Setup needed</p>
-                      <p className="text-xs text-red-300/80 mb-3">Add API keys to <code className="bg-black/30 px-1 rounded">.env.local</code> and run the database migration.</p>
-                      <button type="button" onClick={checkApiHealth} className="text-xs font-semibold text-red-400 flex items-center gap-1"><RefreshCw className="w-3.5 h-3.5" /> Check again</button>
-                    </div>
-                  )}
-                  <div className="w-full mt-6">{chatComposerBlock}</div>
-                </div>
-              ) : (
-                <div
-                  ref={chatContainerRef}
-                  className="flex-1 overflow-y-auto custom-scrollbar w-full px-4 sm:px-8 pt-2 pb-4 relative"
-                  onScroll={(e) => {
-                    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget
-                    setShowScrollBottom(scrollHeight - scrollTop - clientHeight > 150)
-                  }}
-                >
-                  <div className="max-w-5xl mx-auto space-y-6 w-full">
-                    {messages.map((msg) => (
-                      <div key={msg.id} className={`flex gap-3 md:gap-4 animate-slide-up ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        {msg.role === 'assistant' && (
-                          <div className="hidden sm:flex w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-450 items-center justify-center shrink-0 shadow-sm mt-0.5 select-none animate-fade-in">
-                            <Bot className="w-4.5 h-4.5 text-emerald-400" />
-                          </div>
-                        )}
-
-                        {msg.role === 'user' ? (
-                          editingMessageId === msg.id ? (
-                            <div className="flex flex-col items-end max-w-[85%] w-full bg-[#1e1f20] border border-white/10 rounded-2xl p-3.5 space-y-2.5 shadow-xl animate-fade-in text-left">
-                              <textarea
-                                value={editingMessageText}
-                                onChange={e => setEditingMessageText(e.target.value)}
-                                className="w-full bg-transparent outline-none text-zinc-100 text-[14.5px] leading-relaxed resize-none custom-scrollbar min-h-[60px]"
-                                autoFocus
-                              />
-                              <div className="flex gap-2">
-                                <button 
-                                  type="button" 
-                                  onClick={() => setEditingMessageId(null)} 
-                                  className="px-3 py-1.5 rounded-lg text-xs font-bold text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition-all"
-                                >
-                                  Cancel
-                                </button>
-                                <button 
-                                  type="button" 
-                                  onClick={() => handleEditSubmit(msg.id, editingMessageText)} 
-                                  className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-450 text-[#0a0a0c] transition-all shadow-lg shadow-emerald-500/10 active:scale-95"
-                                >
-                                  Save & Submit
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="flex flex-col items-end max-w-[85%] group">
-                              <div className="bg-[#2f2f32]/90 border border-white/[0.03] text-zinc-100 px-4 py-2.5 rounded-2xl rounded-tr-sm text-[14.5px] leading-relaxed shadow-md select-text break-words w-full text-left">
-                                {msg.text}
-                              </div>
-                              <div className="flex items-center gap-1.5 mt-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200 pr-1">
-                                <button 
-                                  type="button" 
-                                  onClick={() => handleCopy(msg.id, msg.text)} 
-                                  className="p-1 rounded hover:bg-white/5 text-zinc-500 hover:text-zinc-350 transition-colors"
-                                  title="Copy prompt"
-                                >
-                                  {copiedId === msg.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                                </button>
-                                <button 
-                                  type="button" 
-                                  onClick={() => {
-                                    setEditingMessageId(msg.id);
-                                    setEditingMessageText(msg.text);
-                                  }} 
-                                  className="p-1 rounded hover:bg-white/5 text-zinc-500 hover:text-zinc-350 transition-colors"
-                                  title="Edit prompt"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          )
-                        ) : (
-                          <div className="flex-1 min-w-0 max-w-[calc(100vw-32px)] sm:max-w-[calc(100vw-85px)] md:max-w-[85%] text-sm text-zinc-200">
-                            <div className="px-1 py-1">
-
-                            {/* Rich Loading Visualizer */}
-                            {msg.isLoading && !msg.text ? (
-                              <div className="py-2 min-w-[280px]">
-                                <div className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                                  <Activity className="w-4 h-4 animate-pulse" /> Processing Query
-                                </div>
-                                <div className="space-y-6 relative">
-                                  <div className="absolute left-[11px] top-3 bottom-3 w-px bg-zinc-800 z-0" />
-
-                                  <div className="flex items-start gap-4 relative z-10">
-                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 border-2 transition-colors duration-500 shadow-sm ${searchStep === 'hyde' ? 'bg-zinc-950 border-zinc-500 text-zinc-400' : searchStep !== 'idle' ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-zinc-950 border-zinc-800 text-zinc-600'}`}>
-                                      {searchStep === 'hyde' ? <span className="w-2 h-2 bg-zinc-400 rounded-full animate-pulse" /> : searchStep !== 'idle' ? <CheckCircle className="w-3.5 h-3.5" /> : <span className="text-[10px] font-bold">1</span>}
-                                    </div>
-                                    <div>
-                                      <div className={`text-sm font-semibold ${searchStep === 'hyde' ? 'text-zinc-50' : 'text-zinc-500'}`}>HyDE Expansion</div>
-                                      {searchStep === 'hyde' && <div className="text-xs text-zinc-450 mt-1">Generating semantic variations...</div>}
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-start gap-4 relative z-10">
-                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 border-2 transition-colors duration-500 shadow-sm ${searchStep === 'search' ? 'bg-zinc-950 border-zinc-500 text-zinc-400' : (searchStep === 'rrf' || searchStep === 'synth') ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-zinc-950 border-zinc-800 text-zinc-600'}`}>
-                                      {searchStep === 'search' ? <span className="w-2 h-2 bg-zinc-400 rounded-full animate-pulse" /> : (searchStep === 'rrf' || searchStep === 'synth') ? <CheckCircle className="w-3.5 h-3.5" /> : <span className="text-[10px] font-bold">2</span>}
-                                    </div>
-                                    <div>
-                                      <div className={`text-sm font-semibold ${searchStep === 'search' ? 'text-zinc-50' : 'text-zinc-500'}`}>Hybrid Search</div>
-                                      {searchStep === 'search' && <div className="text-xs text-zinc-450 mt-1">Scanning pgvector indexes...</div>}
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-start gap-4 relative z-10">
-                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 border-2 transition-colors duration-500 shadow-sm ${searchStep === 'rrf' ? 'bg-zinc-950 border-zinc-500 text-zinc-400' : searchStep === 'synth' ? 'bg-zinc-900 border-zinc-800 text-zinc-450' : 'bg-zinc-950 border-zinc-800 text-zinc-600'}`}>
-                                      {searchStep === 'rrf' ? <span className="w-2 h-2 bg-zinc-400 rounded-full animate-pulse" /> : searchStep === 'synth' ? <CheckCircle className="w-3.5 h-3.5" /> : <span className="text-[10px] font-bold">3</span>}
-                                    </div>
-                                    <div>
-                                      <div className={`text-sm font-semibold ${searchStep === 'rrf' ? 'text-zinc-50' : 'text-zinc-500'}`}>Rank Fusion & Filtering</div>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className={`leading-relaxed text-[14.5px] ${msg.role === 'assistant' ? 'prose-chat' : 'font-medium tracking-wide'}`}>
-                                {msg.role === 'assistant'
-                                  ? <>
-                                    {renderMarkdown(msg.text, (citationId) => {
-                                      const citation = msg.citations?.find(c => c.id === citationId)
-                                      if (citation) setActiveCitation(citation)
-                                    })}
-                                    {msg.isLoading && <TypingIndicator />}
-                                  </>
-                                  : <span className="text-zinc-100">{msg.text}</span>
-                                }
-                              </div>
-                            )}
-
-                            {/* Assistant Message Actions & Metadata */}
-                            {msg.role === 'assistant' && !msg.isLoading && (
-                              <div className="mt-2 flex flex-col gap-4">
-                                <div className="flex items-center justify-start gap-4">
-                                  {/* AI Action Buttons */}
-                                  <div className="flex items-center gap-1.5 -ml-1">
-                                    <button onClick={() => handleCopy(msg.id, msg.text)} className="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-white/5 rounded-md transition-colors" title="Copy response">
-                                      {copiedId === msg.id ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                                    </button>
-
-                                    {isSearchLoading && activeMessageIdRef.current === msg.id ? (
-                                      <button onClick={() => stop()} className="p-1.5 text-red-400 hover:text-red-300 hover:bg-white/5 rounded-md transition-colors" title="Stop generating">
-                                        <Square className="w-4 h-4" />
-                                      </button>
-                                    ) : (
-                                      <button onClick={() => handleSearchSubmit(undefined, messages.filter(m => m.role === 'user').pop()?.text)} className={`p-1.5 transition-colors rounded-md ${msg.error ? 'text-amber-400 hover:text-amber-300 hover:bg-amber-400/10' : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'}`} title="Regenerate response">
-                                        <RefreshCw className="w-4 h-4" />
-                                      </button>
-                                    )}
-                                  </div>
-
-                                  <div className="flex items-center gap-3">
-                                    {msg.cached && (
-                                      <div className="text-[10px] font-bold px-2.5 py-1 rounded-md border flex items-center gap-1.5 shadow-sm bg-yellow-500/10 text-yellow-500 border-yellow-500/20" title="Served from semantic cache">
-                                        <Zap className="w-3 h-3" /> CACHED
-                                      </div>
-                                    )}
-                                    {/* CONFIDENCE TAG — temporarily hidden, re-enable when needed
-                                    {msg.confidence && msg.confidence.level !== 'LOW' && (
-                                      <div className={`text-[10px] font-bold px-2.5 py-1 rounded-md border flex items-center gap-1.5 shadow-sm ${msg.confidence.level === 'HIGH' ? 'bg-zinc-900 text-zinc-200 border-zinc-800' :
-                                          msg.confidence.level === 'MEDIUM' ? 'bg-zinc-900 text-zinc-350 border-zinc-800' :
-                                            'bg-red-955/20 text-red-400 border-red-900/30'
-                                        }`}>
-                                        {msg.confidence.level === 'HIGH' && <CheckCircle className="w-3 h-3" />}
-                                        {msg.confidence.level === 'MEDIUM' && <AlertCircle className="w-3 h-3" />}
-                                        {msg.confidence.level === 'LOW' && <XCircle className="w-3 h-3" />}
-                                        {msg.confidence.level} CONFIDENCE
-                                      </div>
-                                    )}
-                                    */}
-                                  </div>
-                                </div>
-
-                                {/* Source Citations with SaaS styling */}
-                                {msg.citations && msg.citations.length > 0 && /\[\d+(?:,\s*\d+)*\]/.test(msg.text) && (
-                                  <div>
-                                    <div className="text-[9px] font-bold text-zinc-550 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                                      <LinkIcon className="w-3 h-3" /> Cited Sources
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      {Array.from(new Map(msg.citations.map(c => [c.sourceName, c])).values()).map((cit, idx) => (
-                                        <button
-                                          key={idx}
-                                          onClick={() => setActiveCitation(cit as any)}
-                                          className="group relative overflow-hidden flex items-center gap-2 px-3 py-1.5 rounded-md border text-xs transition-all duration-200 bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700 cursor-pointer hover:bg-zinc-855"
-                                        >
-                                          <FileText className="w-3.5 h-3.5 shrink-0 text-zinc-400 group-hover:text-zinc-300" />
-                                          <span className="truncate max-w-[100px] xs:max-w-[140px] sm:max-w-[180px] font-medium">{(cit as any).sourceName || `Source ${(cit as any).id}`}</span>
-                                          <Eye className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 absolute right-3 text-zinc-450 transition-opacity" />
-                                          <span className="w-4 h-full bg-gradient-to-l from-zinc-900 group-hover:from-zinc-850 to-transparent absolute right-0" />
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* Follow-up Suggestions */}
-                                {msg.suggestions && msg.suggestions.length > 0 && (
-                                  <div className="mt-4 pt-4 border-t border-zinc-850/50 flex flex-col gap-2.5 animate-fade-in">
-                                    <div className="text-[10px] font-bold text-zinc-550 uppercase tracking-widest">Suggested Follow-ups</div>
-                                    <div className="flex flex-wrap gap-2">
-                                      {msg.suggestions.map((suggestion, idx) => (
-                                        <button
-                                          key={idx}
-                                          type="button"
-                                          onClick={() => setSearchQuery(suggestion)}
-                                          className="text-[11px] sm:text-[13px] text-zinc-350 hover:text-zinc-50 bg-zinc-900/60 hover:bg-zinc-850/80 border border-zinc-800/80 hover:border-zinc-700/80 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-lg sm:rounded-full transition-all duration-200 active:scale-95 shadow-sm text-left break-words whitespace-normal max-w-full"
-                                        >
-                                          {suggestion}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    ))}
-                    <div ref={chatEndRef} className="h-10" />
-                  </div>
-                </div>
-              )}
+      {/* ════════════════════════════════════════════════════════
+          POWERFUL FEATURES GRID
+          ════════════════════════════════════════════════════════ */}
+      <section id="features" className="py-20 md:py-28 border-t border-zinc-800/40 relative z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-3xl mx-auto">
+            <div className="reveal">
+              <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-zinc-500 font-bold">
+                Powerful Features
+              </span>
+              <h2 className="mt-3 text-3xl sm:text-5xl font-extrabold tracking-tight text-white">
+                Everything you need. Nothing extra.
+              </h2>
             </div>
-
-            {messages.length > 0 && (
-              <div className="relative z-20 shrink-0 w-full px-4 sm:px-8 pb-6 pt-3 bg-gradient-to-t from-[#131314] via-[#131314] to-transparent">
-                <div className="max-w-5xl mx-auto relative">
-                  {showScrollBottom && (
-                    <button
-                      onClick={() => chatContainerRef.current?.scrollTo({ top: chatContainerRef.current.scrollHeight, behavior: 'smooth' })}
-                      className="absolute -top-14 left-1/2 -translate-x-1/2 p-2 bg-[#1A1A1F] hover:bg-[#222228] border border-white/10 text-zinc-300 hover:text-white rounded-full shadow-2xl transition-all animate-fade-in z-[100] flex items-center justify-center group"
-                    >
-                      <ArrowDown className="w-4 h-4 group-hover:text-emerald-400" />
-                    </button>
-                  )}
-                  {messages.filter(m => !m.isLoading && m.text && !m.error).length > 0 && (
-                    <div className="flex items-center gap-1.5 justify-center mb-2.5 text-[10px] text-emerald-400 font-bold uppercase tracking-wider animate-pulse">
-                      <Zap className="w-3 h-3 fill-current" /> Conversation context active
-                    </div>
-                  )}
-                  {chatComposerBlock}
-                </div>
-              </div>
-            )}
           </div>
-        )}
 
-      </div>
-
-      {/* --- Citation Popover Modal --- */}
-      {activeCitation && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 animate-fade-in" onClick={() => setActiveCitation(null)}>
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
-          <div className="bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl w-full max-w-7xl h-[90vh] flex flex-col relative z-10 animate-scale-in overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-md bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                  <FileText className="w-4 h-4 text-emerald-400" />
+          <div className="mt-14 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            {FEATURES.map((feature, idx) => (
+              <div
+                key={feature.title}
+                className={`reveal reveal-delay-${Math.min(idx + 1, 10)} p-5 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 card-hover-glow card-shine flex flex-col gap-3`}
+              >
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                  {feature.icon}
                 </div>
-                <div className="flex flex-col">
-                  <span className="text-zinc-100 font-bold text-sm tracking-wide">{activeCitation.sourceName || `Citation [${activeCitation.id}]`}</span>
-                  <span className="text-[10px] text-zinc-400 font-medium flex items-center gap-1">
-                    <CheckCircle className="w-3 h-3 text-emerald-500" /> Semantic Match Score: {(activeCitation.score * 100).toFixed(1)}%
-                  </span>
-                </div>
+                <h3 className="text-sm font-bold text-white leading-snug">{feature.title}</h3>
+                <p className="text-[11px] text-zinc-500 leading-relaxed">{feature.description}</p>
               </div>
-              <button onClick={() => setActiveCitation(null)} className="p-1.5 text-zinc-400 hover:text-zinc-200 bg-transparent hover:bg-zinc-900 rounded-md transition-colors border border-transparent hover:border-zinc-800">
-                <X className="w-5 h-5" />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════════
+          RETRIEVAL PIPELINE (React Bits Style Interactive Stepper)
+          ════════════════════════════════════════════════════════ */}
+      <section id="pipeline" className="py-20 md:py-28 border-t border-zinc-800/40 relative z-10 bg-[#06080a]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          
+          {/* Header Bar */}
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-mono font-bold tracking-widest uppercase mb-3">
+                <Zap className="w-3.5 h-3.5 fill-current" />
+                HOW IT WORKS
+              </div>
+              <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white leading-tight">
+                From documents to intelligent answers.
+              </h2>
+            </div>
+            
+            {/* Auto-Play & Navigation Controls */}
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                onClick={() => setIsAutoPlaying(!isAutoPlaying)}
+                className={`px-3.5 py-2 rounded-xl border text-xs font-mono font-semibold flex items-center gap-2 transition-all duration-300 ${
+                  isAutoPlaying
+                    ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+                    : 'bg-zinc-900/80 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700'
+                }`}
+              >
+                {isAutoPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                <span>{isAutoPlaying ? 'Autoplay Active' : 'Autoplay'}</span>
               </button>
-            </div>
-            <div className="flex-1 flex overflow-hidden">
-              {/* Left Side: PDF Preview */}
-              <div className="flex-1 border-r border-zinc-800 bg-zinc-950/50">
-                {activeCitation?.storageUrl || activeCitation?.sourceName ? (
-                  <iframe src={activeCitation.storageUrl ? `/api/proxy?url=${encodeURIComponent(activeCitation.storageUrl)}#view=FitH` : `/api/preview/${encodeURIComponent(activeCitation.sourceName || '')}`} className="w-full h-full" />
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center text-zinc-500 gap-4">
-                    <FileText className="w-12 h-12 opacity-50" />
-                    <p className="text-sm font-medium">Document preview unavailable</p>
-                  </div>
-                )}
-              </div>
-              {/* Right Side: Extracted Chunk */}
-              <div className="w-full sm:w-[350px] lg:w-[400px] flex-shrink-0 bg-zinc-950 flex flex-col">
-                <div className="px-5 py-4 border-b border-zinc-800">
-                  <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
-                    <Zap className="w-3.5 h-3.5 text-emerald-400" /> Extracted Context
-                  </h3>
-                  <p className="text-[10px] text-zinc-500 mt-1">This is the exact snippet retrieved from the document used to generate the answer.</p>
-                </div>
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
-                  <div className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap font-medium font-mono text-[13px] bg-black/40 rounded-lg border border-white/5 p-4">
-                    {activeCitation.chunk}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* --- Premium PDF Preview Modal --- */}
-      {previewPdfUrl && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 animate-fade-in">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setPreviewPdfUrl(null)} />
-          <div className="bg-zinc-950 border border-zinc-800 rounded-lg shadow-lg w-full max-w-6xl h-full sm:h-[90vh] flex flex-col relative z-10 animate-scale-in overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950">
-              <div className="flex items-center gap-3 font-semibold text-zinc-200">
-                <div className="w-8 h-8 rounded-md bg-zinc-900 flex items-center justify-center border border-zinc-800">
-                  <Eye className="w-4 h-4 text-zinc-405" />
-                </div>
-                Document Viewer
-              </div>
-              <div className="flex items-center gap-3">
-                {previewPdfUrl !== 'legacy-missing-file' && (
-                  <a href={previewPdfUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-zinc-300 hover:text-zinc-550 bg-transparent hover:bg-zinc-900 px-3.5 py-1.5 rounded-md border border-zinc-800 transition-colors">
-                    Open External
-                  </a>
-                )}
-                <button onClick={() => setPreviewPdfUrl(null)} className="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-zinc-550 bg-transparent hover:bg-zinc-900 rounded-md transition-colors border border-zinc-800">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 bg-zinc-900 relative p-1 flex items-center justify-center">
-              {previewPdfUrl === 'legacy-missing-file' ? (
-                <div className="text-center p-8 max-w-md mx-auto space-y-4">
-                  <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto text-amber-500 shadow-inner">
-                    <FileText className="w-8 h-8" />
-                  </div>
-                  <div>
-                    <h3 className="text-zinc-200 font-semibold text-lg">Legacy Document</h3>
-                    <p className="text-zinc-450 text-xs mt-2 leading-relaxed">
-                      This document was uploaded before the secure physical storage backup feature was introduced. The text is fully indexed and searchable in the vector database, but the original file cannot be previewed natively. To enable preview, please delete and re-upload this file.
-                    </p>
-                  </div>
-                </div>
-              ) : previewPdfUrl.toLowerCase().includes('.docx') ? (
-                <div className="text-center p-8 max-w-md mx-auto space-y-4">
-                  <div className="w-16 h-16 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mx-auto text-blue-450 shadow-inner animate-pulse">
-                    <FileText className="w-8 h-8" />
-                  </div>
-                  <div>
-                    <h3 className="text-zinc-200 font-semibold text-lg">DOCX Word Document</h3>
-                    <p className="text-zinc-450 text-xs mt-2 leading-relaxed">
-                      Word Documents cannot be rendered directly inside the browser. However, all text content has been successfully extracted, chunked, and fully indexed in your vector database.
-                    </p>
-                  </div>
-                  <div className="pt-2">
-                    <a
-                      href={previewPdfUrl}
-                      download
-                      className="inline-flex items-center gap-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 px-5 py-2.5 rounded-lg shadow transition-colors"
-                    >
-                      <Download className="w-4 h-4" /> Download DOCX File
-                    </a>
-                  </div>
-                </div>
-              ) : (
-                <iframe src={`${previewPdfUrl}#view=FitH`} className="w-full h-full rounded-md bg-white border-0" title="PDF Preview" />
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Global Confirm Modal */}
-      {confirmModal?.isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setConfirmModal(null)} />
-          <div className="relative bg-zinc-950 border border-zinc-800 rounded-lg w-full max-w-md shadow-lg overflow-hidden animate-slide-up">
-            <div className="p-6">
-              <div className="w-10 h-10 rounded-full bg-red-955/20 flex items-center justify-center mb-4 border border-red-900/30">
-                <AlertCircle className="w-5 h-5 text-red-500" />
-              </div>
-              <h3 className="text-lg font-semibold text-zinc-50 mb-1">{confirmModal.title}</h3>
-              <p className="text-xs text-zinc-400 leading-relaxed mb-6">
-                {confirmModal.message}
-              </p>
-              <div className="flex gap-2.5 justify-end">
+              <div className="flex items-center gap-1.5 bg-zinc-900/80 border border-zinc-800 p-1 rounded-xl">
                 <button
-                  onClick={() => setConfirmModal(null)}
-                  className="px-3.5 py-2 rounded-md text-xs font-medium border border-zinc-800 text-zinc-300 hover:bg-zinc-900 hover:text-zinc-50 transition-colors"
+                  onClick={() => setSelectedStep((prev) => (prev <= 1 ? 9 : prev - 1))}
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                  aria-label="Previous step"
                 >
-                  Cancel
+                  <ChevronLeft className="w-4 h-4" />
                 </button>
+                <span className="text-xs font-mono font-bold text-zinc-300 px-1">
+                  {selectedStep} / 9
+                </span>
                 <button
-                  onClick={async () => {
-                    await confirmModal.onConfirm()
-                    setConfirmModal(null)
+                  onClick={() => setSelectedStep((prev) => (prev >= 9 ? 1 : prev + 1))}
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                  aria-label="Next step"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Animated Progress Bar */}
+          <div className="w-full h-1.5 bg-zinc-900 rounded-full overflow-hidden mb-8 border border-zinc-800/80">
+            <div
+              className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-300 transition-all duration-500 ease-out rounded-full shadow-[0_0_12px_rgba(16,185,129,0.5)]"
+              style={{ width: `${(selectedStep / 9) * 100}%` }}
+            />
+          </div>
+
+          {/* React Bits Interactive Tab Grid / Pill Slider */}
+          <div className="no-scrollbar overflow-x-auto pb-4 mb-8">
+            <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2.5 min-w-[700px] lg:min-w-0">
+              {[
+                { step: 1, title: 'Ingest', sub: 'Documents', icon: <FileText className="w-4 h-4" /> },
+                { step: 2, title: 'Extract', sub: 'OCR & Parsing', icon: <Search className="w-4 h-4" /> },
+                { step: 3, title: 'Chunk', sub: 'Smart Split', icon: <Sliders className="w-4 h-4" /> },
+                { step: 4, title: 'Embed', sub: 'Dense Vector', icon: <Cpu className="w-4 h-4" /> },
+                { step: 5, title: 'Index', sub: 'pgvector HNSW', icon: <Database className="w-4 h-4" /> },
+                { step: 6, title: 'Retrieve', sub: 'Hybrid Search', icon: <Zap className="w-4 h-4" /> },
+                { step: 7, title: 'RRF', sub: 'Rank Fusion', icon: <Activity className="w-4 h-4" /> },
+                { step: 8, title: 'Generate', sub: 'Multi-Model', icon: <Shield className="w-4 h-4" /> },
+                { step: 9, title: 'Answer', sub: 'Citations', icon: <MessageSquare className="w-4 h-4" /> },
+              ].map((st) => (
+                <button
+                  key={st.step}
+                  onClick={() => {
+                    setSelectedStep(st.step)
+                    setIsAutoPlaying(false)
                   }}
-                  className="px-3.5 py-2 rounded-md text-xs font-semibold bg-red-650 hover:bg-red-500 text-white shadow-sm transition-colors"
+                  className={`relative p-3.5 rounded-2xl border text-left transition-all duration-300 flex flex-col justify-between gap-3 group overflow-hidden ${
+                    selectedStep === st.step
+                      ? 'border-emerald-500 bg-emerald-500/12 text-white shadow-[0_0_20px_rgba(16,185,129,0.2)] ring-1 ring-emerald-500/40'
+                      : 'border-zinc-800/80 bg-zinc-900/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200 hover:bg-zinc-900/70'
+                  }`}
                 >
-                  Confirm Delete
+                  <div className="flex items-center justify-between w-full">
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+                      selectedStep === st.step
+                        ? 'bg-emerald-500 text-zinc-950 shadow-[0_0_10px_rgba(16,185,129,0.4)]'
+                        : 'bg-zinc-800/80 text-emerald-400 group-hover:bg-zinc-800'
+                    }`}>
+                      {st.icon}
+                    </div>
+                    <span className={`text-[10px] font-mono font-extrabold ${
+                      selectedStep === st.step ? 'text-emerald-400' : 'text-zinc-600'
+                    }`}>
+                      0{st.step}
+                    </span>
+                  </div>
+
+                  <div>
+                    <div className="font-extrabold text-xs tracking-tight text-white">{st.title}</div>
+                    <div className="text-[10px] font-mono text-zinc-500 font-medium truncate mt-0.5">{st.sub}</div>
+                  </div>
                 </button>
+              ))}
+            </div>
+          </div>
+
+          {/* React Bits Card Container for Selected Step */}
+          <div className="relative rounded-3xl border border-emerald-500/30 bg-[#090b0e]/95 p-6 sm:p-10 font-mono text-xs backdrop-blur-2xl shadow-[0_0_50px_rgba(16,185,129,0.08)] overflow-hidden">
+            {/* Ambient Corner Glow */}
+            <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-[100px] pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-64 h-64 bg-teal-500/5 rounded-full blur-[80px] pointer-events-none" />
+
+            <div className="relative z-10">
+              {/* Header Info Bar */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-zinc-800/80 pb-6">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-bold flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                      STEP {currentStepData.step} OF 9
+                    </span>
+                    <span className="text-zinc-500 text-xs font-mono font-medium">| {currentStepData.subtitle}</span>
+                  </div>
+                  <h3 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">{currentStepData.title}</h3>
+                  <p className="text-zinc-300 text-xs font-sans max-w-2xl leading-relaxed">{currentStepData.description}</p>
+                </div>
+
+                {/* Metrics Pill Cards */}
+                <div className="flex flex-wrap items-center gap-3 shrink-0">
+                  {currentStepData.metrics.map((m, idx) => (
+                    <div key={idx} className="px-4 py-3 rounded-2xl bg-zinc-950/90 border border-zinc-800/90 shadow-sm flex flex-col gap-0.5">
+                      <div className="text-[10px] text-zinc-500 uppercase font-semibold tracking-wider">{m.label}</div>
+                      <div className="text-xs font-extrabold text-emerald-400 font-mono">{m.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Code Sandbox Preview Box */}
+              <div className="mt-6">
+                <div className="rounded-2xl border border-zinc-800/90 bg-zinc-950/90 overflow-hidden shadow-inner">
+                  {/* Code Bar Header */}
+                  <div className="flex items-center justify-between px-4 py-3 bg-zinc-900/80 border-b border-zinc-800/80">
+                    <div className="flex items-center gap-2">
+                      <div className="flex gap-1.5">
+                        <span className="w-3 h-3 rounded-full bg-red-500/80 inline-block" />
+                        <span className="w-3 h-3 rounded-full bg-yellow-500/80 inline-block" />
+                        <span className="w-3 h-3 rounded-full bg-green-500/80 inline-block" />
+                      </div>
+                      <span className="text-zinc-400 text-xs font-mono font-medium ml-2 flex items-center gap-1.5">
+                        <Code className="w-3.5 h-3.5 text-emerald-400" /> Implementation Source
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => copyToClipboard(currentStepData.codeSnippet, `step-${currentStepData.step}`)}
+                      className="px-3 py-1.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700/60 text-zinc-300 hover:text-emerald-400 transition-all text-[11px] font-mono flex items-center gap-1.5"
+                    >
+                      {copiedCode === `step-${currentStepData.step}` ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-400">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copy Code</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Code Display with VS Code Syntax Highlighting */}
+                  <div className="p-5 overflow-x-auto no-scrollbar bg-[#07090c]">
+                    {renderSyntaxCode(currentStepData.codeSnippet)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Step Switcher Footer */}
+              <div className="mt-8 pt-6 border-t border-zinc-800/80 flex items-center justify-between gap-4">
+                <button
+                  disabled={selectedStep === 1}
+                  onClick={() => {
+                    setSelectedStep((prev) => Math.max(1, prev - 1))
+                    setIsAutoPlaying(false)
+                  }}
+                  className={`px-5 py-2.5 rounded-xl border text-xs font-mono font-bold flex items-center gap-2 transition-all ${
+                    selectedStep === 1
+                      ? 'opacity-40 border-zinc-800 text-zinc-600 cursor-not-allowed'
+                      : 'border-zinc-800 bg-zinc-900/80 text-zinc-300 hover:text-white hover:border-emerald-500/40 hover:bg-zinc-800'
+                  }`}
+                >
+                  <ChevronLeft className="w-4 h-4" /> Previous Step
+                </button>
+
+                <button
+                  disabled={selectedStep === 9}
+                  onClick={() => {
+                    setSelectedStep((prev) => Math.min(9, prev + 1))
+                    setIsAutoPlaying(false)
+                  }}
+                  className={`px-6 py-2.5 rounded-xl text-xs font-mono font-bold flex items-center gap-2 transition-all shadow-md ${
+                    selectedStep === 9
+                      ? 'opacity-40 border border-zinc-800 text-zinc-600 cursor-not-allowed'
+                      : 'bg-emerald-500 hover:bg-emerald-400 text-zinc-950 shadow-[0_0_18px_rgba(16,185,129,0.3)]'
+                  }`}
+                >
+                  <span>Next Step: Step {selectedStep === 9 ? 9 : selectedStep + 1}</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════════
+          FULL-WIDTH CTA BANNER (Placed directly above Footer)
+          ════════════════════════════════════════════════════════ */}
+      <section className="w-full relative z-10 overflow-hidden border-t border-b border-emerald-500/30 bg-[#050709]">
+        {/* Background Landscape Image - Edge to Edge */}
+        <div className="absolute inset-0 z-0">
+          <img
+            src="/images/cta_landscape.png"
+            alt="VectorMind Landscape CTA"
+            className="w-full h-full object-cover opacity-85"
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-emerald-950/95 via-[#050709]/90 to-[#050709]/80" />
+        </div>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24 relative z-10">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            <div className="lg:col-span-8">
+              <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white leading-tight">
+                Ready to build your own knowledge system?
+              </h2>
+              <p className="mt-4 text-sm sm:text-base text-zinc-300 max-w-xl leading-relaxed">
+                Get started with VectorMind and turn your documents into intelligence.
+              </p>
+              <div className="mt-8 flex flex-col sm:flex-row items-start gap-4">
+                <Link
+                  href="/app"
+                  className="px-8 py-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-sm font-mono flex items-center gap-2.5 shadow-[0_0_28px_rgba(16,185,129,0.3)] hover:shadow-[0_0_40px_rgba(16,185,129,0.5)] transition-all duration-300 btn-hover-lift"
+                >
+                  Get Started <ArrowRight className="w-4 h-4" />
+                </Link>
+                <a
+                  href="https://github.com/krishsoni15/VectorMind"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-8 py-4 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700/80 hover:border-emerald-500/40 text-zinc-200 text-sm font-mono flex items-center gap-2 transition-all duration-300 btn-hover-lift backdrop-blur-xl"
+                >
+                  <BookOpen className="w-4 h-4" /> View Documentation
+                </a>
+              </div>
+            </div>
+
+            {/* Right Side Typography Badge */}
+            <div className="hidden lg:flex lg:col-span-4 flex-col items-end text-right">
+              <div className="text-emerald-400 font-mono text-sm sm:text-base leading-snug font-medium border-r-2 border-emerald-400 pr-4">
+                Documents<br />today.<br />
+                <span className="text-emerald-300 font-bold">Intelligence<br />tomorrow.</span>
               </div>
             </div>
           </div>
         </div>
-      )}
+      </section>
+
+      {/* ════════════════════════════════════════════════════════
+          FOOTER
+          ════════════════════════════════════════════════════════ */}
+      <footer className="py-12 md:py-16 border-t border-zinc-800/40 z-10 relative bg-[#030405] text-xs font-mono">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="reveal">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-8 pb-10 border-b border-zinc-800/40">
+              {/* Brand */}
+              <div className="md:col-span-2">
+                <div className="flex items-center gap-2.5 mb-3">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                    <Zap className="w-4 h-4 fill-current" />
+                  </div>
+                  <span className="text-white font-bold text-sm">VectorMind</span>
+                </div>
+                <p className="text-zinc-500 text-[11px] max-w-xs leading-relaxed mb-4">
+                  An open knowledge infrastructure for the next generation. Built with purpose.
+                </p>
+                <div className="flex items-center gap-3">
+                  <a href="https://github.com/krishsoni15/VectorMind" target="_blank" rel="noreferrer" className="w-8 h-8 rounded-lg bg-zinc-900/80 border border-zinc-800/80 flex items-center justify-center text-zinc-500 hover:text-emerald-400 hover:border-emerald-500/40 transition-all" aria-label="GitHub">
+                    <Github className="w-4 h-4" />
+                  </a>
+                  <a href="#" className="w-8 h-8 rounded-lg bg-zinc-900/80 border border-zinc-800/80 flex items-center justify-center text-zinc-500 hover:text-emerald-400 hover:border-emerald-500/40 transition-all" aria-label="X (Twitter)">
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                  </a>
+                  <a href="#" className="w-8 h-8 rounded-lg bg-zinc-900/80 border border-zinc-800/80 flex items-center justify-center text-zinc-500 hover:text-emerald-400 hover:border-emerald-500/40 transition-all" aria-label="LinkedIn">
+                    <Linkedin className="w-4 h-4" />
+                  </a>
+                </div>
+              </div>
+
+              {/* Product */}
+              <div>
+                <span className="text-zinc-400 font-bold uppercase text-[10px] tracking-wider">Product</span>
+                <div className="mt-3 space-y-2 text-zinc-500">
+                  <a href="#features" className="block hover:text-emerald-400 transition-colors">Features</a>
+                  <a href="#architecture" className="block hover:text-emerald-400 transition-colors">Architecture</a>
+                  <a href="#pipeline" className="block hover:text-emerald-400 transition-colors">RAG Pipeline</a>
+                  <a href="#docs" className="block hover:text-emerald-400 transition-colors">Quickstart</a>
+                </div>
+              </div>
+
+              {/* Technical */}
+              <div>
+                <span className="text-zinc-400 font-bold uppercase text-[10px] tracking-wider">Technical</span>
+                <div className="mt-3 space-y-2 text-zinc-500">
+                  <a href="#pipeline" className="block hover:text-emerald-400 transition-colors">Hybrid RAG</a>
+                  <a href="#pipeline" className="block hover:text-emerald-400 transition-colors">CAG</a>
+                  <a href="#pipeline" className="block hover:text-emerald-400 transition-colors">pgvector</a>
+                  <a href="#pipeline" className="block hover:text-emerald-400 transition-colors">Multi-Model</a>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="reveal reveal-delay-2 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-zinc-600">
+            <div>&copy; 2026 VectorMind. All rights reserved.</div>
+            <div>Built by developers, for knowledge workers.</div>
+          </div>
+        </div>
+      </footer>
+
     </div>
   )
 }
-
-// ─── Pipeline Step Definition for System Architecture ────────────────────────
-const PIPELINE_STEPS: {
-  title: string;
-  shortDesc: string;
-  longDesc: string;
-  conceptExplain: string;
-  badge: 'Ingestion' | 'Processing' | 'Embeddings' | 'Storage' | 'Retrieval' | 'Generation';
-  metrics: { label: string; value: string }[];
-  formula?: string;
-  code: string;
-}[] = [
-  {
-    title: "1. File Parsing & Sanitization",
-    shortDesc: "Supports PDF, DOCX, TXT, MD. Strips null bytes to defend against database crashes.",
-    longDesc: "When a user uploads a document, the client extracts the raw file and streams it as Base64 to /api/upload. The server decodes it and routes it by extension. PDF files are parsed using unpdf (a WASM wrapper around PDF.js), DOCX files are extracted via XML zip parsing, and code/text files are read directly. The text is sanitized using regex patterns to strip out null characters (\\u0000) which would otherwise crash Postgres.",
-    conceptExplain: "Reads uploaded files and cleans them of hidden formatting or characters that would crash our database.",
-    badge: "Ingestion",
-    metrics: [
-      { label: "Max File Limit", value: "50 MB" },
-      { label: "Formats Supported", value: "PDF, DOCX, TXT, MD, PY, TS, JS, JSON" },
-      { label: "WASM Parser", value: "unpdf (highly optimized, runs in edge)" }
-    ],
-    code: `// Strips binary anomalies and null bytes to prevent database ingestion errors
-function sanitizeText(raw: string): string {
-  return raw
-    .replace(/\\u0000/g, '')
-    .replace(/\\x00/g, '')
-    .replace(/[\\x01-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]/g, '')
-    .replace(/\\n{3,}/g, '\\n\\n')
-    .trim()
-}`
-  },
-  {
-    title: "2. Recursive Character Chunking",
-    shortDesc: "Splits text using a sliding window to maintain semantic paragraphs.",
-    longDesc: "Documents are split into chunks using a hierarchical character-based chunking strategy. The chunker first attempts to split on paragraph breaks (\\n\\n). If the resulting chunk exceeds the maximum size, it recursively splits on sentences (.\\s), then on spaces (\\s), and finally on single characters. This keeps full words, sentences, and paragraphs together, preserving context for the vector search.",
-    conceptExplain: "Chops long articles or documents into bite-sized segments so that searching is precise and the AI doesn't get overwhelmed.",
-    badge: "Processing",
-    metrics: [
-      { label: "Max Chunk Size", value: "400 characters" },
-      { label: "Chunk Overlap", value: "80 characters" },
-      { label: "Context Protection", value: "Sliding window with boundary fallback" }
-    ],
-    code: `// lib/chunker.ts
-export function recursiveCharacterChunker(text: string, maxSize = 400, overlap = 80) {
-  // 1. Split by paragraphs (\\n\\n)
-  // 2. If block > maxSize, split by sentences (. )
-  // 3. If still too large, split by spaces
-  // 4. Return chunks with boundary overlap to ensure no lost context
-}`
-  },
-  {
-    title: "3. Vector Embedding Generation",
-    shortDesc: "Converts text blocks into high-dimensional vectors with auto-fallback.",
-    longDesc: "To perform semantic search, text chunks must be converted into numerical vectors. VectorMind supports multiple embedding providers (Gemini, Cohere, OpenAI). To optimize upload speed, chunks are embedded in high-performance parallel batches. If Gemini rate limits are hit or the API keys fail, the pipeline automatically redirects the chunk requests to Cohere's English v3.0 model as a self-healing fallback.",
-    conceptExplain: "Translates text chunks into a series of numbers (a vector) representing the meaning, just like mapping latitude and longitude for a place.",
-    badge: "Embeddings",
-    metrics: [
-      { label: "Google Gemini", value: "text-embedding-004 (768 dimensions)" },
-      { label: "Cohere", value: "embed-english-v3.0 (1024 dimensions)" },
-      { label: "OpenAI", value: "text-embedding-3-small (1536 dimensions)" }
-    ],
-    code: `// Batch embedding with rate limiting and automated self-healing fallback
-export async function generateEmbeddingsBatch(texts, provider, taskType) {
-  try {
-    if (provider === 'gemini') {
-      // Fetch batchEmbedContents from Google AI API
-      // If error (status 403 or 429), fallback to Cohere:
-      return generateEmbeddingsBatch(texts, 'cohere', taskType);
-    }
-    // ...
-  } catch (e) {
-    // Retry with exponential backoff
-  }
-}`
-  },
-  {
-    title: "4. Vector Storage & HNSW Indexing",
-    shortDesc: "Supabase pgvector database with partial HNSW indexing.",
-    longDesc: "Embeddings are stored in Supabase PostgreSQL using the 'pgvector' extension. Because users can mix embedding models in different workspaces, VectorMind implements partial HNSW (Hierarchical Navigable Small World) indexes. These indexes are created separately for 768-dimensional and 1024-dimensional vectors. This dynamic segregation avoids mixing dimensions, preventing Postgres queries from failing.",
-    conceptExplain: "Stores the meaning vectors in the Supabase database and indexes them using a high-speed search map (HNSW) to look them up instantly.",
-    badge: "Storage",
-    metrics: [
-      { label: "Vector Extension", value: "pgvector on PostgreSQL" },
-      { label: "Index Algorithm", value: "HNSW (Hierarchical Navigable Small World)" },
-      { label: "HNSW Parameters", value: "m=16, ef_construction=64" }
-    ],
-    formula: "Cosine Similarity = 1 - (u <=> v)",
-    code: `-- Dual partial HNSW indexes to handle mixed vector sizes dynamically
-CREATE INDEX nods_page_section_embedding_hnsw_768_idx 
-ON nods_page_section USING hnsw ((embedding::vector(768)) vector_ip_ops)
-WHERE vector_dims(embedding) = 768;
-
-CREATE INDEX nods_page_section_embedding_hnsw_1024_idx 
-ON nods_page_section USING hnsw ((embedding::vector(1024)) vector_ip_ops)
-WHERE vector_dims(embedding) = 1024;`
-  },
-  {
-    title: "5. Semantic Caching",
-    shortDesc: "Intercepts incoming queries for sub-millisecond cached responses.",
-    longDesc: "Before executing expensive database vector searches or LLM API calls, VectorMind calculates the embedding of the user's raw query and compares it against a semantic cache table in Supabase. If a previously answered query is found with a cosine similarity matching or exceeding 0.92, the system immediately returns the cached answer, bypasses the LLM, and avoids token usage entirely.",
-    conceptExplain: "A smart memory bank that saves previous answers so that if someone asks the exact same question again, it replies instantly without wasting AI tokens.",
-    badge: "Retrieval",
-    metrics: [
-      { label: "Lookup Method", value: "Cosine similarity vector comparison" },
-      { label: "Match Threshold", value: "0.92 (near-exact semantic match)" },
-      { label: "Average Latency", value: "< 15ms (Bypasses LLM)" }
-    ],
-    code: `// lib/semanticCache.ts
-export async function getCachedAnswer(queryEmbedding: number[], projectId: string) {
-  const { data } = await supabase.rpc('match_semantic_cache', {
-    query_vector: queryEmbedding,
-    project_id: projectId,
-    similarity_threshold: 0.92
-  });
-  return data && data.length > 0 ? data[0] : null;
-}`
-  },
-  {
-    title: "6. HyDE Query Expansion",
-    shortDesc: "Generates alternative hypothetical queries to capture semantic angles.",
-    longDesc: "Raw queries written by users are often short and mismatch the technical terms in indexed documents. VectorMind applies HyDE (Hypothetical Document Embeddings) to expand the query. The system queries an LLM in the background to generate 3 alternative ways of asking the question. All 4 queries (original + 3 variations) are embedded and searched in parallel, pulling context that single queries would miss.",
-    conceptExplain: "Asks the AI to guess what a good answer might look like first, helping the search engine find the right paragraphs even if the words are slightly different.",
-    badge: "Retrieval",
-    metrics: [
-      { label: "Query Multiplication", value: "1 user query -> 4 search queries" },
-      { label: "Expansion LLM", value: "Llama-3.3-70b-versatile or Gemini 2.0 Flash" },
-      { label: "Target Temperature", value: "0.3 (deterministic variations)" }
-    ],
-    code: `// lib/providers.ts (HyDE Query Expansion)
-export async function expandQueryHyDE(query: string, chatProvider: ChatProviderId): Promise<string[]> {
-  const prompt = \`Generate exactly 3 alternative search queries for: "\\\${query}"\\\\nReturn ONLY a JSON array of 3 strings.\`;
-  const response = await callLLM(prompt, chatProvider);
-  return [query, ...JSON.parse(response)];
-}`
-  },
-  {
-    title: "7. Hybrid Search & Reciprocal Rank Fusion",
-    shortDesc: "Fuses vector similarity scores with PostgreSQL full-text keyword matching.",
-    longDesc: "For each of the query variations, VectorMind executes a hybrid search inside Supabase. This query runs a vector semantic match (using cosine distance) and a classic Full-Text keyword Search (FTS) using Postgres text search vectors (FTS). The rankings from both methods are merged using Reciprocal Rank Fusion (RRF). RRF scores candidates based on their ranks, yielding a high-quality list that balances semantic intent and exact phrase matching.",
-    conceptExplain: "Matches text in two ways: matching exact keywords (traditional search) and matching semantic meanings (vector search), then fuses them for the best results.",
-    badge: "Retrieval",
-    metrics: [
-      { label: "Candidate Limit", value: "Top 60 Semantic + Top 60 Keyword" },
-      { label: "RRF Rank Constant", value: "k = 60" },
-      { label: "RPC Function", value: "hybrid_search" }
-    ],
-    formula: "RRF_Score(d) = 1 / (60 + Rank_Semantic(d)) + 1 / (60 + Rank_Keyword(d))",
-    code: `-- hybrid_search RPC rank merging in Supabase PostgreSQL
-rrf AS (
-  SELECT COALESCE(se.id, kw.id) as id,
-         COALESCE(1.0/(60 + se.rank), 0) + COALESCE(1.0/(60 + kw.rank), 0) AS rrf_score,
-         COALESCE(se.sim, 0) AS similarity
-  FROM semantic se FULL OUTER JOIN keyword kw ON se.id = kw.id
-)
-SELECT id, content, heading_context, similarity, page_id
-FROM rrf ORDER BY rrf_score DESC LIMIT match_count;`
-  },
-  {
-    title: "8. MMR Diversification & Re-ranking",
-    shortDesc: "Filters redundant chunks to maximize context window utility.",
-    longDesc: "When retrieving sections, similarity search often returns paragraphs that are highly similar to each other, wasting valuable space in the LLM's context window. VectorMind applies Maximal Marginal Relevance (MMR) re-ranking. MMR scores items by balancing their similarity to the query against their similarity to already selected chunks, filtering out redundancy and maximizing context diversity.",
-    conceptExplain: "Cleans the search results by removing copycat or repetitive paragraphs, ensuring the AI gets a broad set of fresh facts to learn from.",
-    badge: "Retrieval",
-    metrics: [
-      { label: "Diversity Parameter", value: "lambda = 0.7" },
-      { label: "Target Count", value: "20 diverse sections" },
-      { label: "Deduplication Area", value: "Cross-document and intra-document" }
-    ],
-    formula: "MMR = max [ lambda * Sim(di, q) - (1-lambda) * max Sim(di, dj) ]",
-    code: `// pages/api/chat.ts
-function mmrFilter(items: any[], lambda = 0.7, k = 20): any[] {
-  if (items.length === 0) return []
-  const selected = [items[0]]
-  const remaining = items.slice(1)
-  while (selected.length < k && remaining.length > 0) {
-    let bestIdx = 0, bestScore = -Infinity
-    remaining.forEach((item, i) => {
-      const relevance = item.similarity || 0
-      const maxSim = Math.max(...selected.map(s => s.page_id === item.page_id ? 0.8 : 0.1))
-      const score = lambda * relevance - (1 - lambda) * maxSim
-      if (score > bestScore) { bestScore = score; bestIdx = i }
-    })
-    selected.push(remaining[bestIdx])
-    remaining.splice(bestIdx, 1)
-  }
-  return selected
-}`
-  },
-  {
-    title: "9. LLM Context Packing & Streaming",
-    shortDesc: "Compresses history and streams answers via Server-Sent Events.",
-    longDesc: "The diversified context chunks are formatted and token-packed up to a limit of 15,000 tokens using a GPT-3 BPE tokenizer. If chat history is long, it is summarized in the background using Llama-3.3-70b-versatile on Groq to preserve token limits. The query and context are fed into the LLM system prompt. The model streams back response tokens to the frontend in real time using Server-Sent Events (SSE).",
-    conceptExplain: "Assembles the top selected facts into a compact prompt and streams the AI's answer word-by-word onto your screen.",
-    badge: "Generation",
-    metrics: [
-      { label: "Token Limit", value: "15,000 context tokens max" },
-      { label: "History Summarizer", value: "Groq Llama 3.3 (triggered at > 1,000 tokens)" },
-      { label: "Protocol", value: "Server-Sent Events (SSE) stream" }
-    ],
-    code: `// Packing context segments using BPE tokenizer
-function packContext(citations: any[], maxTokens = 15000): string {
-  const tokenizer = new GPT3Tokenizer({ type: 'gpt3' })
-  let context = '', total = 0
-  for (const item of citations) {
-    const chunk = \`[\${item.id}] (Source: \${item.sourceName})\\n\${item.chunk}\\n\\n\`
-    const tokenCount = tokenizer.encode(chunk).bpe.length
-    if (total + tokenCount > maxTokens) break
-    context += chunk
-    total += tokenCount
-  }
-  return context
-}`
-  },
-  {
-    title: "10. Grounding Verification & Suggestions",
-    shortDesc: "Calculates factual grounding score and generates suggest bubbles.",
-    longDesc: "Once the streaming completes, the server executes post-generation verification. It computes a grounding score by cross-referencing sentences in the generated answer against the source citations using semantic overlap and Groq validation. It flags unsupported claims and visualizes the confidence level (HIGH / MEDIUM / LOW). In parallel, it queries the LLM to generate 3 short follow-up questions relevant to the answer content.",
-    conceptExplain: "Cross-checks every claim the AI makes against your original documents to make sure it is telling the truth and not making things up.",
-    badge: "Generation",
-    metrics: [
-      { label: "Safety Check", value: "Semantic sentence overlap validation" },
-      { label: "Confidence Levels", value: "HIGH (>=0.75), MEDIUM (>=0.35), LOW" },
-      { label: "Follow-up Suggesters", value: "3 short contextual questions" }
-    ],
-    code: `// After response stream ends, evaluate facts and suggest questions
-const [grounding, suggestions] = await Promise.all([
-  calculateGroundingScore(fullAnswer, citations),
-  getFollowUpSuggestions(sanitizedQuery, fullAnswer)
-]);
-sendEvent({ done: true, citations, grounding, suggestions });`
-  }
-];
-

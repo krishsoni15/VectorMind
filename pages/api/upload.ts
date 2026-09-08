@@ -12,9 +12,14 @@ import { invalidateWorkspaceCache } from '../../lib/semanticCache'
 import { recursiveCharacterChunker } from '../../lib/chunker'
 import { withValidation, UploadRequestSchema } from '../../lib/validateRequest'
 import { withRateLimit } from '../../lib/rateLimiter'
+import { extractTextFromImage } from '../../lib/ocr'
+import { getServerUser } from '../../lib/supabase'
+import { getProviderCredential } from '../../lib/credentialResolver'
 import { z } from 'zod'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+const supabaseAnonKey = (serviceKey && !serviceKey.includes('your_')) ? serviceKey : (anonKey || '')
 
 // ─── Text Sanitization ──────────────────────────────────────────────────────────
 
@@ -79,7 +84,10 @@ async function uploadHandler(
     } as any
 
     const ext = filename.substring(filename.lastIndexOf('.')).toLowerCase()
-    if (!['.pdf', '.md', '.txt', '.json', '.docx', '.csv', '.py', '.ts'].includes(ext)) {
+    const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif']
+    const allowedExtensions = ['.pdf', '.md', '.txt', '.json', '.docx', '.csv', '.py', '.ts', '.js', '.jsx', '.tsx', ...imageExtensions]
+    
+    if (!allowedExtensions.includes(ext)) {
       sendStreamEvent({ status: 'error', error: `Unsupported file: ${ext}`, step: 'validation' })
       return res.end()
     }
@@ -120,9 +128,26 @@ async function uploadHandler(
     }
 
     // Extract text
-    sendStreamEvent({ status: 'info', message: 'Parsing document content...' })
+    sendStreamEvent({ status: 'info', message: imageExtensions.includes(ext) ? 'Running AI Multimodal OCR on image...' : 'Parsing document content...' })
     let rawText = ''
-    if (ext === '.pdf') {
+
+    if (imageExtensions.includes(ext)) {
+      try {
+        const mimeMap: Record<string, string> = {
+          '.png': 'image/png',
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.webp': 'image/webp',
+          '.bmp': 'image/bmp',
+          '.gif': 'image/gif',
+        }
+        const mimeType = mimeMap[ext] || 'image/png'
+        rawText = await extractTextFromImage(buffer, mimeType)
+      } catch (e: any) {
+        sendStreamEvent({ status: 'error', error: `AI OCR Extraction failed: ${e.message}`, step: 'ocr_parse' })
+        return res.end()
+      }
+    } else if (ext === '.pdf') {
       try {
         const { extractText, getDocumentProxy } = await import('unpdf')
         const pdf = await getDocumentProxy(new Uint8Array(buffer))
@@ -194,6 +219,7 @@ async function uploadHandler(
     } else {
       rawText = buffer.toString('utf-8')
     }
+    
     if (!rawText.trim()) {
       sendStreamEvent({ status: 'error', error: 'No extractable text found in document', step: 'extraction' })
       return res.end()
@@ -205,13 +231,21 @@ async function uploadHandler(
     sendStreamEvent({ status: 'info', message: 'Backing up to storage...' })
     let storageUrl = null, storagePath = null
     try {
+      const mimeMap: Record<string, string> = {
+        '.pdf': 'application/pdf',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.webp': 'image/webp',
+        '.bmp': 'image/bmp',
+        '.gif': 'image/gif',
+      }
+      const uploadContentType = mimeMap[ext] || 'text/plain'
+
       const uploadPromise = supabase.storage.from('documents')
         .upload(`${projectId}/${Date.now()}_${filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`, buffer, {
-          contentType: ext === '.pdf' 
-            ? 'application/pdf' 
-            : ext === '.docx' 
-              ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
-              : 'text/plain', 
+          contentType: uploadContentType,
           upsert: true
         })
 
@@ -280,11 +314,15 @@ async function uploadHandler(
 
     sendStreamEvent({ status: 'started', chunksTotal: chunks.length })
 
+    // Extract user & resolve embedding credential
+    const user = await getServerUser(req)
+    const personalEmbedKey = await getProviderCredential({ userId: user?.id, provider: embeddingProvider })
+
     // Embed all chunks using high-performance batching
     let embeddings: number[][] = []
     const failedChunks: number[] = []
     try {
-      const embedPromise = generateEmbeddingsBatch(chunks, embeddingProvider, 'document')
+      const embedPromise = generateEmbeddingsBatch(chunks, embeddingProvider, 'document', 0, personalEmbedKey)
       const embedTimeout = new Promise<number[][]>((_, reject) => setTimeout(() => reject(new Error('Embedding API timed out after 60 seconds')), 60000))
       embeddings = await Promise.race([embedPromise, embedTimeout])
       
@@ -322,8 +360,11 @@ async function uploadHandler(
     let page: any = null
     let pageError: any = null
     try {
+      const pageData: any = { project_id: projectId, path: filename, checksum, meta: { filename, size: sanitizedText.length, storageUrl, storagePath } }
+      if (user?.id) pageData.user_id = user.id
+
       const insertPromise = supabase.from('nods_page')
-        .insert({ project_id: projectId, path: filename, checksum, meta: { filename, size: sanitizedText.length, storageUrl, storagePath } })
+        .insert(pageData)
         .select().single()
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Page insert timed out (60s limit)')), 60000))
       
