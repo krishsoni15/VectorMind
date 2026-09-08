@@ -39,7 +39,7 @@ async function expandQueryGroq(query: string): Promise<string[]> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'groq/compound-mini',
+        model: 'llama-3.3-70b-versatile',
         messages: [
           { role: 'system', content: prompt },
           { role: 'user', content: query }

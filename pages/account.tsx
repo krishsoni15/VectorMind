@@ -31,7 +31,7 @@ const PROVIDERS = [
   {
     id: 'groq',
     name: 'Groq',
-    description: 'Powers high-speed Llama 3 compound-mini chat inference & HyDE expansion',
+    description: 'Powers ultra-fast Llama 3.3 70B chat inference & HyDE expansion',
     signupUrl: 'https://console.groq.com',
   },
   {

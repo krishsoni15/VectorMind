@@ -104,7 +104,7 @@ async function formatAndSummarizeHistory(
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'groq/compound-mini',
+        model: 'llama-3.3-70b-versatile',
         messages: [
           {
             role: 'system',
@@ -145,7 +145,7 @@ async function getFollowUpSuggestions(question: string, answer: string): Promise
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'groq/compound-mini',
+          model: 'llama-3.3-70b-versatile',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: inputPayload }

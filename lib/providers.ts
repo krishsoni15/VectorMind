@@ -78,7 +78,7 @@ export const CHAT_PROVIDERS: Record<ChatProviderId, ChatProviderConfig> = {
   cohere: {
     id: 'cohere',
     name: 'Cohere',
-    model: 'command-a-03-2025',
+    model: 'command-r-plus',
     free: true,
     freeLimit: '1000 calls/mo trial',
     signupUrl: 'https://dashboard.cohere.com',
@@ -87,7 +87,7 @@ export const CHAT_PROVIDERS: Record<ChatProviderId, ChatProviderConfig> = {
   groq: {
     id: 'groq',
     name: 'Groq',
-    model: 'groq/compound-mini',
+    model: 'llama-3.3-70b-versatile',
     free: true,
     freeLimit: '1000 RPD free',
     signupUrl: 'https://console.groq.com',
@@ -431,7 +431,7 @@ export async function expandQueryHyDE(
             'accept': 'application/json',
           },
           body: JSON.stringify({
-            model: 'command-a-03-2025',
+            model: 'command-r-plus',
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.3,
             max_tokens: 200,
@@ -477,7 +477,7 @@ export async function expandQueryHyDE(
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: 'groq/compound-mini',
+            model: 'llama-3.3-70b-versatile',
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.3,
             max_tokens: 200,
@@ -598,7 +598,7 @@ export async function streamChatResponse(
           'accept': 'application/json',
         },
         body: JSON.stringify({
-          model: 'command-a-03-2025',
+          model: 'command-r-plus',
           messages,
           stream: true,
           temperature: 0.1,
@@ -642,7 +642,7 @@ export async function streamChatResponse(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'groq/compound-mini',
+          model: 'llama-3.3-70b-versatile',
           messages,
           stream: true,
           temperature: 0.1,

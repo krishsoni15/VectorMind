@@ -83,7 +83,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           'accept': 'application/json'
         },
         body: JSON.stringify({
-          model: 'command-a-03-2025',
+          model: 'command-r-plus',
           messages: [{ role: 'user', content: 'Say hi' }],
           temperature: 0.1,
           max_tokens: 20
@@ -91,7 +91,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })
       const d = await r.json()
       results.cohere.chat = r.ok
-        ? { ok: true, model: 'command-a-03-2025', response: d.message?.content?.[0]?.text?.slice(0, 50), latencyMs: Date.now() - start }
+        ? { ok: true, model: 'command-r-plus', response: d.message?.content?.[0]?.text?.slice(0, 50), latencyMs: Date.now() - start }
         : { ok: false, status: r.status, error: d }
     } catch (e: any) {
       results.cohere.chat = { ok: false, error: e.message }
@@ -112,7 +112,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'groq/compound-mini',
+          model: 'llama-3.3-70b-versatile',
           messages: [{ role: 'user', content: 'Say hi' }],
           temperature: 0.1,
           max_tokens: 20
@@ -120,7 +120,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })
       const d = await r.json()
       results.groq = r.ok
-        ? { ok: true, model: 'groq/compound-mini', response: d.choices?.[0]?.message?.content?.slice(0, 50), latencyMs: Date.now() - start }
+        ? { ok: true, model: 'llama-3.3-70b-versatile', response: d.choices?.[0]?.message?.content?.slice(0, 50), latencyMs: Date.now() - start }
         : { ok: false, status: r.status, error: d }
     } catch (e: any) {
       results.groq = { ok: false, error: e.message }
