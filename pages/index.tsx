@@ -1264,14 +1264,37 @@ export default function VectorMindLanding() {
                   An open knowledge infrastructure for the next generation. Built with purpose.
                 </p>
                 <div className="flex items-center gap-3">
-                  <a href="https://github.com/krishsoni15/VectorMind" target="_blank" rel="noreferrer" className="w-8 h-8 rounded-lg bg-zinc-900/80 border border-zinc-800/80 flex items-center justify-center text-zinc-500 hover:text-emerald-400 hover:border-emerald-500/40 transition-all" aria-label="GitHub">
-                    <Github className="w-4 h-4" />
+                  <a
+                    href="https://github.com/krishsoni15/VectorMind"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-9 h-9 rounded-xl bg-zinc-900/80 border border-zinc-800/80 flex items-center justify-center text-zinc-400 hover:text-emerald-400 hover:border-emerald-500/40 hover:scale-105 shadow-sm transition-all duration-300 group"
+                    aria-label="GitHub"
+                    title="GitHub Repository"
+                  >
+                    <Github className="w-4.5 h-4.5 group-hover:scale-110 transition-transform" />
                   </a>
-                  <a href="#" className="w-8 h-8 rounded-lg bg-zinc-900/80 border border-zinc-800/80 flex items-center justify-center text-zinc-500 hover:text-emerald-400 hover:border-emerald-500/40 transition-all" aria-label="X (Twitter)">
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                  <a
+                    href="https://x.com/krishsoni15"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-9 h-9 rounded-xl bg-zinc-900/80 border border-zinc-800/80 flex items-center justify-center text-zinc-400 hover:text-emerald-400 hover:border-emerald-500/40 hover:scale-105 shadow-sm transition-all duration-300 group"
+                    aria-label="X (Twitter)"
+                    title="X / Twitter"
+                  >
+                    <svg className="w-4 h-4 group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                    </svg>
                   </a>
-                  <a href="#" className="w-8 h-8 rounded-lg bg-zinc-900/80 border border-zinc-800/80 flex items-center justify-center text-zinc-500 hover:text-emerald-400 hover:border-emerald-500/40 transition-all" aria-label="LinkedIn">
-                    <Linkedin className="w-4 h-4" />
+                  <a
+                    href="https://linkedin.com/in/krishsoni15"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-9 h-9 rounded-xl bg-zinc-900/80 border border-zinc-800/80 flex items-center justify-center text-zinc-400 hover:text-emerald-400 hover:border-emerald-500/40 hover:scale-105 shadow-sm transition-all duration-300 group"
+                    aria-label="LinkedIn"
+                    title="LinkedIn"
+                  >
+                    <Linkedin className="w-4.5 h-4.5 group-hover:scale-110 transition-transform" />
                   </a>
                 </div>
               </div>
@@ -1280,8 +1303,9 @@ export default function VectorMindLanding() {
               <div>
                 <span className="text-zinc-400 font-bold uppercase text-[10px] tracking-wider">Product</span>
                 <div className="mt-3 space-y-2 text-zinc-500">
-                  <a href="#features" className="block hover:text-emerald-400 transition-colors">Features</a>
                   <a href="#architecture" className="block hover:text-emerald-400 transition-colors">Architecture</a>
+                  <a href="#product" className="block hover:text-emerald-400 transition-colors">Product</a>
+                  <a href="#features" className="block hover:text-emerald-400 transition-colors">Features</a>
                   <a href="#pipeline" className="block hover:text-emerald-400 transition-colors">RAG Pipeline</a>
                   <a href="#docs" className="block hover:text-emerald-400 transition-colors">Quickstart</a>
                 </div>
@@ -1293,8 +1317,8 @@ export default function VectorMindLanding() {
                 <div className="mt-3 space-y-2 text-zinc-500">
                   <a href="#pipeline" className="block hover:text-emerald-400 transition-colors">Hybrid RAG</a>
                   <a href="#pipeline" className="block hover:text-emerald-400 transition-colors">CAG</a>
-                  <a href="#pipeline" className="block hover:text-emerald-400 transition-colors">pgvector</a>
-                  <a href="#pipeline" className="block hover:text-emerald-400 transition-colors">Multi-Model</a>
+                  <a href="#pipeline" className="block hover:text-emerald-400 transition-colors">pgvector HNSW</a>
+                  <a href="#pipeline" className="block hover:text-emerald-400 transition-colors">Multi-Model LLM</a>
                 </div>
               </div>
             </div>
