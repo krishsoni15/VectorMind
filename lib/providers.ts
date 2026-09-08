@@ -78,7 +78,7 @@ export const CHAT_PROVIDERS: Record<ChatProviderId, ChatProviderConfig> = {
   cohere: {
     id: 'cohere',
     name: 'Cohere',
-    model: 'command-r-plus',
+    model: 'command-r-08-2024',
     free: true,
     freeLimit: '1000 calls/mo trial',
     signupUrl: 'https://dashboard.cohere.com',
@@ -431,7 +431,7 @@ export async function expandQueryHyDE(
             'accept': 'application/json',
           },
           body: JSON.stringify({
-            model: 'command-r-plus',
+            model: 'command-r-08-2024',
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.3,
             max_tokens: 200,
@@ -554,12 +554,10 @@ export async function streamChatResponse(
       )
 
       if (!res.ok) {
-        // Fallback on error
-        if (res.status === 429 || res.status === 403) {
-          for (const fallbackId of ['groq', 'cohere'] as ChatProviderId[]) {
-            if (isProviderAvailable(CHAT_PROVIDERS[fallbackId].keyEnv)) {
-              return streamChatResponse(systemPrompt, userQuery, chatHistory, fallbackId, onChunk)
-            }
+        console.warn(`[Providers] Gemini stream returned ${res.status}, trying fallback...`)
+        for (const fallbackId of ['cohere', 'groq', 'openai'] as ChatProviderId[]) {
+          if (fallbackId !== chatProvider && isProviderAvailable(CHAT_PROVIDERS[fallbackId].keyEnv)) {
+            return streamChatResponse(systemPrompt, userQuery, chatHistory, fallbackId, onChunk)
           }
         }
         throw new Error(`Gemini stream error: ${res.status}`)
@@ -598,7 +596,7 @@ export async function streamChatResponse(
           'accept': 'application/json',
         },
         body: JSON.stringify({
-          model: 'command-r-plus',
+          model: 'command-r-08-2024',
           messages,
           stream: true,
           temperature: 0.1,
@@ -606,7 +604,15 @@ export async function streamChatResponse(
         }),
       })
 
-      if (!res.ok) throw new Error(`Cohere chat error: ${res.status}`)
+      if (!res.ok) {
+        console.warn(`[Providers] Cohere stream returned ${res.status}, trying fallback...`)
+        for (const fallbackId of ['gemini', 'groq', 'openai'] as ChatProviderId[]) {
+          if (fallbackId !== chatProvider && isProviderAvailable(CHAT_PROVIDERS[fallbackId].keyEnv)) {
+            return streamChatResponse(systemPrompt, userQuery, chatHistory, fallbackId, onChunk)
+          }
+        }
+        throw new Error(`Cohere chat error: ${res.status}`)
+      }
 
       await parseSSEStream(res.body as any, (line) => {
         let raw = line.trim()
@@ -651,9 +657,9 @@ export async function streamChatResponse(
       })
 
       if (!res.ok) {
-        // Fallback
-        for (const fallbackId of ['cohere', 'gemini'] as ChatProviderId[]) {
-          if (isProviderAvailable(CHAT_PROVIDERS[fallbackId].keyEnv)) {
+        console.warn(`[Providers] Groq stream returned ${res.status}, trying fallback...`)
+        for (const fallbackId of ['cohere', 'gemini', 'openai'] as ChatProviderId[]) {
+          if (fallbackId !== chatProvider && isProviderAvailable(CHAT_PROVIDERS[fallbackId].keyEnv)) {
             return streamChatResponse(systemPrompt, userQuery, chatHistory, fallbackId, onChunk)
           }
         }

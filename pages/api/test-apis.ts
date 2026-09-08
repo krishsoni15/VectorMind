@@ -83,7 +83,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           'accept': 'application/json'
         },
         body: JSON.stringify({
-          model: 'command-r-plus',
+          model: 'command-r-08-2024',
           messages: [{ role: 'user', content: 'Say hi' }],
           temperature: 0.1,
           max_tokens: 20
@@ -91,7 +91,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })
       const d = await r.json()
       results.cohere.chat = r.ok
-        ? { ok: true, model: 'command-r-plus', response: d.message?.content?.[0]?.text?.slice(0, 50), latencyMs: Date.now() - start }
+        ? { ok: true, model: 'command-r-08-2024', response: d.message?.content?.[0]?.text?.slice(0, 50), latencyMs: Date.now() - start }
         : { ok: false, status: r.status, error: d }
     } catch (e: any) {
       results.cohere.chat = { ok: false, error: e.message }
