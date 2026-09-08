@@ -310,30 +310,29 @@ export default function VectorMindLanding() {
   // Activate scroll reveal
   useScrollReveal()
 
-  // Track scroll for dynamic navbar transformation and active section detection
+  // Track scroll for dynamic navbar transformation and precise active section detection
   useEffect(() => {
     const sections = ['hero', 'architecture', 'product', 'features', 'pipeline', 'docs']
 
     const handleScroll = () => {
-      if (window.scrollY > 20) {
-        setScrolled(true)
-      } else {
-        setScrolled(false)
-      }
+      setScrolled(window.scrollY > 20)
 
-      const scrollPosition = window.scrollY + 180
-      for (let i = sections.length - 1; i >= 0; i--) {
-        const secId = sections[i]
+      const viewportHeight = window.innerHeight
+      const threshold = viewportHeight * 0.35
+
+      let currentSection = 'hero'
+      for (const secId of sections) {
         const el = document.getElementById(secId)
         if (el) {
-          const top = el.offsetTop
-          if (scrollPosition >= top) {
-            setActiveSection(secId)
-            break
+          const rect = el.getBoundingClientRect()
+          if (rect.top <= threshold && rect.bottom > 100) {
+            currentSection = secId
           }
         }
       }
+      setActiveSection(currentSection)
     }
+
     window.addEventListener('scroll', handleScroll, { passive: true })
     handleScroll()
     return () => window.removeEventListener('scroll', handleScroll)
@@ -400,8 +399,8 @@ export default function VectorMindLanding() {
           {/* Desktop Nav Links (Dynamic Active Pill Indicator Container) */}
           <div className="hidden md:flex items-center gap-1 px-3 py-1.5 rounded-full bg-zinc-900/60 border border-zinc-800/80 backdrop-blur-xl shadow-inner text-[13px] font-medium text-zinc-400 hover:border-zinc-700/80 transition-all duration-300">
             {[
-              { id: 'product', label: 'Product' },
               { id: 'architecture', label: 'Architecture' },
+              { id: 'product', label: 'Product' },
               { id: 'features', label: 'Features' },
               { id: 'pipeline', label: 'RAG Pipeline' },
               { id: 'docs', label: 'Docs' }
@@ -419,7 +418,7 @@ export default function VectorMindLanding() {
                 >
                   {nav.label}
                   {isActive && (
-                    <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-2 h-0.5 bg-emerald-400 rounded-full shadow-[0_0_8px_#10b981]" />
+                    <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-2.5 h-0.5 bg-emerald-400 rounded-full shadow-[0_0_8px_#10b981]" />
                   )}
                 </a>
               )
@@ -455,9 +454,10 @@ export default function VectorMindLanding() {
         {/* Mobile Dropdown */}
         {mobileMenuOpen && (
           <div className="md:hidden border-b border-zinc-800 bg-[#050709]/95 backdrop-blur-2xl px-4 py-4 space-y-3 text-sm animate-slide-up">
-            <a href="#product" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-zinc-300 hover:text-emerald-400 transition-colors">Product</a>
             <a href="#architecture" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-zinc-300 hover:text-emerald-400 transition-colors">Architecture</a>
+            <a href="#product" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-zinc-300 hover:text-emerald-400 transition-colors">Product</a>
             <a href="#features" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-zinc-300 hover:text-emerald-400 transition-colors">Features</a>
+            <a href="#pipeline" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-zinc-300 hover:text-emerald-400 transition-colors">RAG Pipeline</a>
             <a href="#docs" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-zinc-300 hover:text-emerald-400 transition-colors">Docs</a>
             <div className="pt-2 flex flex-col gap-2">
               <a href="https://github.com/krishsoni15/VectorMind" target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white">
